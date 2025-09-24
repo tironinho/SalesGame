@@ -3,7 +3,7 @@ import {
   collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   onSnapshot, serverTimestamp, query, orderBy
 } from 'firebase/firestore'
-import { db, auth } from '../firebaseConfig'
+import { db, auth } from '../auth'
 
 export const LOBBIES = 'lobbies'
 export const DEFAULT_CAPACITY = 4

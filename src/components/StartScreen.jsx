@@ -1,28 +1,32 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react'
+import {
+  getOrSetTabPlayerName, // lê o último nome desta ABA
+  setTabPlayerName,      // grava o nome nesta ABA
+} from '../auth'
 
 // ajuste os paths dos assets conforme você salvou
-import bgImg from '/dynamic-data-visualization-3d.jpg';
-import logoGame from '/SalesGame_Logo-removebg-preview.png';
-import logoMultiplier from '/Multiplier-Copia.png';
-import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.png';
+import bgImg from '/dynamic-data-visualization-3d.jpg'
+import logoGame from '/SalesGame_Logo-removebg-preview.png'
+import logoMultiplier from '/Multiplier-Copia.png'
+import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.png'
 
 export default function StartScreen({ onEnter }) {
-  const [name, setName] = useState('');
-  const inputRef = useRef(null);
+  const [name, setName] = useState(getOrSetTabPlayerName(''))
+  const inputRef = useRef(null)
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    inputRef.current?.focus()
+  }, [])
 
   function handleEnter() {
-    const cleaned = name.trim();
-    if (!cleaned) return;
-    // callback para o chamador decidir a navegação (ex: ir para /salas)
-    onEnter?.(cleaned);
+    const cleaned = (name || '').trim()
+    if (!cleaned) return
+    setTabPlayerName(cleaned)  // <- salva o nome desta ABA (sessionStorage)
+    onEnter?.(cleaned)         // callback para navegação (ex.: ir para lista de salas)
   }
 
   function onKey(e) {
-    if (e.key === 'Enter') handleEnter();
+    if (e.key === 'Enter') handleEnter()
   }
 
   return (
@@ -68,5 +72,5 @@ export default function StartScreen({ onEnter }) {
       {/* personagem à direita */}
       <img className="startCoach" src={coachPng} alt="" draggable="false" />
     </div>
-  );
+  )
 }
