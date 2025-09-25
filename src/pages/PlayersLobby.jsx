@@ -135,7 +135,7 @@ useEffect(() => {
   }
 
   // precisa ser host, sala 'open', >=2 jogadores e todos prontos
-  const canStart = amHost && lobby?.status === 'open' && players.length >= 2 && readyCount === players.length
+  const canStart = amHost && lobby?.status === 'open' && players.length >= 1 && readyCount === players.length
 
   async function handleStart() {
     if (!canStart) return

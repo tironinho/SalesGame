@@ -1,62 +1,57 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
+// src/modals/ModalContext.jsx
+import React, { createContext, useContext, useMemo, useRef, useState, useEffect } from 'react'
 
 const ModalCtx = createContext(null)
 
-export function ModalProvider({ registry, children }) {
-  const [stack, setStack] = useState([]) // [{ key, name, props, resolve, reject }]
+export function ModalProvider({ children }) {
+  const [stack, setStack] = useState([]) // [{id, el}]
+  const resolverRef = useRef(null)       // resolve da modal do topo
 
-  const openModal = useCallback((name, props = {}) => {
-    return new Promise((resolve, reject) => {
-      const key = `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      setStack(s => [...s, { key, name, props, resolve, reject }])
+  // fecha a modal do topo e resolve a promise (se houver)
+  const resolveTop = (payload) => {
+    const res = resolverRef.current
+    resolverRef.current = null
+    setStack((s) => s.slice(0, -1)) // pop
+    if (res) res(payload)
+  }
+
+  // abre uma modal (topo). Clonamos o elemento para injetar onResolve.
+  const pushModal = (element) => {
+    const id = crypto?.randomUUID?.() || String(Date.now() + Math.random())
+    const elWithResolve = React.cloneElement(element, {
+      onResolve: (payload) => resolveTop(payload),
     })
-  }, [])
+    setStack((s) => [...s, { id, el: elWithResolve }])
+  }
 
-  const closeModal = useCallback(() => setStack(s => s.slice(0, -1)), [])
-
-  const resolveTop = useCallback((value) => {
-    setStack(s => {
-      const top = s[s.length - 1]
-      if (top?.resolve) top.resolve(value)
-      return s.slice(0, -1)
+  // retorna uma promise que será resolvida quando a modal do topo chamar onResolve
+  const awaitTop = () =>
+    new Promise((resolve) => {
+      resolverRef.current = resolve
     })
-  }, [])
 
-  const rejectTop = useCallback((err) => {
-    setStack(s => {
-      const top = s[s.length - 1]
-      if (top?.reject) top.reject(err)
-      return s.slice(0, -1)
-    })
-  }, [])
+  // Esc fecha a modal do topo (se a modal não tratar por conta própria)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && stack.length > 0 && !resolverRef.current?._blocked) {
+        resolveTop({ action: 'SKIP' })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [stack.length])
 
-  const value = useMemo(() => ({ openModal, closeModal, resolveTop, rejectTop, registry }), [
-    openModal, closeModal, resolveTop, rejectTop, registry
-  ])
+  const value = useMemo(() => ({ pushModal, awaitTop }), [])
 
   return (
     <ModalCtx.Provider value={value}>
       {children}
-      <ModalRoot stack={stack} />
+      {/* renderiza todas as modais empilhadas */}
+      {stack.map(({ id, el }) => (
+        <React.Fragment key={id}>{el}</React.Fragment>
+      ))}
     </ModalCtx.Provider>
   )
 }
 
-export function useModal(){
-  const ctx = useContext(ModalCtx)
-  if (!ctx) throw new Error('useModal must be used within <ModalProvider>')
-  return ctx
-}
-
-// Root: renderiza o topo da pilha
-function ModalRoot({ stack }){
-  if (!stack.length) return null
-  const top = stack[stack.length - 1]
-  const Comp = ModalRoot.registry?.[top.name]
-  if (!Comp) return null
-  return <Comp {...top.props} />
-}
-
-// injeta o registry no Root
-ModalRoot.registry = {}
-export function bindRegistryToRoot(registry){ ModalRoot.registry = registry }
+export const useModal = () => useContext(ModalCtx)

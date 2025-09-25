@@ -1,10 +1,13 @@
+// src/components/Controls.jsx
 import React from 'react'
 import { useModal } from '../modals/ModalContext'
 import BankruptcyModal from '../modals/BankruptcyModal'
+import RecoveryModal from '../modals/RecoveryModal'
 
 export default function Controls({ onAction, current, isMyTurn = true }) {
   const { pushModal, awaitTop } = useModal?.() || {}
-  const disabled = !isMyTurn
+
+  const canRoll = !!isMyTurn
 
   const roll = () => {
     const steps = Math.floor(Math.random() * 6) + 1
@@ -23,16 +26,27 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
     onAction?.({ type: 'ROLL', steps, cashDelta, note })
   }
 
-  const onRecovery = () => onAction?.({ type: 'RECOVERY' })
+  const onRecoveryClick = async () => {
+    // Abre a modal estilizada. Fallback para prompt se o sistema de modal não estiver ativo.
+    if (pushModal && awaitTop) {
+      pushModal(<RecoveryModal playerName={current?.name || 'Jogador'} />)
+      const res = await awaitTop()
+      // res pode vir como { type: 'LOAN'|'REDUCE'|'FIRE', amount, note }
+      if (res && res.amount > 0) {
+        onAction?.({ type: 'RECOVERY_CUSTOM', amount: res.amount, note: res.note })
+      }
+      return
+    }
+    const n = Number(prompt('Valor de recuperação (positivo):') || 0)
+    if (n > 0) onAction?.({ type: 'RECOVERY_CUSTOM', amount: n, note: 'Recuperação Financeira' })
+  }
 
   const onBankruptClick = async () => {
-    // Abre a modal; aguarda confirmação
     if (pushModal && awaitTop) {
       pushModal(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
       const ok = await awaitTop()
       if (ok) onAction?.({ type: 'BANKRUPT' })
     } else {
-      // fallback: se o sistema de modal não estiver disponível
       if (confirm('Tem certeza que deseja declarar falência?')) {
         onAction?.({ type: 'BANKRUPT' })
       }
@@ -40,22 +54,13 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
   }
 
   return (
-    <div className={`controls ${disabled ? 'is-wait' : ''}`}>
-      <button
-        className="btn primary"
-        onClick={onRecovery}
-        disabled={disabled}
-        aria-disabled={disabled}
-      >
+    <div className={`controls ${!canRoll ? 'is-wait' : ''}`}>
+      {/* SEMPRE HABILITADOS */}
+      <button className="btn primary" onClick={onRecoveryClick}>
         RECUPERAÇÃO FINANCEIRA
       </button>
 
-      <button
-        className="btn dark"
-        onClick={onBankruptClick}
-        disabled={disabled}
-        aria-disabled={disabled}
-      >
+      <button className="btn dark" onClick={onBankruptClick}>
         DECLARAR FALÊNCIA
       </button>
 
@@ -64,8 +69,8 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
         <button
           className="btn go"
           onClick={roll}
-          disabled={disabled}
-          aria-disabled={disabled}
+          disabled={!canRoll}
+          aria-disabled={!canRoll}
         >
           Rolar Dado &amp; Andar
         </button>
