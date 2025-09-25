@@ -5,30 +5,27 @@ import { supabase } from '../auth'
    LISTAGEM DE LOBBIES
    ============================== */
 export async function listLobbies() {
-  const { data: lobbies, error } = await supabase
+  // uma única query; conta jogadores com LEFT JOIN
+  const { data, error } = await supabase
     .from('lobbies')
-    .select('id,name,max_players,status,created_at')
+    .select(`
+      id,
+      name,
+      max_players,
+      status,
+      created_at,
+      lobby_players!left(count)
+    `)
     .order('created_at', { ascending: true })
+
   if (error) throw error
 
-  if (!lobbies?.length) return []
-
-  const ids = lobbies.map(l => l.id)
-  const { data: links, error: e2 } = await supabase
-    .from('lobby_players')
-    .select('lobby_id')
-    .in('lobby_id', ids)
-  if (e2) throw e2
-
-  const counts = new Map()
-  links?.forEach(lp => counts.set(lp.lobby_id, (counts.get(lp.lobby_id) || 0) + 1))
-
-  return lobbies.map(l => ({
+  return (data || []).map(l => ({
     id: l.id,
     name: l.name,
     max: l.max_players,
     status: l.status || 'open',
-    players: counts.get(l.id) || 0,
+    players: (l.lobby_players?.[0]?.count ?? 0) | 0,
   }))
 }
 

@@ -1,20 +1,96 @@
 // src/components/Board.jsx
-import React, { useRef, useLayoutEffect, useState } from 'react'
+import React, { useRef, useLayoutEffect, useState, useEffect, useMemo } from 'react'
 import boardUrl from '/board.jpg'
 
 import {
   BASE_W, BASE_H, TRACK_LEN, TRACK_POINTS_NORM, scalePoint
 } from '../data/track'
 
-// overlay de markers (apenas para conferência; deixe false no final)
 import BoardMarkers from './BoardMarkers'
-
-// gravador interativo (para gerar os 55 pontos corretos)
 import TrackRecorder from '../dev/TrackRecorder'
 
-export default function Board({ players, turnIdx, recordTrack = false }){
+// Fallbacks (caso o pai ainda não envie `me`)
+import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from '../auth'
+
+// --- NOVO: dimensões/estilo dos tokens ---
+const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
+const TOKEN_ACTIVE_SCALE = 1.15; // multiplicador para o peão do jogador da vez
+const TOKEN_RING_PX = 3;      // largura do anel branco
+const TOKEN_SHADOW = '0 8px 18px rgba(0,0,0,.35)';
+
+const DEFAULT_STATS = {
+  cash: 18000,
+  possibAt: 0,
+  clientsAt: 0,
+
+  faturamento: 770,
+  manutencao: 1150,
+  emprestimos: 0,
+  vendedoresComuns: 0,
+  fieldSales: 0,
+  insideSales: 0,
+  mixDBens: 4000,
+  erpClientes: 0,
+  manualOnboarding: true,
+  azul: 0, amarelo: 0, roxo: 0,
+  gestores: 0,
+}
+
+export default function Board({
+  players,
+  turnIdx,
+  recordTrack = false,
+  matchId,
+  me,
+  onMeHud,          // opcional: pai pode receber os dados para renderizar no header
+}) {
   const boardRef = useRef(null)
   const [size, setSize] = useState({ w: BASE_W, h: BASE_H })
+
+  // 🔐 “quem sou eu” preferindo o que vem do pai (PlayersLobby/App)
+  const myId = me?.id || getOrCreateTabPlayerId()
+  const fallbackName = getOrSetTabPlayerName('Jogador')
+  const meFromPlayers = useMemo(
+    () => players?.find(p => p.id === myId) || null,
+    [players, myId]
+  )
+  const meName  = me?.name || meFromPlayers?.name || fallbackName
+  const myColor = meFromPlayers?.color || '#6c5ce7'
+
+  // key única por partida + jogador (aba)
+  const statsKey = useMemo(() => {
+    const scope = matchId || 'local'
+    return `sg_stats_v1:${scope}:${myId}`
+  }, [matchId, myId])
+
+  const [stats, setStats] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(statsKey)
+      return raw ? JSON.parse(raw) : DEFAULT_STATS
+    } catch {
+      return DEFAULT_STATS
+    }
+  })
+
+  useEffect(() => {
+    try { sessionStorage.setItem(statsKey, JSON.stringify(stats)) } catch {}
+  }, [statsKey, stats])
+
+  // 🔊 Emite os dados do HUD (para o App.jsx renderizar na topbar)
+  useEffect(() => {
+    const payload = {
+      id: myId,
+      name: meName,
+      color: myColor,
+      cash: stats.cash,
+      possibAt: stats.possibAt,
+      clientsAt: stats.clientsAt,
+      matchId: matchId || 'local',
+    }
+    onMeHud?.(payload)
+    document.dispatchEvent(new CustomEvent('sg:meHud', { detail: payload }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myId, meName, myColor, stats.cash, stats.possibAt, stats.clientsAt, matchId])
 
   useLayoutEffect(() => {
     if (!boardRef.current) return
@@ -37,13 +113,12 @@ export default function Board({ players, turnIdx, recordTrack = false }){
     <div className="board" ref={boardRef}>
       <img src={boardUrl} alt="Board" className="boardImg" />
 
-      {/* ====== MODO GRAVAÇÃO (clique para marcar 55 casas) ====== */}
+      {/* ====== MODO GRAVAÇÃO ====== */}
       {recordTrack && (
         <TrackRecorder
           boardRef={boardRef}
           expected={55}
           onFinish={(norms) => {
-            // imprimo também aqui por garantia
             console.log('TRACK_POINTS_NORM (cole em src/data/track.js):', JSON.stringify(norms, null, 2))
           }}
         />
@@ -52,27 +127,50 @@ export default function Board({ players, turnIdx, recordTrack = false }){
       {/* ====== MODO NORMAL ====== */}
       {!recordTrack && (
         <>
-          {/* deixe visível só enquanto confere os pontos definitivos */}
           <BoardMarkers visible={true} boardWidth={size.w} boardHeight={size.h} />
 
           {players.map((p, idx) => {
+            const isTurn = idx === turnIdx
             const i   = ((p.pos % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
             const pt  = TRACK_POINTS_NORM[i]
             const xy  = scalePoint(pt, size.w, size.h)
+
+            // separação diagonal entre peões na mesma casa
             const off = idx * 12 * s
+
+            // tamanho do peão (escala com o board) e destaque do jogador da vez
+            const base = TOKEN_BASE_PX * s
+            const sizePx = base * (isTurn ? TOKEN_ACTIVE_SCALE : 1)
+            const ring = Math.max(2, TOKEN_RING_PX * s)
 
             return (
               <div
                 key={p.id}
                 className="token"
                 style={{
+                  position: 'absolute',
                   left: xy.x + off,
                   top:  xy.y - off,
-                  background: p.color
+                  transform: 'translate(-50%, -50%)',   // centraliza no ponto da casa
+                  width:  sizePx,
+                  height: sizePx,
+                  borderRadius: '50%',
+                  background: p.color,
+                  border: `${ring}px solid rgba(255,255,255,.95)`,
+                  boxShadow: TOKEN_SHADOW,
+                  pointerEvents: 'none',                // apenas visual; movimento é por botão
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: '#000',
+                  fontWeight: 900,
+                  userSelect: 'none',
+                  zIndex: isTurn ? 4 : 3,
                 }}
                 title={`${p.name} • Casa ${i + 1}`}
+                aria-label={`${p.name} está na casa ${i + 1}`}
               >
-                {idx === turnIdx ? '★' : ''}
+                {/* opcional: uma estrela sutil no jogador da vez */}
+                {isTurn ? '★' : ''}
               </div>
             )
           })}

@@ -46,7 +46,12 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
         name: p.player_name,
         index: i,
       }))
-      onStartGame?.({ lobbyId, matchId: match.id, players: normalized })
+      onStartGame?.({
+  lobbyId,
+  matchId: match?.id,
+  players: normalized,
+  me: { id: meId, name: meName }   // <- ADICIONE ESTA LINHA
+})
     }
   }
 
@@ -77,6 +82,26 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
       if (firstLoad.current) { firstLoad.current = false; setLoading(false) }
     }
   }
+
+  // no topo do arquivo já existe: import { leaveLobby } from '../lib/lobbies'
+
+useEffect(() => {
+  const leave = () => {
+    // melhor esforço: não bloqueia a navegação
+    leaveLobby({ lobbyId, playerId: meId }).catch(() => {});
+  };
+  const onHide = () => leave();
+
+  // 'pagehide' cobre mobile e navegações de SPA; 'beforeunload' cobre desktop
+  window.addEventListener('pagehide', onHide);
+  window.addEventListener('beforeunload', onHide);
+
+  return () => {
+    window.removeEventListener('pagehide', onHide);
+    window.removeEventListener('beforeunload', onHide);
+  };
+}, [lobbyId, meId]);
+
 
   useEffect(() => {
     triedEnsure.current = false
@@ -121,7 +146,12 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
       // Host também navega (e marca para não navegar de novo via realtime)
       navigatedOnce.current = true
       const normalized = players.map((p, i) => ({ id: p.player_id, name: p.player_name, index: i }))
-      onStartGame?.({ lobbyId, matchId: match?.id, players: normalized })
+      onStartGame?.({
+  lobbyId,
+  matchId: match?.id,
+  players: normalized,
+  me: { id: meId, name: meName }   // <- ADICIONE ESTA LINHA
+})
     } catch (e) {
       console.error('startMatch failed', e)
       await setLobbyStatus(lobbyId, prev || 'open') // rollback

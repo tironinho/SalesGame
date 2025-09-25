@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import './styles.css'
 
 import StartScreen from './components/StartScreen.jsx'
@@ -11,7 +11,8 @@ import HUD from './components/HUD.jsx'
 import Controls from './components/Controls.jsx'
 import { TRACK_LEN } from './data/track'
 
-import { getOrCreateLocalPlayerId, getOrSetPlayerName } from './auth'
+// >>> usa identidade POR ABA (evita bloquear em todo mundo)
+import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
 
 export default function App() {
   const [phase, setPhase] = useState('start')  // 'start' | 'lobbies' | 'playersLobby' | 'game'
@@ -25,32 +26,123 @@ export default function App() {
   const [log, setLog] = useState(['Bem-vindo ao Sales Game!'])
   const current = players[turnIdx]
 
+  // --- quem sou eu (por ABA)
+  const meId = useMemo(() => getOrCreateTabPlayerId(), [])
+  const meIdx = useMemo(() => players.findIndex(p => p.id === meId), [players, meId])
+  const isMyTurn = players[turnIdx]?.id === meId
+
+  // HUD vindo do Board
+  const [meHud, setMeHud] = useState({
+    id: null,
+    name: players[0]?.name || 'Jogador',
+    color: players[0]?.color || '#6c5ce7',
+    cash: players[0]?.cash ?? 18000,
+    possibAt: 0,
+    clientsAt: 0,
+    matchId: 'local',
+  })
+
+  // ======= SYNC ENTRE ABAS (mesmo navegador) =======
+  const syncKey = useMemo(
+    () => `sg-sync:${currentLobbyId || 'local'}`,
+    [currentLobbyId]
+  )
+  const bcRef = useRef(null)
+
+  useEffect(() => {
+    if (phase !== 'game') return
+    try {
+      bcRef.current?.close?.()
+      const bc = new BroadcastChannel(syncKey)
+      bc.onmessage = (e) => {
+        const d = e.data
+        if (!d || d.type !== 'SYNC') return
+        // evita aplicar o que eu mesmo emiti
+        if (d.source === meId) return
+        setPlayers(d.players)
+        setTurnIdx(d.turnIdx)
+        setRound(d.round)
+      }
+      bcRef.current = bc
+      return () => bc.close()
+    } catch {
+      // se BroadcastChannel não existir, apenas ignora (sem sync cross-aba)
+    }
+  }, [phase, syncKey, meId])
+
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
+    try {
+      bcRef.current?.postMessage?.({
+        type: 'SYNC',
+        players: nextPlayers,
+        turnIdx: nextTurnIdx,
+        round: nextRound,
+        source: meId,
+      })
+    } catch {}
+  }
+  // ================================================
+
   function appendLog(msg){ setLog(l => [msg, ...l].slice(0, 12)) }
 
   function advanceAndMaybeLap(steps, deltaCash, note){
-    setPlayers(ps => ps.map(p => {
-      if (p.id !== current.id) return p
-      const oldPos = p.pos
-      const newPos = (oldPos + steps) % TRACK_LEN
-      const lap = newPos < oldPos
-      if (deltaCash) appendLog(`${p.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${Math.abs(deltaCash)}`)
-      if (note) appendLog(note)
-      if (lap) setRound(r => r + 1)
-      return { ...p, pos: newPos, cash: p.cash + (deltaCash||0) }
-    }))
+    // snapshot atual
+    const curIdx = turnIdx
+    const cur = players[curIdx]
+    if (!cur) return
+
+    const oldPos = cur.pos
+    const newPos = (oldPos + steps) % TRACK_LEN
+    const lap = newPos < oldPos
+
+    const nextPlayers = players.map((p, i) =>
+      i !== curIdx ? p : { ...p, pos: newPos, cash: p.cash + (deltaCash || 0) }
+    )
+    const nextRound = lap ? round + 1 : round
+    const nextTurnIdx = (curIdx + 1) % players.length
+
+    if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${Math.abs(deltaCash)}`)
+    if (note) appendLog(note)
+
+    setPlayers(nextPlayers)
+    setRound(nextRound)
+    setTurnIdx(nextTurnIdx)
+
+    // sincroniza com as outras abas
+    broadcastState(nextPlayers, nextTurnIdx, nextRound)
   }
-  function nextTurn(){ setTurnIdx(i => (i+1) % players.length) }
+
+  function nextTurn(){
+    const nextTurnIdx = (turnIdx + 1) % players.length
+    setTurnIdx(nextTurnIdx)
+    broadcastState(players, nextTurnIdx, round)
+  }
+
   function onAction(act){
-    if (act?.type === 'ROLL'){ advanceAndMaybeLap(act.steps, act.cashDelta, act.note); nextTurn() }
-    else if (act?.type === 'BANKRUPT'){ appendLog(`${current.name} declarou falência!`) }
-    else if (act?.type === 'RECOVERY'){
+    // segurança extra: só processa ações do jogador da vez nesta ABA
+    if (!isMyTurn) return
+
+    if (act?.type === 'ROLL'){
+      advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
+    } else if (act?.type === 'BANKRUPT'){
+      appendLog(`${current.name} declarou falência!`)
+      nextTurn()
+    } else if (act?.type === 'RECOVERY'){
       const recover = Math.floor(Math.random()*3000)+1000
-      setPlayers(ps => ps.map(p => p.id === current.id ? { ...p, cash: p.cash + recover } : p))
-      appendLog(`${current.name} ativou Recuperação Financeira (+$${recover})`); nextTurn()
+      const curIdx = turnIdx
+      const nextPlayers = players.map((p, i) => i === curIdx ? { ...p, cash: p.cash + recover } : p)
+      appendLog(`${players[curIdx].name} ativou Recuperação Financeira (+$${recover})`)
+      const nextTurnIdx = (curIdx + 1) % players.length
+      setPlayers(nextPlayers); setTurnIdx(nextTurnIdx)
+      broadcastState(nextPlayers, nextTurnIdx, round)
     } else if (act?.type === 'RECOVERY_CUSTOM'){
       const amount = Number(act.amount || 0)
-      setPlayers(ps => ps.map(p => p.id === current.id ? { ...p, cash: p.cash + amount } : p))
-      appendLog(`${current.name} recuperou +$${amount}`); nextTurn()
+      const curIdx = turnIdx
+      const nextPlayers = players.map((p, i) => i === curIdx ? { ...p, cash: p.cash + amount } : p)
+      appendLog(`${players[curIdx].name} recuperou +$${amount}`)
+      const nextTurnIdx = (curIdx + 1) % players.length
+      setPlayers(nextPlayers); setTurnIdx(nextTurnIdx)
+      broadcastState(nextPlayers, nextTurnIdx, round)
     }
   }
 
@@ -65,9 +157,9 @@ export default function App() {
     return (
       <StartScreen
         onEnter={(typedName) => {
-          getOrCreateLocalPlayerId()
-          const name = getOrSetPlayerName(typedName || 'Jogador')
-          setPlayers([{ id: 1, name, cash: 18000, pos: 0, color: '#ffd54f' }])
+          const name = getOrSetTabPlayerName(typedName || 'Jogador')
+          // este jogador local começa sozinho até entrar na sala
+          setPlayers([{ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f' }])
           setRound(1); setTurnIdx(0); setLog([`Bem-vindo, ${name}!`])
           setPhase('lobbies')
         }}
@@ -102,7 +194,19 @@ export default function App() {
             pos: 0,
             color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4]
           }))
-          setPlayers(mapped); setTurnIdx(0); setRound(1); setLog(['Jogo iniciado!'])
+          setPlayers(mapped)
+          // turno começa no primeiro da lista (servidor/host pode ajustar futuramente)
+          setTurnIdx(0)
+          setRound(1)
+          setLog(['Jogo iniciado!'])
+          // zera HUD até o Board emitir
+          setMeHud(h => ({
+            ...h,
+            name: mapped.find(x => x.id === meId)?.name || mapped[0]?.name || 'Jogador',
+            color: mapped.find(x => x.id === meId)?.color || mapped[0]?.color || '#6c5ce7',
+            cash: mapped.find(x => x.id === meId)?.cash ?? 18000,
+            possibAt: 0, clientsAt: 0
+          }))
           setPhase('game')
         }}
       />
@@ -113,27 +217,44 @@ export default function App() {
   return (
     <div className="page">
       <header className="topbar">
-        <div className="icons">
-          <span className="icon">🧑‍🚀</span>
-          <span className="icon">🧙‍♂️</span>
-          <span className="icon">🧟‍♂️</span>
+        <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <span
+            style={{
+              width:18, height:18, borderRadius:'50%',
+              border:'2px solid rgba(255,255,255,.9)',
+              boxShadow:'0 0 0 2px rgba(0,0,0,.25)',
+              background: meHud.color
+            }}
+          />
+          <span style={{
+            background:'#1f2430', border:'1px solid rgba(255,255,255,.12)',
+            borderRadius:10, padding:'4px 10px', fontWeight:800
+          }}>
+            👤 {meHud.name}
+          </span>
+          <span>Possib. Atendimento: <b>{meHud.possibAt ?? 0}</b></span>
+          <span>Clientes em Atendimento: <b>{meHud.clientsAt ?? 0}</b></span>
         </div>
-        <div className="status">
-          <span>Jogador {turnIdx}</span>
+
+        <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
           <span>Rodada: {round}</span>
-          <span>Possib. Atendimento: 0</span>
-          <span>Clientes em Atendimento: 0</span>
-          <span className="money">💵 $ {current.cash}</span>
+          <span className="money">💵 $ {Number(meHud.cash ?? 0).toLocaleString()}</span>
         </div>
       </header>
 
       <main className="content">
         <div className="boardWrap">
-          <Board players={players} turnIdx={turnIdx} />
+          {/* Board emite dados do HUD para a topbar via onMeHud */}
+          <Board
+            players={players}
+            turnIdx={turnIdx}
+            onMeHud={setMeHud}
+          />
         </div>
         <aside className="side">
           <HUD totals={totals} players={players} />
-          <Controls onAction={onAction} current={current} />
+          {/* botão só habilita na ABA do jogador da vez */}
+          <Controls onAction={onAction} current={current} isMyTurn={isMyTurn} />
           <div style={{ marginTop: 10 }}>
             <button className="btn dark" onClick={() => setPhase('lobbies')}>Sair para Lobbies</button>
           </div>
@@ -146,4 +267,3 @@ export default function App() {
     </div>
   )
 }
-// src/components/Board.jsx
