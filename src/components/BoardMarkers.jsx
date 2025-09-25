@@ -1,7 +1,7 @@
 import React from 'react'
 import { TRACK_POINTS_NORM, scalePoint } from '../data/track'
 
-export default function BoardMarkers({ visible = true, boardWidth, boardHeight }) {
+export default function BoardMarkers({ visible = false, boardWidth, boardHeight }) {
   if (!visible) return null
   return (
     <div className="markersLayer">
