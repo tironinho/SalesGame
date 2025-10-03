@@ -54,19 +54,24 @@ export default function App() {
   const [log, setLog] = useState(['Bem-vindo ao Sales Game!'])
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState(null)
-  const current = players[turnIdx]
 
   // --- quem sou eu (por ABA)
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
   const myName = useMemo(() => getOrSetTabPlayerName('Jogador'), [])
-  const meIdx = useMemo(
-    () => players.findIndex(p => p.id === meId || p.name === myName),
-    [players, meId, myName]
-  )
+
+  // 👉 clamp do índice de turno quando muda a quantidade de players
+  useEffect(() => {
+    setTurnIdx(t => (players.length > 0 ? (t % players.length + players.length) % players.length : 0))
+  }, [players.length])
+
+  const current = players[turnIdx]
+
+  // 🔒 vez do jogador: prioriza ID; só cai para nome se faltar id
   const isMyTurn = useMemo(() => {
-    const t = players[turnIdx]
-    if (!t) return false
-    return t.id === meId || t.name === myName
+    const owner = players[turnIdx]
+    if (!owner) return false
+    if (owner.id != null) return String(owner.id) === String(meId)
+    return (owner.name || '') === (myName || '')
   }, [players, turnIdx, meId, myName])
 
   // >>> acesso ao sistema de modais
@@ -85,13 +90,13 @@ export default function App() {
 
   // >>> SALDO ATUAL DO JOGADOR DESTA ABA (sempre atualizado)
   const myCash = useMemo(
-    () => (players.find(p => p.id === meId || p.name === myName)?.cash ?? 0),
+    () => (players.find(p => String(p.id) === String(meId) || p.name === myName)?.cash ?? 0),
     [players, meId, myName]
   )
 
   // Mantém o meHud.cash sincronizado (caso outros pontos dependam dele)
   useEffect(() => {
-    const mine = players.find(p => p.id === meId || p.name === myName)
+    const mine = players.find(p => String(p.id) === String(meId) || p.name === myName)
     if (!mine) return
     setMeHud(h => (h.cash === mine.cash ? h : { ...h, cash: mine.cash }))
   }, [players, meId, myName])
@@ -109,7 +114,6 @@ export default function App() {
     if (Number.isFinite(deltas.fieldSalesDelta)) add('fieldSales', Number(deltas.fieldSalesDelta))
     if (Number.isFinite(deltas.insideSalesDelta)) add('insideSales', Number(deltas.insideSalesDelta))
     if (Number.isFinite(deltas.gestoresDelta)) add('gestores', Number(deltas.gestoresDelta))
-    // faturamento variável acumulado por compras
     if (Number.isFinite(deltas.revenueDelta)) add('revenue', Number(deltas.revenueDelta))
 
     if (typeof deltas.mixProdutosSet !== 'undefined') next.mixProdutos = deltas.mixProdutosSet
@@ -202,7 +206,7 @@ export default function App() {
       bc.onmessage = (e) => {
         const d = e.data
         if (!d || d.type !== 'SYNC') return
-        if (d.source === meId) return
+        if (String(d.source) === String(meId)) return
         setPlayers(d.players)
         setTurnIdx(d.turnIdx)
         setRound(d.round)
@@ -240,6 +244,7 @@ export default function App() {
 
   function advanceAndMaybeLap(steps, deltaCash, note){
     if (gameOver) return
+    if (!players.length) return
 
     const curIdx = turnIdx
     const cur = players[curIdx]
@@ -693,7 +698,7 @@ export default function App() {
         })
 
         if (res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly) {
-          const me = players[curIdx] || players.find(p => p.id === meId || p.name === myName)
+          const me = players[curIdx] || players.find(p => String(p.id) === String(meId) || p.name === myName)
           let delta = 0
           if (res.perClientBonus) delta += (me?.clients || 0) * res.perClientBonus
           if (res.perCertifiedManagerBonus) {
@@ -729,7 +734,6 @@ export default function App() {
           broadcastState(upd, nextTurnIdx, nextRound); return upd
         })
         appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
-        // fecha a modal imediatamente abaixo (ex.: Clients/Field/etc)
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
@@ -763,14 +767,13 @@ export default function App() {
         })
         appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
         if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
-        // fecha a modal imediatamente abaixo (ex.: Clients/Field/etc)
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
   }
 
   function nextTurn(){
-    if (gameOver) return
+    if (gameOver || !players.length) return
     const nextTurnIdx = (turnIdx + 1) % players.length
     setTurnIdx(nextTurnIdx)
     broadcastState(players, nextTurnIdx, round)
@@ -787,9 +790,9 @@ export default function App() {
 
     if (act.type === 'RECOVERY'){
       const recover = Math.floor(Math.random()*3000)+1000
-      const cur = players.find(p => p.id === meId || p.name === myName)
+      const cur = players.find(p => String(p.id) === String(meId) || p.name === myName)
       if (!cur) return
-      const nextPlayers = players.map(p => (p.id === meId || p.name === myName) ? { ...p, cash: p.cash + recover } : p)
+      const nextPlayers = players.map(p => (String(p.id) === String(meId) || p.name === myName) ? { ...p, cash: p.cash + recover } : p)
       appendLog(`${cur.name} ativou Recuperação Financeira (+$${recover})`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
@@ -798,9 +801,9 @@ export default function App() {
 
     if (act.type === 'RECOVERY_CUSTOM'){
       const amount = Number(act.amount || 0)
-      const cur = players.find(p => p.id === meId || p.name === myName)
+      const cur = players.find(p => String(p.id) === String(meId) || p.name === myName)
       if (!cur) return
-      const nextPlayers = players.map(p => (p.id === meId || p.name === myName) ? { ...p, cash: p.cash + amount } : p)
+      const nextPlayers = players.map(p => (String(p.id) === String(meId) || p.name === myName) ? { ...p, cash: p.cash + amount } : p)
       appendLog(`${cur.name} recuperou +$${amount}`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
@@ -808,7 +811,7 @@ export default function App() {
     }
 
     if (act.type === 'BANKRUPT'){
-      appendLog(`${current.name} declarou falência!`)
+      appendLog(`${current?.name || 'Jogador'} declarou falência!`)
       nextTurn()
       return
     }
@@ -816,7 +819,7 @@ export default function App() {
 
   // === Totais para o HUD (do jogador desta ABA)
   const totals = useMemo(() => {
-    const me = players.find(p => p.id === meId || p.name === myName) || players[0] || {}
+    const me = players.find(p => String(p.id) === String(meId) || p.name === myName) || players[0] || {}
 
     const insideQty = Number(me.insideSales || 0)
     const insideCertsCount = new Set(me?.trainingsByVendor?.inside || []).size
@@ -891,8 +894,9 @@ export default function App() {
           const raw = Array.isArray(payload)
             ? payload
             : (payload?.players ?? payload?.lobbyPlayers ?? [])
+          // mantém id (string) vindo do lobby; ordem do lobby define ordem dos turnos
           const mapped = raw.map((p, i) => ({
-            id: p.id ?? p.player_id,
+            id: String(p.id ?? p.player_id),
             name: p.name ?? p.player_name,
             cash: 18000,
             pos: 0,
@@ -908,7 +912,7 @@ export default function App() {
           setLog(['Jogo iniciado!'])
           setGameOver(false); setWinner(null)
           setMeHud(h => {
-            const mine = mapped.find(x => x.id === meId || x.name === myName)
+            const mine = mapped.find(x => String(x.id) === String(meId) || x.name === myName)
             return {
               ...h,
               name: mine?.name || mapped[0]?.name || 'Jogador',
