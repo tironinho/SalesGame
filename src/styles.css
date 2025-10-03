@@ -390,3 +390,40 @@ html, body {
 .pState{ opacity:.8; margin:4px 0 8px; }
 .btn.sm{ padding:8px 10px; font-size:14px; }
 .roomActions{ display:flex; gap:10px; }
+
+
+/* sidebar rola independente do resto */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* ajuste a largura se quiser */
+  max-height: calc(100vh - 88px); /* topbar + margem; ajuste se sua topbar for maior */
+  overflow-y: auto;
+  padding-right: 6px; /* pra não esconder a barra de rolagem */
+}
+
+/* bloco de controles fixo no rodapé da sidebar */
+.controlsSticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background: rgba(15, 20, 32, 0.92);
+  backdrop-filter: blur(2px);
+  padding: 10px 8px 8px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  /* opcional: sombra suave pra destacar */
+  box-shadow: 0 -6px 12px rgba(0,0,0,.25);
+}
+
+/* se seu .content não for flex, garanta isso */
+.content {
+  display: flex;
+  gap: 12px;
+}
+
+/* garante que o tabuleiro ocupe o espaço restante */
+.boardWrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}

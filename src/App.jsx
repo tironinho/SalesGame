@@ -35,6 +35,13 @@ import MixProductsModal from './modals/MixProductsModal'
 // >>> NOVA modal: Sorte & Revés (casas 3,14,22,26,35,41,48,54)
 import SorteRevesModal from './modals/SorteRevesModal'
 
+// >>> TELA FINAL (pódio)
+import FinalWinners from './components/FinalWinners.jsx'
+
+// >>> NOVAS MODAIS (passar pela casa 1 e 23)
+import FaturamentoDoMesModal from './modals/FaturamentoMesModal'
+import DespesasOperacionaisModal from './modals/DespesasOperacionaisModal'
+
 export default function App() {
   const [phase, setPhase] = useState('start')
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
@@ -63,7 +70,7 @@ export default function App() {
   }, [players, turnIdx, meId, myName])
 
   // >>> acesso ao sistema de modais
-  const { pushModal, awaitTop } = useModal?.() || {}
+  const { pushModal, awaitTop, closeTop } = useModal?.() || {}
 
   // HUD vindo do Board
   const [meHud, setMeHud] = useState({
@@ -102,7 +109,7 @@ export default function App() {
     if (Number.isFinite(deltas.fieldSalesDelta)) add('fieldSales', Number(deltas.fieldSalesDelta))
     if (Number.isFinite(deltas.insideSalesDelta)) add('insideSales', Number(deltas.insideSalesDelta))
     if (Number.isFinite(deltas.gestoresDelta)) add('gestores', Number(deltas.gestoresDelta))
-    // >>> novo: faturamento variável acumulado por compras (ex.: vendedores comuns / field)
+    // faturamento variável acumulado por compras
     if (Number.isFinite(deltas.revenueDelta)) add('revenue', Number(deltas.revenueDelta))
 
     if (typeof deltas.mixProdutosSet !== 'undefined') next.mixProdutos = deltas.mixProdutosSet
@@ -118,6 +125,41 @@ export default function App() {
     return next
   }
 
+  // ======= helpers para as modais automáticas =======
+  function computeFaturamentoFor(player = {}) {
+    const insideQty = Number(player.insideSales || 0)
+    const insideCertsCount = new Set(player?.trainingsByVendor?.inside || []).size
+    const insideRevenuePer = 1500 + 500 * insideCertsCount
+    const insideRevenueTotal = insideQty * insideRevenuePer
+
+    const ERP = { A:{ fat:1000 }, B:{ fat:500 }, C:{ fat:200 }, D:{ fat:70 } }
+    const lvl = String(player.erpLevel || 'D').toUpperCase()
+    const erpFat  = (ERP[lvl]?.fat  ?? 0)
+
+    const dynamicRevenue = Number(player.revenue || 0)
+    return 770 + insideRevenueTotal + erpFat + dynamicRevenue
+  }
+
+  function computeDespesasFor(player = {}) {
+    const insideQty = Number(player.insideSales || 0)
+    const insideCertsCount = new Set(player?.trainingsByVendor?.inside || []).size
+    const insideExpensePer = 2000 + 100 * insideCertsCount
+    const insideExpenseTotal = insideQty * insideExpensePer
+
+    const ERP = { A:{ desp:400 }, B:{ desp:200 }, C:{ desp:100 }, D:{ desp:50 } }
+    const lvl = String(player.erpLevel || 'D').toUpperCase()
+    const erpDesp = (ERP[lvl]?.desp ?? 0)
+
+    const baseMaintenance = 1150 + Number(player.manutencao || 0)
+    return baseMaintenance + insideExpenseTotal + erpDesp
+  }
+
+  function crossedTile(oldPos, newPos, tileIndex /* zero-based */) {
+    if (oldPos === newPos) return false
+    if (oldPos < newPos) return tileIndex > oldPos && tileIndex <= newPos
+    return tileIndex > oldPos || tileIndex <= newPos // deu a volta
+  }
+
   // ======= helper ESPECÍFICO: aplicar compra de treinamentos =======
   function applyTrainingPurchase(player, payload) {
     const { vendorType, items = [], total = 0 } = payload || {}
@@ -128,13 +170,11 @@ export default function App() {
     next.bens = (next.bens ?? 0) + Number(total || 0)
     next.onboarding = true
 
-    // contadores de certificados gerais (para o HUD)
     items.forEach(it => {
       const key = certMap[it?.id]
       if (key) next[key] = (next[key] ?? 0) + 1
     })
 
-    // progresso por TIPO de vendedor
     const tv = String(vendorType || 'comum')
     const current = new Set( (next.trainingsByVendor?.[tv] || []) )
     items.forEach(it => { if (it?.id) current.add(it.id) })
@@ -230,10 +270,13 @@ export default function App() {
     // === Tiles (1-based) ===
     const landedOneBased = newPos + 1
 
+    // === Verificações de "passou por" (não precisa parar exatamente)
+    const crossedStart1 = crossedTile(oldPos, newPos, 0)      // casa 1 (índice 0)
+    const crossedExpenses23 = crossedTile(oldPos, newPos, 22) // casa 23 (índice 22)
+
     // === ERP/Sistemas: 6,16,32,49 ===
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
-      // passa o saldo atual para validação na modal
       pushModal(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -269,13 +312,11 @@ export default function App() {
     // === Compra Direta: 5,10,43 ===
     const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
-      // passa o saldo atual para a DirectBuyModal (que repassará para a de Clientes)
       pushModal(<DirectBuyModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
         if (!res) return
 
-        // Fluxo em que a DirectBuyModal apenas indica qual modal abrir
         if (res.action === 'OPEN') {
           const open = String(res.open || '').toUpperCase()
 
@@ -303,7 +344,6 @@ export default function App() {
           }
 
           if (open === 'GESTOR') {
-            // >>> passa saldo atual
             pushModal(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
             const r2 = await awaitTop()
             if (r2 && r2.action === 'BUY') {
@@ -325,7 +365,6 @@ export default function App() {
           }
 
           if (open === 'INSIDE') {
-            // >>> passa o saldo atual
             pushModal(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
             const r2 = await awaitTop()
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
@@ -340,7 +379,6 @@ export default function App() {
           }
 
           if (open === 'FIELD') {
-            // passa o saldo atual e consome deltas padronizados
             pushModal(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
             const r2 = await awaitTop()
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
@@ -360,12 +398,10 @@ export default function App() {
           }
 
           if (open === 'COMMON') {
-            // >>> passa o saldo atual para validar e receber deltas
             pushModal(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
             const r2 = await awaitTop()
             if (r2 && r2.action === 'BUY') {
               const qty  = Number(r2.qty ?? 0)
-              // Preferir deltas vindos da modal; fallback para compatibilidade antiga:
               const deltas = {
                 cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? 0))),
                 vendedoresComunsDelta: qty,
@@ -381,7 +417,6 @@ export default function App() {
           }
 
           if (open === 'ERP') {
-            // >>> passa saldo para a ERP modal
             pushModal(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
             const r2 = await awaitTop()
             if (r2 && r2.action === 'BUY') {
@@ -428,9 +463,8 @@ export default function App() {
           }
         }
 
-        // Fallback: DirectBuyModal pode devolver BUY direto (especialmente para CLIENTES).
+        // Fallback: BUY direto
         if (res.action === 'BUY') {
-          // heurística: tentar identificar compra de clientes
           const isClientsBuy =
             res.kind === 'CLIENTS' ||
             res.modal === 'CLIENTS' ||
@@ -461,7 +495,6 @@ export default function App() {
             return
           }
 
-          // compra genérica (outros itens)
           const total = Number(res.total ?? res.amount ?? 0)
           setPlayers(ps => {
             const upd = ps.map((p, i) =>
@@ -482,7 +515,6 @@ export default function App() {
     // === Inside Sales: 12,21,30,42,53 ===
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
-      // >>> passa o saldo atual
       pushModal(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -506,7 +538,6 @@ export default function App() {
       landedOneBased === 39 || landedOneBased === 46 || landedOneBased === 52 || landedOneBased === 55
     )
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
-      // usa o saldo do jogador do turno
       pushModal(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -535,7 +566,6 @@ export default function App() {
     // === Gestor: 18,24,29,51 ===
     const isManagerTile = (landedOneBased === 18 || landedOneBased === 24 || landedOneBased === 29 || landedOneBased === 51)
     if (isManagerTile && isMyTurn && pushModal && awaitTop) {
-      // >>> passa saldo atual
       pushModal(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -558,7 +588,6 @@ export default function App() {
     // === Field Sales: 13,25,33,38,50 ===
     const isFieldTile = (landedOneBased === 13 || landedOneBased === 25 || landedOneBased === 33 || landedOneBased === 38 || landedOneBased === 50)
     if (isFieldTile && isMyTurn && pushModal && awaitTop) {
-      // passa saldo atual e consome deltas padronizados
       pushModal(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -584,7 +613,6 @@ export default function App() {
     // === Vendedores Comuns: 9,28,40,45 ===
     const isCommonSellersTile = (landedOneBased === 9 || landedOneBased === 28 || landedOneBased === 40 || landedOneBased === 45)
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
-      // >>> passa saldo e consome deltas vindos da modal
       pushModal(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
         const res = await awaitTop()
@@ -647,7 +675,6 @@ export default function App() {
         const res = await awaitTop()
         if (!res || res.action !== 'APPLY_CARD') return
 
-        // aplica efeitos básicos da carta
         setPlayers(ps => {
           const upd = ps.map((p,i) => {
             if (i !== curIdx) return p
@@ -665,7 +692,6 @@ export default function App() {
           return upd
         })
 
-        // bônus dependentes do estado (por cliente / gestor certificado / nível A ou B)
         if (res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly) {
           const me = players[curIdx] || players.find(p => p.id === meId || p.name === myName)
           let delta = 0
@@ -686,6 +712,59 @@ export default function App() {
             })
           }
         }
+      })()
+    }
+
+    // === MODAIS AUTOMÁTICAS POR PASSAR NAS CASAS ===
+
+    // Casa 1: Faturamento do mês (fecha também a modal abaixo, se existir)
+    if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
+      const meNow = players[curIdx] || {}
+      const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
+      pushModal(<FaturamentoDoMesModal value={fat} />)
+      ;(async () => {
+        await awaitTop()
+        setPlayers(ps => {
+          const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
+          broadcastState(upd, nextTurnIdx, nextRound); return upd
+        })
+        appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
+        // fecha a modal imediatamente abaixo (ex.: Clients/Field/etc)
+        try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
+      })()
+    }
+
+    // Casa 23: Despesas operacionais (+ cobrança única de empréstimo, se houver)
+    if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
+      const meNow = players[curIdx] || {}
+      const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
+
+      const lp = meNow.loanPending || {} // { amount, dueRound, charged }
+      const shouldChargeLoan =
+        Number(lp.amount) > 0 &&
+        !lp.charged &&
+        (round >= Math.max(1, Number(lp.dueRound || 0)))
+
+      const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+
+      pushModal(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
+      ;(async () => {
+        await awaitTop()
+        setPlayers(ps => {
+          const upd = ps.map((p,i)=>{
+            if (i!==curIdx) return p
+            const next = { ...p, cash: (p.cash||0) - (expense + loanCharge) }
+            if (shouldChargeLoan) {
+              next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
+            }
+            return next
+          })
+          broadcastState(upd, nextTurnIdx, nextRound); return upd
+        })
+        appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
+        if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+        // fecha a modal imediatamente abaixo (ex.: Clients/Field/etc)
+        try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
   }
@@ -739,15 +818,13 @@ export default function App() {
   const totals = useMemo(() => {
     const me = players.find(p => p.id === meId || p.name === myName) || players[0] || {}
 
-    // Inside Sales: base + bônus por certificados (0..3) aplicados por vendedor
     const insideQty = Number(me.insideSales || 0)
-    const insideCertsCount = new Set(me?.trainingsByVendor?.inside || []).size // 0..3
-    const insideRevenuePer = 1500 + 500 * insideCertsCount   // 1500/2000/2500/3000
-    const insideExpensePer = 2000 + 100 * insideCertsCount   // 2000/2100/2200/2300
+    const insideCertsCount = new Set(me?.trainingsByVendor?.inside || []).size
+    const insideRevenuePer = 1500 + 500 * insideCertsCount
+    const insideExpensePer = 2000 + 100 * insideCertsCount
     const insideRevenueTotal = insideQty * insideRevenuePer
     const insideExpenseTotal = insideQty * insideExpensePer
 
-    // ERP impacta faturamento/manutenção conforme nível
     const ERP = {
       A:{ fat:1000, desp:400 },
       B:{ fat:500,  desp:200 },
@@ -758,7 +835,6 @@ export default function App() {
     const erpFat  = (ERP[lvl]?.fat  ?? 0)
     const erpDesp = (ERP[lvl]?.desp ?? 0)
 
-    // >>> acrescenta faturamento acumulado via compras (ex.: vendedores comuns / field)
     const dynamicRevenue = Number(me.revenue || 0)
 
     return {
@@ -886,20 +962,30 @@ export default function App() {
         </div>
         <aside className="side">
           <HUD totals={totals} players={players} />
-          <Controls onAction={onAction} current={current} isMyTurn={isMyTurn} />
-          <div style={{ marginTop: 10 }}>
-            <button className="btn dark" onClick={() => setPhase('lobbies')}>Sair para Lobbies</button>
-          </div>
-          {/* Tela simples de fim de jogo */}
-          {gameOver && (
-            <div style={{marginTop:12, padding:12, border:'1px solid rgba(255,255,255,.2)', borderRadius:12, background:'#1f2430'}}>
-              <div style={{fontWeight:900, marginBottom:6}}>🏁 Fim de jogo!</div>
-              {winner ? (
-                <div>
-                  Vencedor: <b>{winner.name}</b> — Patrimônio: <b>$ {(((winner.cash||0)+(winner.bens||0))).toLocaleString()}</b>
-                </div>
-              ) : null}
+
+          {/* CONTROLES FIXOS NO RODAPÉ DA SIDEBAR */}
+          <div className="controlsSticky">
+            <Controls onAction={onAction} current={current} isMyTurn={isMyTurn} />
+            <div style={{ marginTop: 10 }}>
+              <button className="btn dark" onClick={() => setPhase('lobbies')}>Sair para Lobbies</button>
             </div>
+          </div>
+
+          {/* Tela final (pódio Top 3) */}
+          {gameOver && (
+            <FinalWinners
+              players={players}
+              onExit={() => setPhase('lobbies')}
+              onRestart={() => {
+                const reset = players.map(p => ({ ...p, cash:18000, bens:4000, pos:0 }))
+                setPlayers(reset)
+                setTurnIdx(0)
+                setRound(1)
+                setLog(['Novo jogo iniciado!'])
+                setGameOver(false)
+                setWinner(null)
+              }}
+            />
           )}
         </aside>
       </main>
