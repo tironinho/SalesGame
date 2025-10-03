@@ -1,5 +1,4 @@
-// src/modals/ModalContext.jsx
-import React, { createContext, useContext, useMemo, useRef, useState, useEffect } from 'react'
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react'
 
 const ModalCtx = createContext(null)
 
@@ -14,6 +13,10 @@ export function ModalProvider({ children }) {
     setStack((s) => s.slice(0, -1)) // pop
     if (res) res(payload)
   }
+
+  // utilitários para botões
+  const closeModal = () => resolveTop({ action: 'SKIP' })
+  const popModal   = () => resolveTop(false)
 
   // abre uma modal (topo). Clonamos o elemento para injetar onResolve.
   const pushModal = (element) => {
@@ -30,18 +33,12 @@ export function ModalProvider({ children }) {
       resolverRef.current = resolve
     })
 
-  // Esc fecha a modal do topo (se a modal não tratar por conta própria)
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape' && stack.length > 0 && !resolverRef.current?._blocked) {
-        resolveTop({ action: 'SKIP' })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [stack.length])
+  // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
-  const value = useMemo(() => ({ pushModal, awaitTop }), [])
+  const value = useMemo(
+    () => ({ pushModal, awaitTop, resolveTop, closeModal, popModal }),
+    []
+  )
 
   return (
     <ModalCtx.Provider value={value}>

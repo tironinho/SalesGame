@@ -1,14 +1,31 @@
 // src/modals/DirectBuyModal.jsx
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+
+// Importa as modais que serão chamadas
+import MixProductsModal from './MixProductsModal'
+import BuyManagerModal from './BuyManagerModal'
+import InsideSalesModal from './InsideSalesModal'
+import BuyFieldSalesModal from './BuyFieldSalesModal'
+import BuyCommonSellersModal from './BuyCommonSellersModal'
+import ERPSystemsModal from './ERPSystemsModal'
+import BuyClientsModal from './BuyClientsModal'
+import TrainingModal from './TrainingModal'
 
 /**
+ * Esta modal funciona como um “roteador de compras”.
+ * Ao clicar em COMPRAR, ela substitui a si mesma pela
+ * modal específica (sem fechar a promessa do topo).
+ *
  * onResolve(payload)
- *  - {action:'BUY', item:'gestor'|..., cost:number}
- *  - {action:'OPEN', open:'ERP'|'TRAINING'}
- *  - {action:'SKIP'}
+ *  - repassa o payload da modal filha (ex.: { action:'BUY', ... })
+ *  - { action:'SKIP' } ao cancelar aqui
+ *
+ * currentCash
+ *  - saldo atual do jogador (repassado às modais para validação quando necessário)
  */
-export default function DirectBuyModal({ onResolve }) {
+export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
   const closeRef = useRef(null)
+  const [next, setNext] = useState(null) // MIX | MANAGER | INSIDE | FIELD | COMMON | ERP | CLIENTS | TRAINING
 
   const handleClose = (e) => {
     e?.preventDefault?.()
@@ -16,69 +33,76 @@ export default function DirectBuyModal({ onResolve }) {
     onResolve?.({ action: 'SKIP' })
   }
 
-  // bloqueia scroll e ESC fecha
+  // Bloqueia scroll do body e foca no botão de fechar (sem ESC/backdrop)
   useEffect(() => {
-    const onKey = (ev) => { if (ev.key === 'Escape') handleClose(ev) }
-    document.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     setTimeout(() => closeRef.current?.focus?.(), 0)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prev
-    }
+    return () => { document.body.style.overflow = prev }
   }, [])
 
-  // Obs.: Para “Mix Produtos” aqui usamos o valor de entrada (nível D $1000) apenas como compra direta.
-  // Para “ERP/Sistemas” e “Treinamento” abrimos as modais específicas ao confirmar.
+  // Quando o usuário escolhe uma opção, renderizamos a modal específica
+  if (next) {
+    if (next === 'MIX')      return <MixProductsModal onResolve={onResolve} />
+    if (next === 'MANAGER')  return <BuyManagerModal  onResolve={onResolve} currentCash={currentCash} />
+    if (next === 'INSIDE')   return <InsideSalesModal onResolve={onResolve} currentCash={currentCash} />
+    if (next === 'FIELD')    return <BuyFieldSalesModal onResolve={onResolve} currentCash={currentCash} />
+    if (next === 'COMMON')   return <BuyCommonSellersModal onResolve={onResolve} currentCash={currentCash} />
+    if (next === 'ERP')      return <ERPSystemsModal  onResolve={onResolve} />
+    // ✅ Passa o saldo atual para a modal de clientes
+    if (next === 'CLIENTS')  return <BuyClientsModal  onResolve={onResolve} currentCash={currentCash} />
+    if (next === 'TRAINING') return <TrainingModal    onResolve={onResolve} />
+    return null
+  }
+
   const CARDS = [
     {
       key: 'mix',
       title: 'Mix Produtos',
       lines: ['Nível A: $12000', 'Nível B: $6000', 'Nível C: $3000', 'Nível D: $1000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'mixProdutos', cost: 1000 }),
+      onBuy: () => setNext('MIX'),
     },
     {
       key: 'gestor',
       title: 'Gestor Comercial',
       lines: ['Contratação: $5000', 'Manutenção: $3000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'gestorComercial', cost: 5000 }),
+      onBuy: () => setNext('MANAGER'),
     },
     {
       key: 'inside',
       title: 'Inside Sales',
       lines: ['Contratação: $3000', 'Manutenção: $2000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'insideSales', cost: 3000 }),
+      onBuy: () => setNext('INSIDE'),
     },
     {
       key: 'field',
       title: 'Field Sales',
       lines: ['Contratação: $3000', 'Manutenção: $2000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'fieldSales', cost: 3000 }),
+      onBuy: () => setNext('FIELD'),
     },
     {
       key: 'vendedor',
       title: 'Vendedor Comum',
       lines: ['Contratação: $1500', 'Despesas: $1000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'vendedorComum', cost: 1500 }),
+      onBuy: () => setNext('COMMON'),
     },
     {
       key: 'erp',
       title: 'ERP/Sistemas',
       lines: ['Nível A: $10000', 'Nível B: $4000', 'Nível C: $1500', 'Nível D: $500'],
-      onBuy: () => onResolve?.({ action: 'OPEN', open: 'ERP' }),
+      onBuy: () => setNext('ERP'),
     },
     {
       key: 'carteira',
       title: 'Carteira de Clientes',
       lines: ['Aquisição: $1000'],
-      onBuy: () => onResolve?.({ action: 'BUY', item: 'carteiraClientes', cost: 1000 }),
+      onBuy: () => setNext('CLIENTS'),
     },
     {
       key: 'training',
       title: 'Treinamento',
       lines: ['Azul: $500', 'Amarelo: $500', 'Roxo: $500'],
-      onBuy: () => onResolve?.({ action: 'OPEN', open: 'TRAINING' }),
+      onBuy: () => setNext('TRAINING'),
     },
   ]
 
@@ -87,12 +111,8 @@ export default function DirectBuyModal({ onResolve }) {
       style={styles.wrap}
       role="dialog"
       aria-modal="true"
-      onClick={handleClose}              // clique no backdrop fecha
     >
-      <div
-        style={styles.card}
-        onClick={(e) => e.stopPropagation()} // impede fechar ao clicar dentro
-      >
+      <div style={styles.card}>
         <button
           ref={closeRef}
           type="button"
@@ -112,7 +132,9 @@ export default function DirectBuyModal({ onResolve }) {
               <ul style={styles.lines}>
                 {c.lines.map((ln, i) => <li key={i}>{ln}</li>)}
               </ul>
-              <button type="button" style={styles.buyBtn} onClick={c.onBuy}>Comprar</button>
+              <button type="button" style={styles.buyBtn} onClick={c.onBuy}>
+                Comprar
+              </button>
             </div>
           ))}
         </div>

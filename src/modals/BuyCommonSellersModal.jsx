@@ -1,37 +1,45 @@
-// src/modals/BuyFieldSalesModal.jsx
+// src/modals/BuyCommonSellersModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
 
 /**
- * Modal de compra de Field Sales (Representantes Comerciais)
+ * Modal de compra de Vendedores Comuns (faz tudo)
  *
- * Props:
- *  - onResolve: function(payload)
- *      • { action:'BUY', qty, unitHire, unitExpense, totalHire, totalExpense,
- *          cashDelta, expenseDelta, revenueDelta, role:'FIELD', total, cost }
- *      • { action:'SKIP' }
- *  - unitHire?: number     (custo de contratação por vendedor — padrão 3000)
- *  - unitExpense?: number  (despesa mensal por vendedor — padrão 2000, “s/ certificado”)
- *  - attendsUpTo?: number  (qtd. clientes atendidos por vendedor — infográfico)
- *  - currentCash?: number  (saldo atual do jogador para validar compra)
+ * onResolve(payload)
+ *  • { action:'BUY',
+ *      role:'COMMON',
+ *      qty:number,
+ *      unitHire:number, unitExpense:number,
+ *      totalHire:number, totalExpense:number,
+ *      attendsUpTo:number,
+ *      // >>> deltas p/ painel e saldo:
+ *      cashDelta:number,        // negativo (debita contratação)
+ *      expenseDelta:number,     // positivo (despesa mensal total)
+ *      revenueDelta:number,     // positivo (receita mensal base)
+ *      revenuePerSeller:number, // 600
+ *      hudUpdate:{ category:'Vendedores Comuns', addQty:number }
+ *    }
+ *  • { action:'SKIP' }
  */
-export default function BuyFieldSalesModal({
+export default function BuyCommonSellersModal({
   onResolve,
-  unitHire = 3000,
-  unitExpense = 2000,
-  attendsUpTo = 5,
+  unitHire = 1500,
+  unitExpense = 1000,
+  attendsUpTo = 2,
   currentCash = 0,
 }) {
+  const [qty, setQty] = useState('')
   const closeRef = useRef(null)
   const inputRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
-  const [qty, setQty] = useState('')
-
   const priceHire = Number(unitHire || 0)
   const monthly   = Number(unitExpense || 0)
   const cashNow   = Number(currentCash || 0)
+
+  // Receita base por vendedor (S/ Certificado) conforme tabela exibida
+  const revenuePerSeller = 600
 
   const qtyNum = useMemo(() => {
     const n = Math.floor(Number(qty))
@@ -43,11 +51,10 @@ export default function BuyFieldSalesModal({
     return Math.max(0, Math.floor(cashNow / priceHire))
   }, [cashNow, priceHire])
 
-  const totalHire     = qtyNum * priceHire
-  const totalExpense  = qtyNum * monthly
-  const revenuePer    = 1500 // faturamento base “S/ certificado”
-  const totalRevenue  = qtyNum * revenuePer
-  const canBuy        = qtyNum > 0
+  const totalHire    = useMemo(() => qtyNum * priceHire, [qtyNum, priceHire])
+  const totalExpense = useMemo(() => qtyNum * monthly,   [qtyNum, monthly])
+
+  const canBuy = qtyNum > 0
 
   const setBoundedQty = (val) => {
     const n = Math.floor(Number(val) || 0)
@@ -55,9 +62,8 @@ export default function BuyFieldSalesModal({
     setQty(String(bounded))
   }
 
-  const handleClose = (e) => {
-    e?.preventDefault?.()
-    e?.stopPropagation?.()
+  const handleClose = (ev) => {
+    ev?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
 
@@ -68,7 +74,7 @@ export default function BuyFieldSalesModal({
         <InsufficientFundsModal
           requiredAmount={totalHire}
           currentCash={cashNow}
-          title="Saldo insuficiente para contratar Field Sales"
+          title="Saldo insuficiente para contratar vendedores"
           message="Você não possui saldo suficiente para concluir esta contratação."
           okLabel="Entendi"
         />
@@ -77,31 +83,35 @@ export default function BuyFieldSalesModal({
       return
     }
 
-    onResolve?.({
+    const payload = {
       action: 'BUY',
+      role: 'COMMON',
       qty: qtyNum,
       unitHire: priceHire,
       unitExpense: monthly,
       totalHire,
       totalExpense,
-      // deltas padronizados para o App.jsx
+      attendsUpTo,
+
+      // >>> DELTAS para o painel/saldo:
       cashDelta: -totalHire,
       expenseDelta: totalExpense,
-      revenueDelta: totalRevenue,
-      // compat legado:
-      cost: totalHire,
-      total: totalHire,
-      role: 'FIELD',
-    })
+      revenueDelta: revenuePerSeller * qtyNum,
+      revenuePerSeller,
+
+      // dica para HUD/contador
+      hudUpdate: { category: 'Vendedores Comuns', addQty: qtyNum },
+    }
+
+    onResolve?.(payload)
   }
 
-  // UX: bloqueia o scroll do body; foca; Enter confirma
+  // UX: bloqueia scroll, foca no X e no input; Enter confirma
   useEffect(() => {
-    const prev = document.body.style.overflow
+    const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const t1 = setTimeout(() => closeRef.current?.focus?.(), 0)
     const t2 = setTimeout(() => inputRef.current?.focus?.(), 50)
-
     const onKeyDown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -111,7 +121,7 @@ export default function BuyFieldSalesModal({
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
-      document.body.style.overflow = prev
+      document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', onKeyDown)
       clearTimeout(t1); clearTimeout(t2)
     }
@@ -123,6 +133,7 @@ export default function BuyFieldSalesModal({
       style={styles.wrap}
       role="dialog"
       aria-modal="true"
+      aria-label="Comprar Vendedores Comuns"
       onMouseDown={(e) => { if (e.target === e.currentTarget) e.stopPropagation() }}
     >
       <div style={styles.card} onMouseDown={(e) => e.stopPropagation()}>
@@ -135,7 +146,7 @@ export default function BuyFieldSalesModal({
         >✕</button>
 
         <h2 style={styles.title}>
-          Você pode escolher quantos <b>Field Sales</b> quer comprar,
+          Você pode escolher quantos <b>Vendedores Comuns</b> quer comprar,
           <br/>Digite o número de vendedores:
         </h2>
 
@@ -150,7 +161,7 @@ export default function BuyFieldSalesModal({
             type="number"
             inputMode="numeric"
             min={1}
-            placeholder="Digite o número de Field Sales"
+            placeholder="Digite o número de Vendedores Comuns"
             value={qty}
             onChange={(e) => setBoundedQty(e.target.value)}
             style={styles.input}
@@ -171,11 +182,11 @@ export default function BuyFieldSalesModal({
         </div>
 
         <div style={styles.infoBox}>
-          <div style={{fontWeight:800, marginBottom:6}}>FIELD SALES (REPRESENTANTES COMERCIAIS)</div>
+          <div style={{fontWeight:800, marginBottom:6}}>VENDEDOR COMUM (FAZ TUDO)</div>
           <div style={{opacity:.9, marginBottom:8}}>
-            Base para cálculo de despesa: <b>x quantidade de Field Sales</b>.<br/>
-            Base para cálculo de faturamento: <b>x quantidade máxima de clientes que cada vendedor pode atender</b>.<br/>
-            Cada vendedor atende até <b>{attendsUpTo}</b> clientes.
+            Base para cálculo despesa: <b>x quantidade vendedor comum</b>.<br/>
+            Base para cálculo faturamento: <b>x quantidade máxima de clientes que cada vendedor pode atender</b>.<br/>
+            <b>Atende até {attendsUpTo} clientes</b>.
           </div>
 
           <div style={styles.table}>
@@ -185,10 +196,10 @@ export default function BuyFieldSalesModal({
               <div style={styles.th}>Despesa</div>
               <div style={styles.th}>Faturamento</div>
             </div>
-            <Row label="S/ Certificado"     hire="$ 3.000" expense="$ 2.000" revenue="$ 1.500" />
-            <Row label="Com 1 certificado"  hire="-"       expense="$ 2.100" revenue="$ 2.000" />
-            <Row label="Com 2 certificados" hire="-"       expense="$ 2.200" revenue="$ 2.500" />
-            <Row label="Com 3 certificados" hire="-"       expense="$ 2.300" revenue="$ 3.000" />
+            <Row label="S/ Certificado"    hire="$ 1.500" expense="$ 1.000" revenue="$ 600" />
+            <Row label="Com 1 certificado" hire="-"       expense="$ 1.100" revenue="$ 700" />
+            <Row label="Com 2 certificados"hire="-"       expense="$ 1.200" revenue="$ 800" />
+            <Row label="Com 3 certificados"hire="-"       expense="$ 1.300" revenue="$ 900" />
           </div>
         </div>
 
@@ -210,14 +221,20 @@ export default function BuyFieldSalesModal({
           >
             Não comprar
           </button>
+
           <button
             type="button"
-            style={{ ...styles.bigBtn, background: canBuy ? '#75e16c' : '#365b31', color:'#0b120a' }}
-            onClick={handleBuy}
             disabled={!canBuy}
+            style={{
+              ...styles.bigBtn,
+              background: canBuy ? '#7cbe1a' : '#3a3f4a',
+              color:'#0d1200',
+              fontWeight:900
+            }}
+            onClick={handleBuy}
             title={!canBuy ? 'Informe uma quantidade válida' : (cashNow < totalHire ? 'Saldo insuficiente' : undefined)}
           >
-            Comprar {canBuy ? `(${qtyNum})` : ''}
+            Comprar
           </button>
         </div>
       </div>
@@ -237,23 +254,60 @@ function Row({ label, hire, expense, revenue }) {
 }
 
 const styles = {
-  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: { width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px', boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative' },
-  close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
+  wrap: {
+    position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
+    display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000
+  },
+  card: {
+    width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a',
+    color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
+    boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
+    position:'relative'
+  },
+  close: {
+    position:'absolute', right:10, top:10, width:36, height:36,
+    borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b',
+    color:'#fff', cursor:'pointer'
+  },
   title: { margin:'6px 0 12px', fontWeight:800, lineHeight:1.3 },
-  inlineInfo: { display:'flex', justifyContent:'space-between', gap:10, margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap' },
+  inlineInfo: {
+    display:'flex', justifyContent:'space-between', gap:10,
+    margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap'
+  },
   qtyRow: { display:'flex', gap:8, alignItems:'center', marginBottom:12, flexWrap:'wrap' },
-  input: { flex:'1 1 260px', height:42, borderRadius:10, padding:'0 12px', border:'1px solid rgba(255,255,255,.18)', background:'#0f1320', color:'#fff', outline:'none' },
+  input: {
+    flex:'1 1 260px', height:42, borderRadius:10, padding:'0 12px',
+    border:'1px solid rgba(255,255,255,.18)', background:'#111522',
+    color:'#eef2f7', outline:'none'
+  },
   quickBtns: { display:'flex', gap:6, flexWrap:'wrap' },
-  qbtn: { height:42, padding:'0 12px', borderRadius:10, border:'1px solid rgba(255,255,255,.18)', background:'#2a2f3b', color:'#fff', cursor:'pointer', fontWeight:800 },
-  infoBox: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, padding:'12px', background:'#101522', marginBottom:12 },
-  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:10, overflow:'hidden' },
+  qbtn: {
+    height:42, padding:'0 12px', borderRadius:10, border:'1px solid rgba(255,255,255,.18)',
+    background:'#2a2f3b', color:'#fff', cursor:'pointer', fontWeight:800
+  },
+  infoBox: {
+    background:'#161a28', border:'1px solid rgba(255,255,255,.12)',
+    borderRadius:14, padding:14, marginTop:6
+  },
+  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, overflow:'hidden', marginTop:8 },
   trHead: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#121621' },
   th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
   tr: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#0f1320' },
   td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
-  summary: { display:'flex', justifyContent:'space-between', border:'1px dashed rgba(255,255,255,.2)', borderRadius:10, padding:'8px 12px', marginTop:10, flexWrap:'wrap', gap:10 },
-  summaryStrong: { display:'flex', justifyContent:'space-between', border:'1px solid rgba(255,255,255,.25)', borderRadius:10, padding:'10px 12px', marginTop:8, fontWeight:800, flexWrap:'wrap', gap:10 },
+
+  summary: {
+    display:'flex', justifyContent:'space-between',
+    border:'1px dashed rgba(255,255,255,.2)', borderRadius:10, padding:'8px 12px',
+    marginTop:10, flexWrap:'wrap', gap:10
+  },
+  summaryStrong: {
+    display:'flex', justifyContent:'space-between',
+    border:'1px solid rgba(255,255,255,.25)', borderRadius:10, padding:'10px 12px',
+    marginTop:8, fontWeight:800, flexWrap:'wrap', gap:10
+  },
   actions: { display:'flex', gap:12, justifyContent:'center', marginTop:12, flexWrap:'wrap' },
-  bigBtn: { minWidth:180, padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
+  bigBtn: {
+    minWidth:180, padding:'12px 18px', borderRadius:12, border:'none',
+    fontWeight:900, cursor:'pointer'
+  },
 }

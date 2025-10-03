@@ -1,21 +1,30 @@
 // src/modals/InsideSalesModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useModal } from './ModalContext'
+import InsufficientFundsModal from './InsufficientFundsModal'
 
 /**
  * onResolve(payload)
- *  - {action:'BUY', qty:number, unitHire:number, totalCost:number, baseExpense:number, baseRevenue:number}
- *  - {action:'SKIP'}
+ *  - { action:'BUY',
+ *      qty:number,
+ *      headcount:number,
+ *      unitHire:number,
+ *      total:number,
+ *      cost:number,
+ *      totalCost:number,
+ *      baseExpense:number,
+ *      baseRevenue:number }
+ *  - { action:'SKIP' }
  *
- * Obs:
- *  • Contratação por vendedor: $3000
- *  • Despesa base (s/ certificado): $2000
- *  • Faturamento base (s/ certificado): $1500
- *  • Certificados/treinamentos podem ajustar depois no fluxo de Treinamento.
+ * Props:
+ *  - currentCash?: number (saldo atual do jogador)
  */
-export default function InsideSalesModal({ onResolve }) {
+export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
   const closeRef = useRef(null)
   const [qty, setQty] = useState('')
+  const { pushModal, awaitTop } = useModal()
 
+  // Valores base (conforme manual)
   const unitHire = 3000
   const baseExpense = 2000
   const baseRevenue = 1500
@@ -28,93 +37,166 @@ export default function InsideSalesModal({ onResolve }) {
   const totalCost = qtyNum * unitHire
   const canBuy = qtyNum > 0
 
+  // Máximo por saldo (apenas ajuda visual/atalhos)
+  const maxBySaldo = Math.max(0, Math.floor(Number(currentCash || 0) / unitHire))
+
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
 
-  const handleBuy = () => {
+  const bump = (n) => {
+    const cur = Number(qty) || 0
+    const next = Math.min(maxBySaldo || Infinity, cur + n)
+    setQty(next || '')
+  }
+  const setMax = () => setQty(maxBySaldo || '')
+
+  const handleBuy = async () => {
     if (!canBuy) return
+
+    const cash = Number(currentCash || 0)
+    const need = Number(totalCost || 0)
+
+    if (cash < need) {
+      // Alerta de saldo insuficiente (mantém esta modal aberta)
+      pushModal(
+        <InsufficientFundsModal
+          requiredAmount={need}
+          currentCash={cash}
+          title="Saldo insuficiente para contratar Inside Sales"
+          message={`Você precisa de $ ${need.toLocaleString()} mas possui $ ${cash.toLocaleString()}.`}
+          okLabel="Entendi"
+        />
+      )
+      await awaitTop()
+      return
+    }
+
     onResolve?.({
       action: 'BUY',
       qty: qtyNum,
+      headcount: qtyNum,
       unitHire,
+      total: totalCost,
+      cost: totalCost,
       totalCost,
       baseExpense,
       baseRevenue,
     })
   }
 
-  // Acessibilidade + UX: Esc fecha, foco no X, trava scroll do body
+  // UX: trava scroll do body e foca no botão de fechar
   useEffect(() => {
-    const onKey = ev => { if (ev.key === 'Escape') handleClose(ev) }
-    document.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     setTimeout(() => closeRef.current?.focus?.(), 0)
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+    return () => { document.body.style.overflow = prev }
   }, [])
 
   return (
-    <div
-      style={styles.wrap}
-      role="dialog"
-      aria-modal="true"
-      onClick={handleClose}                 // clique no fundo fecha
-    >
-      <div
-        style={styles.card}
-        onClick={e => e.stopPropagation()}  // evita fechar ao clicar dentro
-      >
+    <div style={S.wrap} role="dialog" aria-modal="true" aria-label="Inside Sales">
+      <div style={S.card}>
         <button
           ref={closeRef}
           type="button"
-          style={styles.close}
+          style={S.close}
           onClick={handleClose}
           aria-label="Fechar"
-        >
-          ✕
-        </button>
+        >✕</button>
 
-        <h2 style={styles.title}>
-          Você pode escolher quantos Inside Sales quer comprar.<br />
-          <small style={{ fontWeight:400, opacity:.9 }}>
-            Digite o número de vendedores:
-          </small>
-        </h2>
+        <h2 style={S.title}>Você pode escolher quantos <b>Inside Sales</b> quer comprar:</h2>
 
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          placeholder="Digite o número de Inside Sales"
-          value={qty}
-          onChange={e => setQty(e.target.value)}
-          style={styles.input}
-        />
-
-        {/* Tabela ilustrativa (valores base) */}
-        <div style={styles.table}>
-          <div style={styles.trHead}>
-            <div style={styles.th}></div>
-            <div style={styles.th}>Contratação</div>
-            <div style={styles.th}>Despesa</div>
-            <div style={styles.th}>Faturamento</div>
-          </div>
-          <Row label="Sem certificado" v1={`$ ${unitHire.toLocaleString()}`} v2={`$ ${baseExpense.toLocaleString()}`} v3={`$ ${baseRevenue.toLocaleString()}`} />
-          <Row label="1 certificado"   v1="—" v2="$ 2.100" v3="$ 2.000" />
-          <Row label="2 certificados"  v1="—" v2="$ 2.200" v3="$ 2.500" />
-          <Row label="3 certificados"  v1="—" v2="$ 2.300" v3="$ 3.000" />
+        {/* Aviso (texto do manual) */}
+        <div style={S.note}>
+          <div style={{fontWeight:900, marginBottom:4}}>INSIDE SALES (SDR/BDR + CLOSER + CS)</div>
+          <div><b>Base para cálculo despesa:</b> × quantidade <b>field sales</b> ou <b>inside sales</b>.</div>
+          <div><b>Base para cálculo faturamento:</b> × quantidade <b>máxima de clientes que cada vendedor pode atender</b>.</div>
         </div>
 
-        <div style={styles.actions}>
-          <button type="button" style={{ ...styles.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
+        {/* Linha de saldo e máximo por saldo */}
+        <div style={S.saldoRow}>
+          <div>Saldo disponível: <b>$ {Number(currentCash || 0).toLocaleString()}</b></div>
+          <div>Máximo por saldo: <b>{maxBySaldo}</b></div>
+        </div>
+
+        {/* Input + atalhos rápidos */}
+        <div style={S.inputRow}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            placeholder="Digite o número de Inside Sales"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            style={S.input}
+          />
+          <div style={S.quickBtns}>
+            <button type="button" style={S.quickBtn} onClick={() => bump(1)}>+1</button>
+            <button type="button" style={S.quickBtn} onClick={() => bump(5)}>+5</button>
+            <button type="button" style={S.quickBtn} onClick={() => bump(10)}>+10</button>
+            <button type="button" style={{...S.quickBtn, fontWeight:900}} onClick={setMax}>Máx</button>
+          </div>
+          <div style={S.totalBox}>
+            Total contratar: <b>$ {Number(totalCost).toLocaleString()}</b>
+          </div>
+        </div>
+
+        {/* Cards coloridos ilustrativos (certificações) */}
+        <div style={S.cards}>
+          <Card
+            title="Sem certificado"
+            bg="#2a2f3b"
+            pill="BASE"
+            lines={[
+              `Contratação: $ ${unitHire.toLocaleString()}`,
+              `Despesa: $ ${baseExpense.toLocaleString()}`,
+              `Faturamento: $ ${baseRevenue.toLocaleString()}`
+            ]}
+          />
+          <Card
+            title="1 certificado"
+            bg="#f1c40f"
+            pill="NÍVEL 1"
+            dark
+            lines={[
+              'Contratação: —',
+              'Despesa: $ 2.100',
+              'Faturamento: $ 2.000'
+            ]}
+          />
+          <Card
+            title="2 certificados"
+            bg="#a78bfa"
+            pill="NÍVEL 2"
+            dark
+            lines={[
+              'Contratação: —',
+              'Despesa: $ 2.200',
+              'Faturamento: $ 2.500'
+            ]}
+          />
+          <Card
+            title="3 certificados"
+            bg="#8b5cf6"
+            pill="NÍVEL 3"
+            dark
+            lines={[
+              'Contratação: —',
+              'Despesa: $ 2.300',
+              'Faturamento: $ 3.000'
+            ]}
+          />
+        </div>
+
+        <div style={S.actions}>
+          <button type="button" style={{ ...S.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>
           <button
             type="button"
-            style={{ ...styles.bigBtn, background: canBuy ? '#3fbf49' : '#2f5d33', color:'#09110f' }}
+            style={{ ...S.bigBtn, background: canBuy ? '#3fbf49' : '#2f5d33', color:'#09110f' }}
             onClick={handleBuy}
             disabled={!canBuy}
             title={!canBuy ? 'Informe uma quantidade válida' : undefined}
@@ -127,47 +209,64 @@ export default function InsideSalesModal({ onResolve }) {
   )
 }
 
-function Row({ label, v1, v2, v3 }) {
+function Card({ title, pill, lines, bg, dark=false }) {
   return (
-    <div style={styles.tr}>
-      <div style={{...styles.td, fontWeight:700}}>{label}</div>
-      <div style={styles.td}>{v1}</div>
-      <div style={styles.td}>{v2}</div>
-      <div style={styles.td}>{v3}</div>
+    <div style={{...S.cardItem, background:bg, color: dark ? '#111' : '#fff', borderColor: 'rgba(255,255,255,.15)'}}>
+      <div style={S.cardHeader}>
+        <span style={{...S.pill, background: dark ? '#111' : '#fff', color: dark ? '#fff' : '#111'}}>{pill}</span>
+        <div style={{fontWeight:900}}>{title}</div>
+      </div>
+      <ul style={S.lines}>
+        {lines.map((ln,i)=><li key={i}>{ln}</li>)}
+      </ul>
     </div>
   )
 }
 
-const styles = {
-  wrap: {
-    position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
-    display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000
-  },
+const S = {
+  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
   card: {
-    width:'min(920px, 92vw)', maxWidth:920, background:'#1b1f2a',
-    color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
-    boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
-    position:'relative'
+    width:'min(980px, 94vw)', background:'#1b1f2a', color:'#e9ecf1',
+    borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
+    border:'1px solid rgba(255,255,255,.12)', position:'relative'
   },
-  close: {
-    position:'absolute', right:10, top:10, width:36, height:36,
-    borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b',
-    color:'#fff', cursor:'pointer'
+  close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
+  title:{ margin:'6px 0 12px', fontWeight:900 },
+
+  note: {
+    background:'#2a2f3b',
+    border:'1px solid rgba(255,255,255,.15)',
+    borderRadius:12,
+    padding:'10px 12px',
+    margin:'0 0 10px'
   },
-  title: { margin:'6px 0 16px', fontWeight:800, lineHeight:1.35 },
+
+  saldoRow: {
+    display:'flex', justifyContent:'space-between', gap:12,
+    padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10, marginBottom:8
+  },
+
+  inputRow:{ display:'grid', gridTemplateColumns:'1fr auto auto', alignItems:'center', gap:10, marginBottom:12 },
   input: {
-    width:'100%', height:42, borderRadius:10, padding:'0 12px',
+    height:42, borderRadius:10, padding:'0 12px',
     border:'1px solid rgba(255,255,255,.18)', background:'#0f1320', color:'#fff',
-    outline:'none', margin:'6px 0 16px'
+    outline:'none'
   },
-  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, overflow:'hidden', marginBottom:16 },
-  trHead: { display:'grid', gridTemplateColumns:'2fr repeat(3, 1fr)', background:'#121621' },
-  th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
-  tr: { display:'grid', gridTemplateColumns:'2fr repeat(3, 1fr)', background:'#0f1320' },
-  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
-  actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14 },
-  bigBtn: {
-    minWidth:180, padding:'12px 18px', borderRadius:12, border:'none',
-    fontWeight:900, cursor:'pointer'
+
+  quickBtns:{ display:'flex', gap:6 },
+  quickBtn:{
+    minWidth:44, height:42, borderRadius:10, border:'1px solid rgba(255,255,255,.18)',
+    background:'#2a2f3b', color:'#fff', fontWeight:800, cursor:'pointer', padding:'0 10px'
   },
+
+  totalBox:{ padding:'8px 12px', borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#0f1320', fontWeight:900 },
+
+  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, margin:'8px 0 14px' },
+  cardItem:{ border:'1px solid', borderRadius:14, padding:'14px' },
+  cardHeader:{ display:'flex', alignItems:'center', gap:8, marginBottom:8 },
+  pill:{ fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999 },
+  lines:{ margin:0, padding:'0 0 0 16px', lineHeight:1.35 },
+
+  actions: { display:'flex', gap:12, justifyContent:'center', marginTop:8 },
+  bigBtn: { minWidth:180, padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
 }

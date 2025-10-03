@@ -127,7 +127,7 @@ export default function Board({
       {/* ====== MODO NORMAL ====== */}
       {!recordTrack && (
         <>
-          <BoardMarkers visible={false} boardWidth={size.w} boardHeight={size.h} />
+          <BoardMarkers visible={true} boardWidth={size.w} boardHeight={size.h} />
 
           {players.map((p, idx) => {
             const isTurn = idx === turnIdx
