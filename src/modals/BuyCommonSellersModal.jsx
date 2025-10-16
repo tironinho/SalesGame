@@ -6,18 +6,20 @@ import { useModal } from './ModalContext'
 /**
  * Modal de compra de Vendedores Comuns (faz tudo)
  *
- * onResolve(payload)
+ * Resolve com:
  *  • { action:'BUY',
  *      role:'COMMON',
- *      qty:number,
+ *      qty:number, headcount:number,
  *      unitHire:number, unitExpense:number,
  *      totalHire:number, totalExpense:number,
- *      attendsUpTo:number,
+ *      // compat extras
+ *      total:number, cost:number,
  *      // >>> deltas p/ painel e saldo:
  *      cashDelta:number,        // negativo (debita contratação)
  *      expenseDelta:number,     // positivo (despesa mensal total)
  *      revenueDelta:number,     // positivo (receita mensal base)
  *      revenuePerSeller:number, // 600
+ *      attendsUpTo:number,
  *      hudUpdate:{ category:'Vendedores Comuns', addQty:number }
  *    }
  *  • { action:'SKIP' }
@@ -32,7 +34,9 @@ export default function BuyCommonSellersModal({
   const [qty, setQty] = useState('')
   const closeRef = useRef(null)
   const inputRef = useRef(null)
-  const { pushModal, awaitTop } = useModal()
+
+  // >>> pega closeTop do contexto (é ele que resolve o awaitTop no App.jsx)
+  const { pushModal, awaitTop, closeTop } = useModal()
 
   const priceHire = Number(unitHire || 0)
   const monthly   = Number(unitExpense || 0)
@@ -62,9 +66,15 @@ export default function BuyCommonSellersModal({
     setQty(String(bounded))
   }
 
+  // helper para resolver (prioriza closeTop; mantém fallback p/ onResolve se existir)
+  const resolve = (payload) => {
+    if (typeof closeTop === 'function') return closeTop(payload)
+    onResolve?.(payload)
+  }
+
   const handleClose = (ev) => {
     ev?.stopPropagation?.()
-    onResolve?.({ action: 'SKIP' })
+    resolve({ action: 'SKIP' })
   }
 
   const handleBuy = async () => {
@@ -86,11 +96,23 @@ export default function BuyCommonSellersModal({
     const payload = {
       action: 'BUY',
       role: 'COMMON',
+
+      // quantidade
       qty: qtyNum,
+      headcount: qtyNum,              // compat extra
+
+      // custos/unidades
       unitHire: priceHire,
       unitExpense: monthly,
+
+      // totais
       totalHire,
       totalExpense,
+
+      // compat extras (alguns fluxos leem 'total' / 'cost')
+      total: totalHire,
+      cost:  totalHire,
+
       attendsUpTo,
 
       // >>> DELTAS para o painel/saldo:
@@ -103,7 +125,7 @@ export default function BuyCommonSellersModal({
       hudUpdate: { category: 'Vendedores Comuns', addQty: qtyNum },
     }
 
-    onResolve?.(payload)
+    resolve(payload)
   }
 
   // UX: bloqueia scroll, foca no X e no input; Enter confirma

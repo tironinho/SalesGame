@@ -43,31 +43,52 @@ const PRODUCTS = [
  *          certsCount:{ azul:number, amarelo:number, roxo:number },
  *          ownedUpdate: { [vendorType]: string[] } }
  *      • { action:'SKIP' }
- * - ownedByType?: { [vendorType]: Set<string> }   // ids já adquiridos POR TIPO (só deste jogador)
- *   Ex.: { comum: Set(['personalizado']), field: Set() }
+ * - ownedByType?: { [vendorType]: Set<string> | string[] }
+ * - canTrain?: { comum?:boolean|number|string, field?:boolean|number|string, inside?:boolean|number|string, gestor?:boolean|number|string }
  */
-export default function TrainingModal({ onResolve, ownedByType = {} }) {
-  // Tipos disponíveis (oculta os que já possuem TODOS os treinamentos)
+export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = {} }) {
+  // Normaliza: aceita 0/1, números em string, booleanos
+  const toNum = (v) => (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
+  const hasRole = (v) => {
+    const val = toNum(v)
+    return typeof val === 'number' ? val > 0 : !!val
+  }
+
+  // NÃO usar default true; só mostra se tiver pelo menos 1 daquele tipo
+  const canMap = useMemo(() => ({
+    comum:  hasRole(canTrain.comum),
+    field:  hasRole(canTrain.field),
+    inside: hasRole(canTrain.inside),
+    gestor: hasRole(canTrain.gestor),
+  }), [canTrain])
+
+  // Tipos disponíveis (precisa ter profissional e ainda ter algo a comprar)
   const ALL_IDS = PRODUCTS.map(p => p.id)
   const typeList = useMemo(() => ([
     { id: 'comum',  label: 'Vend. Comum' },
     { id: 'field',  label: 'Field Sales' },
     { id: 'inside', label: 'Inside Sales' },
     { id: 'gestor', label: 'Gestor' },
-  ]).filter(t => {
-    const owned = ownedByType[t.id] instanceof Set ? ownedByType[t.id] : new Set(ownedByType[t.id] || [])
-    return ALL_IDS.some(id => !owned.has(id)) // só mostra se ainda tiver algo a comprar
-  }), [ownedByType])
+  ])
+    .filter(t => canMap[t.id]) // tem profissional do tipo
+    .filter(t => {
+      const owned = ownedByType[t.id] instanceof Set
+        ? ownedByType[t.id]
+        : new Set(ownedByType[t.id] || [])
+      return ALL_IDS.some(id => !owned.has(id)) // ainda há certificado para comprar
+    })
+  , [ownedByType, canMap])
 
   // Seleciona automaticamente o primeiro tipo habilitado
   const [vendorType, setVendorType] = useState(() => typeList[0]?.id || 'comum')
+  const [selected, setSelected] = useState(() => new Set())
   useEffect(() => {
     if (!typeList.find(t => t.id === vendorType)) {
-      setVendorType(typeList[0]?.id) // se o atual sumiu (completou), troca para o próximo
+      setVendorType(typeList[0]?.id)   // se o atual sumiu (sem profissional/completo), troca
+      setSelected(new Set())           // e limpa a seleção
     }
   }, [typeList, vendorType])
 
-  const [selected, setSelected] = useState(() => new Set())
   const closeRef = useRef(null)
 
   const disabledIdsForType = useMemo(() => {
@@ -87,7 +108,7 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
 
   const toggle = (id) =>
     setSelected(s => {
-      if (disabledIdsForType.has(id)) return s // já comprado para este tipo -> não deixa selecionar
+      if (disabledIdsForType.has(id)) return s // já comprado para este tipo
       const n = new Set(s)
       n.has(id) ? n.delete(id) : n.add(id)
       return n
@@ -97,13 +118,11 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
     if (!selected.size || !vendorType) return
     const items = Array.from(selected).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
 
-    // Conta certificados por cor
     const certsCount = items.reduce((acc, it) => {
       acc[it.cert] = (acc[it.cert] || 0) + 1
       return acc
     }, { azul:0, amarelo:0, roxo:0 })
 
-    // Atualização de “owned” para este tipo
     const ownedUpdate = { [vendorType]: items.map(it => it.id) }
 
     onResolve?.({
@@ -111,9 +130,9 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
       vendorType,
       items,
       total,
-      bensDelta: total,     // somar aos bens
-      certsCount,           // { azul, amarelo, roxo } -> somar no HUD
-      ownedUpdate,          // marcar como comprados para este tipo
+      bensDelta: total,
+      certsCount,
+      ownedUpdate,
     })
   }
 
@@ -123,7 +142,7 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
     onResolve?.({ action: 'SKIP' })
   }
 
-  // Trava o scroll e foca no X (ESC e clique no backdrop NÃO fecham)
+  // Trava o scroll e foca no X
   useEffect(() => {
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -132,6 +151,7 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
   }, [])
 
   const noTypesLeft = typeList.length === 0
+  const noProfessionAvailable = !Object.values(canMap).some(Boolean)
 
   return (
     <div style={S.wrap} role="dialog" aria-modal="true">
@@ -140,11 +160,17 @@ export default function TrainingModal({ onResolve, ownedByType = {} }) {
 
         <h2 style={S.title}>Escolha para qual vendedor quer atribuir o treinamento:</h2>
 
-        {/* Seletor de tipo de vendedor */}
         {noTypesLeft ? (
-          <div style={S.allDoneBox}>Todos os tipos já possuem todos os treinamentos concluídos.</div>
+          <div style={S.allDoneBox}>
+            {noProfessionAvailable
+              ? 'Nenhum profissional disponível para treinar no momento.'
+              : 'Todos os treinamentos já foram comprados para os profissionais disponíveis.'}
+          </div>
         ) : (
-          <div style={S.vendorRow}>
+          <div style={{
+            ...S.vendorRow,
+            gridTemplateColumns: `repeat(${typeList.length}, minmax(0,1fr))`
+          }}>
             {typeList.map(v => (
               <button
                 key={v.id}

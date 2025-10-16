@@ -1,247 +1,268 @@
 // src/modals/RecoveryModal.jsx
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useModal } from './ModalContext'
+import S from './recoveryStyles'
 
-/**
- * Modal de Recuperação Financeira
- * Fluxos:
- *  - Menu principal (3 botões)
- *  - Empréstimo (valor até 50% dos BENS)
- *  - Reduzir MIX/ERP (recebe 50% do valor de downgrade)  -> aqui usamos valores fixos simples
- *  - Demitir (recebe 50% do valor "total" dos cargos selecionados)
- *
- * Retorno via resolveTop({ type, amount, note })
- */
+import RecoveryMenu from './RecoveryMenu'
+import RecoveryLoan from './RecoveryLoan'
+import RecoveryReduce from './RecoveryReduce'
+import RecoveryFire from './RecoveryFire' // mesmo diretório
 
-export default function RecoveryModal({ playerName = 'Jogador', bens = 4000 }) {
+export default function RecoveryModal({ playerName = 'Jogador', bens = 0, currentPlayer }) {
   const { resolveTop, popModal } = useModal?.() || {}
-  const [step, setStep] = useState('menu')
+  const [step, setStep] = useState('menu') // 'menu' | 'loan' | 'reduce' | 'fire'
 
   const close = () => (popModal ? popModal(false) : resolveTop?.(null))
 
-  // ======== EMPRESTIMO ========
-  const loanAvailable = useMemo(() => Math.max(0, Math.floor(bens * 0.5)), [bens])
-  const [loanInput, setLoanInput] = useState('')
+  // --- preços de compra (manual) -> crédito = 50% ---
+  const MIX_PRICES = useMemo(() => ({ A: 12000, B: 6000, C: 3000, D: 1000 }), [])
+  const ERP_PRICES = useMemo(() => ({ A: 10000, B: 4000, C: 1500, D: 500 }), [])
 
-  const confirmLoan = () => {
-    const val = Math.max(0, Math.min(loanAvailable, Math.floor(Number(loanInput)||0)))
-    if (val > 0) resolveTop?.({ type: 'LOAN', amount: val, note: `Empréstimo +$${val}` })
-    else resolveTop?.(null)
+  // --------- helpers de normalização ---------
+  const letterFrom = (v) => {
+    if (v == null) return ''
+    const s = String(v).trim().toUpperCase()
+    if (['A','B','C','D'].includes(s)) return s
+    const n = Number(s)
+    if (n === 1) return 'A'
+    if (n === 2) return 'B'
+    if (n === 3) return 'C'
+    if (n === 4) return 'D'
+    return ''
   }
 
-  // ======== REDUZIR MIX/ERP (exemplo simples) ========
-  // valores "redução" (metade do nível comprado). Você pode trocar esses números pelo seu estado real.
-  const REDUCE_OPTIONS = [
-    { key:'mix', label:'MIX PRODUTOS', credit: 1500 },
-    { key:'erp', label:'ERP/SISTEMAS', credit: 1500 },
-  ]
-  const [reduceSel, setReduceSel] = useState(null)
-  const confirmReduce = () => {
-    if (!reduceSel) return resolveTop?.(null)
-    resolveTop?.({ type:'REDUCE', amount: reduceSel.credit, note:`Redução ${reduceSel.label} +$${reduceSel.credit}` })
+  const setFromOwned = (src) => {
+    // aceita array ['A','C'], objeto {A:true}, string 'B', número 1..4
+    if (!src) return new Set()
+    if (Array.isArray(src)) return new Set(src.map(letterFrom).filter(Boolean))
+    if (typeof src === 'object') {
+      const out = new Set()
+      ;['A','B','C','D'].forEach(k => { if (src[k]) out.add(k) })
+      return out
+    }
+    const l = letterFrom(src)
+    return l ? new Set([l]) : new Set()
   }
 
-  // ======== DEMITIR (exemplo com 4 funções) ========
-  const ROLES = [
-    { key:'comum',  label:'Vendedor Comum', total:1500 }, // metade = 750
-    { key:'field',  label:'Field Sales',     total:0    },
-    { key:'inside', label:'Inside Sales',    total:0    },
-    { key:'gestor', label:'Gestor',          total:0    },
-  ]
-  const [qty, setQty] = useState({ comum:0, field:0, inside:0, gestor:0 })
-  const add = (k, d) =>
-    setQty(q => ({ ...q, [k]: Math.max(0, (q[k]||0) + d) }))
+  // --------- snapshot do jogador ---------
+  const snapshot = useMemo(() => {
+    const p = currentPlayer || {}
+    return {
+      name: p.name ?? playerName,
+      bens: Number(p.bens ?? bens ?? 0),
+      vendedoresComuns: Number(p.vendedoresComuns ?? 0),
+      fieldSales: Number(p.fieldSales ?? 0),
+      insideSales: Number(p.insideSales ?? 0),
+      gestores: Number(p.gestores ?? p.gestoresComerciais ?? 0),
+      raw: p
+    }
+  }, [currentPlayer, playerName, bens])
 
-  const fireAmount = useMemo(() => {
-    return ROLES.reduce((sum, r) => {
-      const q = qty[r.key] || 0
-      const creditUnit = Math.floor(r.total * 0.5)
-      return sum + (q * creditUnit)
-    }, 0)
-  }, [qty])
+  useEffect(() => {
+    console.group('[RecoveryModal] mount snapshot')
+    console.log('raw player =>', snapshot.raw)
+    console.groupEnd()
+  }, [snapshot.raw])
 
-  const confirmFire = () => {
-    if (fireAmount > 0) resolveTop?.({ type:'FIRE', amount: fireAmount, note:`Demissões +$${fireAmount}` })
-    else resolveTop?.(null)
-  }
+  // disponível para empréstimo (50% dos bens)
+  const loanAvailable = useMemo(
+    () => Math.max(0, Math.floor(snapshot.bens * 0.5)),
+    [snapshot.bens]
+  )
+
+  // opções do menu (mantidas)
+  const REDUCE_OPTIONS = useMemo(
+    () => [
+      { key:'mix', label:'MIX PRODUTOS', credit:1500 },
+      { key:'erp', label:'ERP/SISTEMAS', credit:1500 },
+    ],
+    []
+  )
+
+  // Demissão (mantido)
+  const ROLES = useMemo(() => ([
+    { key:'comum',  label:'Vendedor Comum', unit:1500, owned: snapshot.vendedoresComuns },
+    { key:'field',  label:'Field Sales',     unit:3000, owned: snapshot.fieldSales },
+    { key:'inside', label:'Inside Sales',    unit:3000, owned: snapshot.insideSales },
+    { key:'gestor', label:'Gestor',          unit:5000, owned: snapshot.gestores },
+  ]), [snapshot])
+
+  // --------- detectar níveis exibidos no painel (letras) ---------
+  const mixLetter = useMemo(() => {
+    const p = snapshot.raw || {}
+    return letterFrom(
+      p.mixProdutosLetter ??
+      p.mixProdutos ??
+      p.mixProducts ??
+      p.mixLevelLetter ??
+      p.mixLevel ??
+      p.mix_level ??
+      p.mix ??
+      p['mix_produtos'] ??
+      p['mix_products']
+    )
+  }, [snapshot.raw])
+
+  const erpLetter = useMemo(() => {
+    const p = snapshot.raw || {}
+    return letterFrom(
+      p.erpSistemasLetter ??
+      p.erpSistemas ??
+      p.erpSystems?.level ??
+      p.erpSystemsLetter ??
+      p.erpLevelLetter ??
+      p.erpLevel ??
+      p.erp_level ??
+      p.erp ??
+      p['erp_sistemas']
+    )
+  }, [snapshot.raw])
+
+  // --------- conjunto de posses reais (D só se nada detectado) ---------
+  const ownedMix = useMemo(() => {
+    const p = snapshot.raw || {}
+    const set = setFromOwned(p.mixOwned ?? p.mixLevels ?? p.mixLevel)
+    if (mixLetter) set.add(mixLetter)
+    // Se não detectamos nada, considera o D como base inicial
+    if (set.size === 0) set.add('D')
+    return set
+  }, [snapshot.raw, mixLetter])
+
+  const ownedErp = useMemo(() => {
+    const p = snapshot.raw || {}
+    const set = setFromOwned(p.erpOwned ?? p.erpLevels ?? p.erpLevel)
+    if (erpLetter) set.add(erpLetter)
+    if (set.size === 0) set.add('D')
+    return set
+  }, [snapshot.raw, erpLetter])
+
+  useEffect(() => {
+    console.group('[RecoveryModal] owned detect')
+    console.log('mixLetter(panel):', mixLetter, ' -> ownedMix =', Object.fromEntries(['A','B','C','D'].map(k=>[k,ownedMix.has(k)])))
+    console.log('erpLetter(panel):', erpLetter, ' -> ownedErp =', Object.fromEntries(['A','B','C','D'].map(k=>[k,ownedErp.has(k)])))
+    console.groupEnd()
+  }, [mixLetter, erpLetter, ownedMix, ownedErp])
+
+  // --------- montar cartões (com crédito e flag owned) ---------
+  const optionsMix = useMemo(
+    () => ['A','B','C','D'].map(k => ({
+      key:`mix-${k}`,
+      group:'MIX',
+      level:k,
+      label:`Nível ${k}`,
+      credit:(MIX_PRICES[k] || 0) / 2,
+      owned: ownedMix.has(k),
+    })),
+    [ownedMix, MIX_PRICES]
+  )
+
+  const optionsErp = useMemo(
+    () => ['A','B','C','D'].map(k => ({
+      key:`erp-${k}`,
+      group:'ERP',
+      level:k,
+      label:`Nível ${k}`,
+      credit:(ERP_PRICES[k] || 0) / 2,
+      owned: ownedErp.has(k),
+    })),
+    [ownedErp, ERP_PRICES]
+  )
+
+  // tabelas de crédito por nível (se a sub-tela quiser usar)
+  const creditsTables = useMemo(() => ({
+    MIX: { A:MIX_PRICES.A/2, B:MIX_PRICES.B/2, C:MIX_PRICES.C/2, D:MIX_PRICES.D/2 },
+    ERP: { A:ERP_PRICES.A/2, B:ERP_PRICES.B/2, C:ERP_PRICES.C/2, D:ERP_PRICES.D/2 },
+  }), [MIX_PRICES, ERP_PRICES])
 
   return (
     <div style={S.backdrop}>
-      <div style={S.card}>
-        {/* header */}
+      {/* forçar remount por step ajuda quando a sub-tela possui estado interno */}
+      <div style={S.card} key={step}>
         <div style={S.header}>
           <div style={{ fontWeight:900, fontSize:22 }}>RECUPERAÇÃO FINANCEIRA</div>
           <button onClick={close} style={S.closeBtn}>×</button>
         </div>
 
-        {/* steps */}
         {step === 'menu' && (
-          <div style={S.body}>
-            <p style={S.lead}>
-              Você está sem dinheiro, {playerName}. Escolha uma das opções:
-            </p>
-
-            <ul style={S.bullets}>
-              <li>Pedir <b>empréstimo</b> único com 50% de juros garantido por 50% dos seus <b>BENS</b> (limite {`$ ${loanAvailable}`}).</li>
-              <li><b>Reduzir</b> níveis de <b>MIX de Produtos</b> ou <b>ERP/Sistemas</b> e receber 50% do valor pago.</li>
-              <li><b>Demitir</b> funcionários e receber 50% do valor total.</li>
-            </ul>
-
-            <div style={S.rowBtns}>
-              <button style={{...S.cta, background:'#ef4444'}} onClick={() => setStep('fire')}>DEMITIR</button>
-              <button style={{...S.cta, background:'#a16207'}} onClick={() => setStep('reduce')}>REDUZIR</button>
-              <button style={{...S.cta, background:'#16a34a'}} onClick={() => setStep('loan')}>EMPRÉSTIMO</button>
-            </div>
-          </div>
+          <RecoveryMenu
+            playerName={snapshot.name}
+            loanAvailable={loanAvailable}
+            onGoLoan={() => setStep('loan')}
+            onGoReduce={() => setStep('reduce')}
+            onGoFire={() => setStep('fire')}
+          />
         )}
 
         {step === 'loan' && (
-          <div style={S.body}>
-            <div style={S.subHeader}>
-              <b style={{fontSize:20}}>EMPRÉSTIMO</b>
-            </div>
-            <p>Você pode realizar um empréstimo colocando <b>50% dos seus BENS</b> como garantia (pago na próxima “Despesas Operacionais”).</p>
-            <div style={S.infoRow}>
-              <span>Valor disponível:</span> <b>${loanAvailable}</b>
-            </div>
-            <div style={S.infoRow}>
-              <span>Valor garantia:</span> <b>${loanAvailable}</b>
-            </div>
-
-            <input
-              style={S.input}
-              type="number"
-              min={0}
-              max={loanAvailable}
-              placeholder="Digite o valor que quer emprestar"
-              value={loanInput}
-              onChange={e => setLoanInput(e.target.value)}
-            />
-
-            <div style={S.rowBtns}>
-              <button style={S.back} onClick={() => setStep('menu')}>← Voltar</button>
-              <button
-                style={{...S.cta, background:'#16a34a', opacity:(Number(loanInput)>0 && Number(loanInput)<=loanAvailable)?1:.6}}
-                onClick={confirmLoan}
-              >
-                Pegar Empréstimo
-              </button>
-            </div>
-          </div>
+          <RecoveryLoan
+            loanAvailable={loanAvailable}
+            onBack={() => setStep('menu')}
+            onConfirm={(val) =>
+              resolveTop?.({ type: 'LOAN', amount: val, note: `Empréstimo +R$ ${val}` })
+            }
+          />
         )}
 
         {step === 'reduce' && (
-          <div style={S.body}>
-            <div style={S.subHeader}><b style={{fontSize:20}}>REDUZIR NÍVEL MIX/ERP</b></div>
+          <RecoveryReduce
+            // retrocompatível
+            options={REDUCE_OPTIONS}
 
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
-              {REDUCE_OPTIONS.map(op => (
-                <button
-                  key={op.key}
-                  onClick={() => setReduceSel(op)}
-                  style={{
-                    ...S.option,
-                    outline: reduceSel?.key===op.key ? '3px solid #a78bfa' : 'none'
-                  }}
-                >
-                  <div style={{fontWeight:800, fontSize:16, marginBottom:6}}>{op.label}</div>
-                  <div>Crédito ao reduzir: <b>${op.credit}</b></div>
-                </button>
-              ))}
-            </div>
+            // nova API – arrays seguros com owned correto
+            optionsMix={optionsMix}
+            optionsErp={optionsErp}
+            mixOwned={{ A:ownedMix.has('A'), B:ownedMix.has('B'), C:ownedMix.has('C'), D:ownedMix.has('D') }}
+            erpOwned={{ A:ownedErp.has('A'), B:ownedErp.has('B'), C:ownedErp.has('C'), D:ownedErp.has('D') }}
+            credits={creditsTables}
+            snapshot={snapshot}
 
-            <div style={S.rowBtns}>
-              <button style={S.back} onClick={() => setStep('menu')}>← Voltar</button>
-              <button
-                style={{...S.cta, background:'#a16207', opacity:reduceSel?1:.6}}
-                onClick={confirmReduce}
-              >
-                REDUZIR
-              </button>
-            </div>
-          </div>
+            onBack={() => setStep('menu')}
+
+            onConfirm={(payload) => {
+              // payload pode ser:
+              // - { group, level, credit }
+              // - { items: [{group,level,credit,selected:true}, ...], total }
+              if (Array.isArray(payload?.items)) {
+                const total = Number(
+                  payload.total ??
+                  payload.items.filter(i=>i.selected).reduce((s,i)=>s+Number(i.credit||0),0)
+                )
+                resolveTop?.({
+                  type: 'REDUCE',
+                  amount: total,
+                  items: payload.items,
+                  note: `Redução múltipla +R$ ${total.toLocaleString()}`
+                })
+                return
+              }
+
+              const amount = Number(payload?.credit || payload?.amount || 0)
+              const selection = payload && payload.group && payload.level
+                ? { group: String(payload.group).toUpperCase(), level: String(payload.level).toUpperCase(), credit: amount }
+                : null
+
+              resolveTop?.({
+                type: 'REDUCE',
+                amount,
+                group: selection?.group,
+                level: selection?.level,
+                selection,
+                note: selection
+                  ? `Redução ${selection.group} nível ${selection.level} +R$ ${amount.toLocaleString()}`
+                  : `Redução +R$ ${amount.toLocaleString()}`,
+              })
+            }}
+          />
         )}
 
         {step === 'fire' && (
-          <div style={S.body}>
-            <div style={S.subHeader}><b style={{fontSize:20}}>DEMITIR FUNCIONÁRIOS</b></div>
-
-            <div style={{display:'grid', gap:12}}>
-              {ROLES.map(r => (
-                <div key={r.key} style={{display:'grid', gridTemplateColumns:'1.2fr 1fr 1.2fr 1fr', alignItems:'center', gap:8}}>
-                  <div><b>{r.label}</b></div>
-                  <div>Valor Total: <b>${r.total}</b></div>
-                  <div style={{display:'flex', gap:6, alignItems:'center'}}>
-                    <button style={S.spin} onClick={() => add(r.key, -1)}>-</button>
-                    <div style={{minWidth:24, textAlign:'center'}}>{qty[r.key]||0}</div>
-                    <button style={S.spin} onClick={() => add(r.key, +1)}>+</button>
-                  </div>
-                  <div>Valor: <b>${Math.floor(r.total*0.5) * (qty[r.key]||0)}</b></div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{marginTop:12, textAlign:'right'}}>Total: <b>${fireAmount}</b></div>
-
-            <div style={S.rowBtns}>
-              <button style={S.back} onClick={() => setStep('menu')}>← Voltar</button>
-              <button
-                style={{...S.cta, background:'#ef4444', opacity:fireAmount>0?1:.6}}
-                onClick={confirmFire}
-              >
-                DEMITIR
-              </button>
-            </div>
-          </div>
+          <RecoveryFire
+            roles={ROLES}
+            onBack={() => setStep('menu')}
+            onConfirm={(payload) => resolveTop?.(payload)}
+          />
         )}
       </div>
     </div>
   )
-}
-
-const S = {
-  backdrop: {
-    position:'fixed', inset:0, background:'rgba(0,0,0,.6)',
-    display:'grid', placeItems:'center', zIndex:9999
-  },
-  card: {
-    width:'min(920px, 96vw)', maxHeight:'90vh', overflow:'auto',
-    background:'#15161a', color:'#e9ecf1',
-    border:'1px solid rgba(255,255,255,.08)',
-    borderRadius:20, boxShadow:'0 20px 50px rgba(0,0,0,.5)',
-  },
-  header: {
-    display:'flex', alignItems:'center', justifyContent:'space-between',
-    padding:'14px 16px', borderBottom:'1px solid rgba(255,255,255,.08)'
-  },
-  closeBtn:{
-    width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)',
-    background:'transparent', color:'#fff', fontSize:20, cursor:'pointer'
-  },
-  body:{ padding:16 },
-  lead:{ opacity:.95, lineHeight:1.5 },
-  bullets:{ margin:'8px 0 16px 18px' },
-  rowBtns:{ display:'flex', gap:12, justifyContent:'flex-end', marginTop:12, flexWrap:'wrap' },
-  cta:{
-    padding:'12px 16px', border:0, borderRadius:12, color:'#fff',
-    fontWeight:900, cursor:'pointer', boxShadow:'0 10px 24px rgba(0,0,0,.25)'
-  },
-  back:{
-    padding:'10px 14px', borderRadius:12, border:'1px solid rgba(255,255,255,.15)',
-    background:'transparent', color:'#e9ecf1', cursor:'pointer'
-  },
-  subHeader:{ marginBottom:8 },
-  infoRow:{ display:'flex', gap:8, alignItems:'baseline', margin:'4px 0' },
-  input:{
-    width:'100%', padding:'12px 12px', borderRadius:12, background:'#0f1115',
-    color:'#fff', border:'1px solid rgba(255,255,255,.15)', marginTop:10
-  },
-  option:{
-    padding:16, background:'rgba(255,255,255,.04)', border:'1px solid rgba(255,255,255,.08)',
-    borderRadius:14, textAlign:'center', cursor:'pointer'
-  },
-  spin:{
-    width:34, height:34, borderRadius:8, border:'1px solid rgba(255,255,255,.15)',
-    background:'transparent', color:'#fff', fontSize:18, cursor:'pointer'
-  }
 }

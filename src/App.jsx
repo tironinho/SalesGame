@@ -46,8 +46,24 @@ export default function App() {
   const [phase, setPhase] = useState('start')
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
 
+  // --- Starter Kit
+  const STARTER_KIT = useMemo(() => Object.freeze({
+    mixProdutos: 'D',
+    erpLevel: 'D',
+    clients: 1,
+    vendedoresComuns: 1,
+  }), [])
+
+  const applyStarterKit = (obj = {}) => ({
+    ...obj,
+    mixProdutos: obj.mixProdutos ?? 'D',
+    erpLevel: obj.erpLevel ?? 'D',
+    clients: obj.clients ?? 1,
+    vendedoresComuns: obj.vendedoresComuns ?? 1,
+  })
+
   const [players, setPlayers] = useState([
-    { id: 1, name: 'Jogador 1', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 }
+    applyStarterKit({ id: 1, name: 'Jogador 1', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
   ])
   const [round, setRound] = useState(1)
   const [turnIdx, setTurnIdx] = useState(0)
@@ -55,27 +71,81 @@ export default function App() {
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState(null)
 
+  // >>> controle de “quem já cruzou a casa 1” para fechar a rodada
+  const [roundFlags, setRoundFlags] = useState([]) // bool por jogador
+
   // --- quem sou eu (por ABA)
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
   const myName = useMemo(() => getOrSetTabPlayerName('Jogador'), [])
 
-  // 👉 clamp do índice de turno quando muda a quantidade de players
+  // ==== helpers ====
+  const norm = (s) =>
+    (String(s ?? '').normalize ? String(s ?? '').normalize('NFKC') : String(s ?? ''))
+      .trim()
+      .toLowerCase()
+  const sameName = (a, b) => norm(a) === norm(b)
+  const isMine = (p) => !!p && (String(p.id) === String(meId) || sameName(p.name, myName))
+
   useEffect(() => {
     setTurnIdx(t => (players.length > 0 ? (t % players.length + players.length) % players.length : 0))
+    // redimensiona/zera flags toda vez que muda a quantidade de jogadores
+    setRoundFlags(new Array(Math.max(1, players.length)).fill(false))
   }, [players.length])
 
   const current = players[turnIdx]
 
-  // 🔒 vez do jogador: prioriza ID; só cai para nome se faltar id
   const isMyTurn = useMemo(() => {
     const owner = players[turnIdx]
     if (!owner) return false
-    if (owner.id != null) return String(owner.id) === String(meId)
-    return (owner.name || '') === (myName || '')
+    const byId = owner.id != null && String(owner.id) === String(meId)
+    const byName = sameName(owner.name || '', myName || '')
+    const turn = byId || byName
+    console.log('[SG][App] isMyTurn? %o | owner=%o | meId=%s | myName=%s', turn, owner, meId, myName)
+    return turn
   }, [players, turnIdx, meId, myName])
 
-  // >>> acesso ao sistema de modais
+  // >>> modais
   const { pushModal, awaitTop, closeTop } = useModal?.() || {}
+
+  // 🔒 trava de modais
+  const [modalLocks, setModalLocks] = useState(0)
+  const hasBlockingModal = modalLocks > 0
+  const openModalAndWait = async (element) => {
+    if (!(pushModal && awaitTop)) return null
+    setModalLocks(c => {
+      const n = c + 1
+      console.log('[SG][App] openModalAndWait: ++locks =>', n, element?.type?.name || element)
+      return n
+    })
+    try {
+      pushModal(element)
+      const res = await awaitTop()
+      console.log('[SG][App] openModalAndWait resolved =>', res)
+      return res
+    } finally {
+      setModalLocks(c => {
+        const n = Math.max(0, c - 1)
+        console.log('[SG][App] openModalAndWait: --locks =>', n)
+        return n
+      })
+    }
+  }
+
+  // ===== Cadeado de turno =====
+  const [turnLock, setTurnLock] = useState(false)
+  const modalLocksRef = useRef(0)
+  useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
+
+  const setTurnLockBroadcast = (value) => {
+    const v = !!value
+    setTurnLock(v)
+    console.log('[SG][App] setTurnLockBroadcast(%o)', v)
+    try {
+      bcRef.current?.postMessage?.({ type: 'TURNLOCK', value: v, source: meId })
+    } catch (e) {
+      console.warn('[SG][App] Broadcast TURNLOCK failed:', e)
+    }
+  }
 
   // HUD vindo do Board
   const [meHud, setMeHud] = useState({
@@ -88,20 +158,45 @@ export default function App() {
     matchId: 'local',
   })
 
-  // >>> SALDO ATUAL DO JOGADOR DESTA ABA (sempre atualizado)
+  // saldo desta aba
   const myCash = useMemo(
-    () => (players.find(p => String(p.id) === String(meId) || p.name === myName)?.cash ?? 0),
+    () => (players.find(isMine)?.cash ?? 0),
     [players, meId, myName]
   )
 
-  // Mantém o meHud.cash sincronizado (caso outros pontos dependam dele)
+  // sync meHud.cash
   useEffect(() => {
-    const mine = players.find(p => String(p.id) === String(meId) || p.name === myName)
+    const mine = players.find(isMine)
     if (!mine) return
-    setMeHud(h => (h.cash === mine.cash ? h : { ...h, cash: mine.cash }))
-  }, [players, meId, myName])
+    if (meHud.cash !== mine.cash) {
+      console.log('[SG][App] meHud.cash <-', mine.cash)
+      setMeHud(h => ({ ...h, cash: mine.cash })) }
+  }, [players, meId, myName]) // eslint-disable-line
 
-  // ======= helper: aplica deltas padronizados em um player =======
+  // ======= Tabelas/Helpers de Cálculo =======
+  const VENDOR_CONF = {
+    comum:  { cap: 2, baseFat:  600, incFat: 100, baseDesp: 1000, incDesp: 100 },
+    inside: { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
+    field:  { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
+  };
+  const GESTOR = { baseDesp: 3000, incDesp: 500, boostByCert: [0.20, 0.30, 0.40, 0.60] }; // até 7 colab/gestor
+
+  const MIX = { A:{ fat:1200, desp:700 }, B:{ fat:600, desp:400 }, C:{ fat:300, desp:200 }, D:{ fat:100, desp:50 } };
+  const ERP = { A:{ fat:1000, desp:400 }, B:{ fat:500, desp:200 }, C:{ fat:200, desp:100 }, D:{ fat:70, desp:50 } };
+
+  const certCount = (player = {}, type) => new Set(player?.trainingsByVendor?.[type] || []).size;
+  const num = (v) => Number(v || 0);
+
+  function capacityAndAttendance(player = {}) {
+    const qComum  = num(player.vendedoresComuns);
+    const qInside = num(player.insideSales);
+    const qField  = num(player.fieldSales);
+    const cap = qComum*VENDOR_CONF.comum.cap + qInside*VENDOR_CONF.inside.cap + qField*VENDOR_CONF.field.cap;
+    const clients = num(player.clients);
+    return { cap, inAtt: Math.min(clients, cap) };
+  }
+
+  // ======= aplica deltas =======
   function applyDeltas(player, deltas = {}) {
     const next = { ...player }
     const add = (k, v) => { next[k] = (next[k] ?? 0) + v }
@@ -113,7 +208,15 @@ export default function App() {
     if (Number.isFinite(deltas.vendedoresComunsDelta)) add('vendedoresComuns', Number(deltas.vendedoresComunsDelta))
     if (Number.isFinite(deltas.fieldSalesDelta)) add('fieldSales', Number(deltas.fieldSalesDelta))
     if (Number.isFinite(deltas.insideSalesDelta)) add('insideSales', Number(deltas.insideSalesDelta))
-    if (Number.isFinite(deltas.gestoresDelta)) add('gestores', Number(deltas.gestoresDelta))
+
+    // aliases de gestores
+    if (Number.isFinite(deltas.gestoresDelta)) {
+      const g = Number(deltas.gestoresDelta)
+      next.gestores = (next.gestores ?? 0) + g
+      next.gestoresComerciais = (next.gestoresComerciais ?? 0) + g
+      next.managers = (next.managers ?? 0) + g
+    }
+
     if (Number.isFinite(deltas.revenueDelta)) add('revenue', Number(deltas.revenueDelta))
 
     if (typeof deltas.mixProdutosSet !== 'undefined') next.mixProdutos = deltas.mixProdutosSet
@@ -129,33 +232,71 @@ export default function App() {
     return next
   }
 
-  // ======= helpers para as modais automáticas =======
+  // ======= Cálculos =======
   function computeFaturamentoFor(player = {}) {
-    const insideQty = Number(player.insideSales || 0)
-    const insideCertsCount = new Set(player?.trainingsByVendor?.inside || []).size
-    const insideRevenuePer = 1500 + 500 * insideCertsCount
-    const insideRevenueTotal = insideQty * insideRevenuePer
+    const qComum  = num(player.vendedoresComuns);
+    const qInside = num(player.insideSales);
+    const qField  = num(player.fieldSales);
+    const qGestor = num(player.gestores ?? player.gestoresComerciais ?? player.managers);
 
-    const ERP = { A:{ fat:1000 }, B:{ fat:500 }, C:{ fat:200 }, D:{ fat:70 } }
-    const lvl = String(player.erpLevel || 'D').toUpperCase()
-    const erpFat  = (ERP[lvl]?.fat  ?? 0)
+    const cComum  = certCount(player, 'comum');
+    const cInside = certCount(player, 'inside');
+    const cField  = certCount(player, 'field');
+    const cGestor = certCount(player, 'gestor');
 
-    const dynamicRevenue = Number(player.revenue || 0)
-    return 770 + insideRevenueTotal + erpFat + dynamicRevenue
+    // >>> faturamento NÃO usa utilização (conforme regra)
+    const fatComum  = qComum  * (VENDOR_CONF.comum.baseFat  + VENDOR_CONF.comum.incFat  * cComum );
+    const fatInside = qInside * (VENDOR_CONF.inside.baseFat + VENDOR_CONF.inside.incFat * cInside);
+    const fatField  = qField  * (VENDOR_CONF.field.baseFat  + VENDOR_CONF.field.incFat  * cField );
+
+    let vendorRevenue = fatComum + fatInside + fatField;
+
+    // Bônus de gestor (potencializa % do recebimento dos colaboradores)
+    const colaboradores = qComum + qInside + qField;
+    const cobertura = colaboradores > 0 ? Math.min(1, (qGestor * 7) / colaboradores) : 0;
+    const boost = GESTOR.boostByCert[Math.min(3, Math.max(0, cGestor))] || 0;
+    vendorRevenue = vendorRevenue * (1 + cobertura * boost);
+
+    const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
+    const mixFat = (MIX[mixLvl]?.fat || 0) * num(player.clients);
+
+    const erpLvl = String(player.erpLevel || 'D').toUpperCase();
+    const staff = colaboradores + qGestor; // por colaborador (inclui gestores)
+    const erpFat = (ERP[erpLvl]?.fat || 0) * staff;
+
+    const dynamicRevenue = num(player.revenue);
+
+    const total = Math.max(0, Math.floor(vendorRevenue + mixFat + erpFat + dynamicRevenue));
+    return total
   }
 
   function computeDespesasFor(player = {}) {
-    const insideQty = Number(player.insideSales || 0)
-    const insideCertsCount = new Set(player?.trainingsByVendor?.inside || []).size
-    const insideExpensePer = 2000 + 100 * insideCertsCount
-    const insideExpenseTotal = insideQty * insideExpensePer
+    const qComum  = num(player.vendedoresComuns);
+    const qInside = num(player.insideSales);
+    const qField  = num(player.fieldSales);
+    const qGestor = num(player.gestores ?? player.gestoresComerciais ?? player.managers);
 
-    const ERP = { A:{ desp:400 }, B:{ desp:200 }, C:{ desp:100 }, D:{ desp:50 } }
-    const lvl = String(player.erpLevel || 'D').toUpperCase()
-    const erpDesp = (ERP[lvl]?.desp ?? 0)
+    const cComum  = certCount(player, 'comum');
+    const cInside = certCount(player, 'inside');
+    const cField  = certCount(player, 'field');
+    const cGestor = certCount(player, 'gestor');
 
-    const baseMaintenance = 1150 + Number(player.manutencao || 0)
-    return baseMaintenance + insideExpenseTotal + erpDesp
+    const dComum  = qComum  * (VENDOR_CONF.comum.baseDesp  + VENDOR_CONF.comum.incDesp  * cComum );
+    const dInside = qInside * (VENDOR_CONF.inside.baseDesp + VENDOR_CONF.inside.incDesp * cInside);
+    const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp * cField );
+    const dGestor = qGestor * (GESTOR.baseDesp + GESTOR.incDesp * cGestor);
+
+    const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
+    const mixDesp = (MIX[mixLvl]?.desp || 0) * num(player.clients);
+
+    const erpLvl = String(player.erpLevel || 'D').toUpperCase();
+    const colaboradores = qComum + qInside + qField + qGestor;
+    const erpDesp = (ERP[erpLvl]?.desp || 0) * colaboradores;
+
+    const extras = 0;
+
+    const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + mixDesp + erpDesp + extras));
+    return total
   }
 
   function crossedTile(oldPos, newPos, tileIndex /* zero-based */) {
@@ -164,7 +305,7 @@ export default function App() {
     return tileIndex > oldPos || tileIndex <= newPos // deu a volta
   }
 
-  // ======= helper ESPECÍFICO: aplicar compra de treinamentos =======
+  // ======= Treinamentos =======
   function applyTrainingPurchase(player, payload) {
     const { vendorType, items = [], total = 0 } = payload || {}
     const certMap = { personalizado: 'az', fieldsales: 'am', imersaomultiplier: 'rox' }
@@ -191,7 +332,7 @@ export default function App() {
     return next
   }
 
-  // ======= SYNC ENTRE ABAS (mesmo navegador) =======
+  // ======= SYNC ENTRE ABAS =======
   const syncKey = useMemo(
     () => `sg-sync:${currentLobbyId || 'local'}`,
     [currentLobbyId]
@@ -199,24 +340,65 @@ export default function App() {
   const bcRef = useRef(null)
 
   useEffect(() => {
-    if (phase !== 'game') return
     try {
       bcRef.current?.close?.()
       const bc = new BroadcastChannel(syncKey)
       bc.onmessage = (e) => {
-        const d = e.data
-        if (!d || d.type !== 'SYNC') return
+        const d = e.data || {}
         if (String(d.source) === String(meId)) return
-        setPlayers(d.players)
-        setTurnIdx(d.turnIdx)
-        setRound(d.round)
+
+        if (d.type === 'START') {
+          console.log('[SG][BC] START received')
+          const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
+          if (!mapped.length) return
+          setPlayers(mapped)
+          setTurnIdx(0)
+          setRound(1)
+          setLog(['Jogo iniciado!'])
+          setGameOver(false); setWinner(null)
+          setMeHud(h => {
+            const mine = mapped.find(isMine)
+            return {
+              ...h,
+              name: mine?.name || mapped[0]?.name || 'Jogador',
+              color: mine?.color || mapped[0]?.color || '#6c5ce7',
+              cash: mine?.cash ?? 18000,
+              possibAt: 0, clientsAt: 0
+            }
+          })
+          setRoundFlags(new Array(Math.max(1, mapped.length)).fill(false))
+          setPhase('game')
+          return
+        }
+
+        if (d.type === 'TURNLOCK') {
+          console.log('[SG][BC] TURNLOCK <-', d.value)
+          setTurnLock(!!d.value)
+          return
+        }
+
+        if (d.type === 'SYNC' && phase === 'game') {
+          console.log('[SG][BC] SYNC <- turnIdx=%d round=%d', d.turnIdx, d.round)
+          setPlayers(d.players)
+          setTurnIdx(d.turnIdx)
+          setRound(d.round)
+
+          // [FIX] Failsafe
+          if (modalLocksRef.current === 0 && turnLock) {
+            console.log('[SG][BC][FIX] SYNC sem modal => auto-unlock')
+            setTurnLock(false)
+          }
+        }
       }
       bcRef.current = bc
       return () => bc.close()
-    } catch {}
-  }, [phase, syncKey, meId])
+    } catch (e) {
+      console.warn('[SG][App] BroadcastChannel init failed:', e)
+    }
+  }, [syncKey, meId, myName, phase]) // eslint-disable-line
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
+    console.log('[SG][BC] SYNC -> turnIdx=%d round=%d', nextTurnIdx, nextRound)
     try {
       bcRef.current?.postMessage?.({
         type: 'SYNC',
@@ -225,12 +407,23 @@ export default function App() {
         round: nextRound,
         source: meId,
       })
-    } catch {}
+    } catch (e) { console.warn('[SG][App] broadcastState failed:', e) }
+  }
+
+  function broadcastStart(nextPlayers) {
+    console.log('[SG][BC] START ->')
+    try {
+      bcRef.current?.postMessage?.({
+        type: 'START',
+        players: nextPlayers,
+        source: meId,
+      })
+    } catch (e) { console.warn('[SG][App] broadcastStart failed:', e) }
   }
 
   function appendLog(msg){ setLog(l => [msg, ...l].slice(0, 12)) }
 
-  // >>> encerra jogo quando TOD@S completarem 5 rodadas
+  // >>> fim de jogo
   function maybeFinishGame(nextPlayers, nextRound) {
     if (nextRound <= 5) return
     const ranked = [...nextPlayers].map(p => ({
@@ -240,24 +433,60 @@ export default function App() {
     setWinner(ranked[0] || null)
     setGameOver(true)
     appendLog('Fim de jogo! 5 rodadas completas.')
+    setTurnLockBroadcast(false)
   }
 
+  // >>>>>>>>>>>>>>>>> AJUSTES: saldo nunca negativo <<<<<<<<<<<<<<<<<
+  const canPay = (idx, amount) => {
+    const p = players[idx]
+    const amt = Math.max(0, Number(amount || 0))
+    return (Number(p?.cash || 0) >= amt)
+  }
+  const requireFunds = (idx, amount, reason) => {
+    const ok = canPay(idx, amount)
+    if (!ok) {
+      appendLog(`Saldo insuficiente${reason ? ' para ' + reason : ''}. Use RECUPERAÇÃO (demitir / emprestar / reduzir) ou declare FALÊNCIA.`)
+    }
+    return ok
+  }
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
   function advanceAndMaybeLap(steps, deltaCash, note){
+    console.log('[SG][App] advanceAndMaybeLap start | steps=%d deltaCash=%d note=%s', steps, deltaCash, note)
     if (gameOver) return
     if (!players.length) return
 
+    setTurnLockBroadcast(true)
+
     const curIdx = turnIdx
     const cur = players[curIdx]
-    if (!cur) return
+    if (!cur) { setTurnLockBroadcast(false); return }
 
     const oldPos = cur.pos
     const newPos = (oldPos + steps) % TRACK_LEN
     const lap = newPos < oldPos
 
-    const nextPlayers = players.map((p, i) =>
-      i !== curIdx ? p : { ...p, pos: newPos, cash: p.cash + (deltaCash || 0) }
-    )
-    const nextRound = lap ? round + 1 : round
+    // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
+    const nextPlayers = players.map((p, i) => {
+      if (i !== curIdx) return p
+      const nextCash = (p.cash || 0) + (deltaCash || 0)
+      return { ...p, pos: newPos, cash: Math.max(0, nextCash) }
+    })
+
+    // >>> controle de rodada: só vira quando TODOS cruzarem a casa 1
+    let nextRound = round
+    let nextFlags = roundFlags
+    if (lap) {
+      nextFlags = [...roundFlags]
+      nextFlags[curIdx] = true
+      const allDone = nextFlags.slice(0, players.length).every(Boolean)
+      if (allDone) {
+        nextRound = round + 1
+        nextFlags = new Array(players.length).fill(false) // zera para a próxima rodada
+      }
+    }
+    setRoundFlags(nextFlags)
+
     const nextTurnIdx = (curIdx + 1) % players.length
 
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${Math.abs(deltaCash)}`)
@@ -268,25 +497,22 @@ export default function App() {
     setTurnIdx(nextTurnIdx)
     broadcastState(nextPlayers, nextTurnIdx, nextRound)
 
-    // verifica fim de jogo
     maybeFinishGame(nextPlayers, nextRound)
-    if (nextRound > 5) return // não abre mais modais após fim
+    if (nextRound > 5) { setTurnLockBroadcast(false); return }
 
-    // === Tiles (1-based) ===
     const landedOneBased = newPos + 1
-
-    // === Verificações de "passou por" (não precisa parar exatamente)
-    const crossedStart1 = crossedTile(oldPos, newPos, 0)      // casa 1 (índice 0)
-    const crossedExpenses23 = crossedTile(oldPos, newPos, 22) // casa 23 (índice 22)
+    const crossedStart1 = crossedTile(oldPos, newPos, 0)
+    const crossedExpenses23 = crossedTile(oldPos, newPos, 22)
 
     // === ERP/Sistemas: 6,16,32,49 ===
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] ERP tile landed:', landedOneBased)
+        const res = await openModalAndWait(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.values?.compra || 0)
+        if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
@@ -300,10 +526,20 @@ export default function App() {
     // === Treinamento: 2,11,19,47 ===
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
     if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<TrainingModal />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] TRAINING tile landed:', landedOneBased)
+        const ownerForTraining = players.find(isMine) || players[curIdx]
+        const res = await openModalAndWait(<TrainingModal
+          canTrain={{
+            comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
+            field:  Number(ownerForTraining?.fieldSales) || 0,
+            inside: Number(ownerForTraining?.insideSales) || 0,
+            gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
+          }}
+        />)
         if (!res || res.action !== 'BUY') return
+        const trainCost = Number(res.total || 0)
+        if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyTrainingPurchase(p, res)
@@ -315,22 +551,28 @@ export default function App() {
     }
 
     // === Compra Direta: 5,10,43 ===
-    const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
-    if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<DirectBuyModal currentCash={players[curIdx]?.cash ?? myCash} />)
-      ;(async () => {
-        const res = await awaitTop()
+   const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
+if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+  ;(async () => {
+    console.log('[SG][Tiles] DIRECT BUY tile landed:', landedOneBased)
+    // use o saldo já atualizado (nextPlayers) caso exista,
+    // caindo para o myCash se algo falhar
+    const cashNow =
+      (Array.isArray(nextPlayers) && nextPlayers[curIdx]?.cash) ??
+      (players[curIdx]?.cash ?? myCash)
+
+    const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
         if (!res) return
 
         if (res.action === 'OPEN') {
           const open = String(res.open || '').toUpperCase()
 
           if (open === 'MIX') {
-            pushModal(<MixProductsModal />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<MixProductsModal />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.compra || 0)
               const level = String(r2.level || 'D')
+              if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=>
                   i!==curIdx ? p : applyDeltas(p, {
@@ -349,14 +591,17 @@ export default function App() {
           }
 
           if (open === 'GESTOR') {
-            pushModal(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
-            if (r2 && r2.action === 'BUY') {
-              const qty  = Number(r2.qty ?? 1)
+            const r2 = await openModalAndWait(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+              const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
               const cashDelta = Number(
-                (typeof r2.cashDelta !== 'undefined' ? r2.cashDelta : -(Number(r2.cost ?? r2.total ?? 0)))
+                (typeof r2.cashDelta !== 'undefined'
+                  ? r2.cashDelta
+                  : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
               )
-              const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? 0)
+              const payAbs = cashDelta < 0 ? -cashDelta : 0
+              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
+              const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0)
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
                   cashDelta,
@@ -370,10 +615,10 @@ export default function App() {
           }
 
           if (open === 'INSIDE') {
-            pushModal(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const cost = Number(r2.cost ?? r2.total ?? 0)
+              if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
               const qty  = Number(r2.headcount ?? r2.qty ?? 1)
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
@@ -384,8 +629,7 @@ export default function App() {
           }
 
           if (open === 'FIELD') {
-            pushModal(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const qty = Number(r2.headcount ?? r2.qty ?? 1)
               const deltas = {
@@ -394,6 +638,8 @@ export default function App() {
                 revenueDelta: Number(r2.revenueDelta ?? 0),
                 fieldSalesDelta: qty,
               }
+              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
                 broadcastState(upd, nextTurnIdx, nextRound); return upd
@@ -403,16 +649,17 @@ export default function App() {
           }
 
           if (open === 'COMMON') {
-            pushModal(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
-              const qty  = Number(r2.qty ?? 0)
+              const qty  = Number(r2.headcount ?? r2.qty ?? 0)
               const deltas = {
-                cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? 0))),
+                cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
                 vendedoresComunsDelta: qty,
                 manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
                 revenueDelta: Number(r2.revenueDelta ?? 0),
               }
+              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
                 broadcastState(upd, nextTurnIdx, nextRound); return upd
@@ -422,10 +669,10 @@ export default function App() {
           }
 
           if (open === 'ERP') {
-            pushModal(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.values?.compra || 0)
+              if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
                 broadcastState(upd, nextTurnIdx, nextRound); return upd
@@ -435,10 +682,10 @@ export default function App() {
           }
 
           if (open === 'CLIENTS') {
-            pushModal(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
-            const r2 = await awaitTop()
+            const r2 = await openModalAndWait(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
+              if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
               const qty   = Number(r2.qty || 0)
               const mAdd  = Number(r2.maintenanceDelta || 0)
               const bensD = Number(r2.bensDelta || cost)
@@ -456,9 +703,18 @@ export default function App() {
           }
 
           if (open === 'TRAINING') {
-            pushModal(<TrainingModal />)
-            const r2 = await awaitTop()
+            const ownerForTraining = players.find(isMine) || players[curIdx]
+            const r2 = await openModalAndWait(<TrainingModal
+              canTrain={{
+                comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
+                field:  Number(ownerForTraining?.fieldSales) || 0,
+                inside: Number(ownerForTraining?.insideSales) || 0,
+                gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
+              }}
+            />)
             if (r2 && r2.action === 'BUY') {
+              const trainCost = Number(r2.total || 0)
+              if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
                 broadcastState(upd, nextTurnIdx, nextRound); return upd
@@ -473,13 +729,15 @@ export default function App() {
           const isClientsBuy =
             res.kind === 'CLIENTS' ||
             res.modal === 'CLIENTS' ||
-            typeof res.qty !== 'undefined' ||
+            typeof res.clientsQty !== 'undefined' ||
+            typeof res.numClients !== 'undefined' ||
             typeof res.totalCost !== 'undefined' ||
             typeof res.maintenanceDelta !== 'undefined'
 
           if (isClientsBuy) {
             const cost  = Number(res.totalCost ?? res.total ?? res.amount ?? 0)
-            const qty   = Number(res.qty ?? res.clientsQty ?? res.numClients ?? 0)
+            if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+            const qty   = Number(res.clientsQty ?? res.numClients ?? res.qty ?? 0)
             const mAdd  = Number(res.maintenanceDelta ?? res.maintenance ?? res.mexp ?? 0)
             const bensD = Number(res.bensDelta ?? cost)
 
@@ -501,6 +759,7 @@ export default function App() {
           }
 
           const total = Number(res.total ?? res.amount ?? 0)
+          if (!requireFunds(curIdx, total, 'esta compra')) { setTurnLockBroadcast(false); return }
           setPlayers(ps => {
             const upd = ps.map((p, i) =>
               i !== curIdx
@@ -520,11 +779,12 @@ export default function App() {
     // === Inside Sales: 12,21,30,42,53 ===
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] INSIDE tile landed:', landedOneBased)
+        const res = await openModalAndWait(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
         const cost = Number(res.cost ?? res.total ?? 0)
+        if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
         const qty  = Number(res.headcount ?? res.qty ?? 1)
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
@@ -536,18 +796,16 @@ export default function App() {
       })()
     }
 
-    // === Clientes: 4,8,15,17,20,27,34,36,39,46,52,55 ===
-    const isClientsTile = (
-      landedOneBased === 4 || landedOneBased === 8 || landedOneBased === 15 || landedOneBased === 17 ||
-      landedOneBased === 20 || landedOneBased === 27 || landedOneBased === 34 || landedOneBased === 36 ||
-      landedOneBased === 39 || landedOneBased === 46 || landedOneBased === 52 || landedOneBased === 55
-    )
+    // === Clientes ===
+    const isClientsTile =
+      [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] CLIENTS tile landed:', landedOneBased)
+        const res = await openModalAndWait(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const cost  = Number(res.totalCost || 0)
+        if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
         const qty   = Number(res.qty || 0)
         const mAdd  = Number(res.maintenanceDelta || 0)
         const bensD = Number(res.bensDelta || cost)
@@ -568,18 +826,22 @@ export default function App() {
       })()
     }
 
-    // === Gestor: 18,24,29,51 ===
-    const isManagerTile = (landedOneBased === 18 || landedOneBased === 24 || landedOneBased === 29 || landedOneBased === 51)
+    // === Gestor ===
+    const isManagerTile = [18,24,29,51].includes(landedOneBased)
     if (isManagerTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
-        if (!res || res.action !== 'BUY') return
-        const qty  = Number(res.qty ?? 1)
+        console.log('[SG][Tiles] MANAGER tile landed:', landedOneBased)
+        const res = await openModalAndWait(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
+        const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
         const cashDelta = Number(
-          (typeof res.cashDelta !== 'undefined' ? res.cashDelta : -(Number(res.cost ?? res.total ?? 0)))
+          (typeof res.cashDelta !== 'undefined'
+            ? res.cashDelta
+            : -(Number(res.cost ?? res.total ?? res.totalHire ?? 0)))
         )
-        const mexp = Number(res.expenseDelta ?? res.totalExpense ?? 0)
+        const payAbs = cashDelta < 0 ? -cashDelta : 0
+        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
+        const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
@@ -590,12 +852,12 @@ export default function App() {
       })()
     }
 
-    // === Field Sales: 13,25,33,38,50 ===
-    const isFieldTile = (landedOneBased === 13 || landedOneBased === 25 || landedOneBased === 33 || landedOneBased === 38 || landedOneBased === 50)
+    // === Field Sales ===
+    const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
     if (isFieldTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] FIELD tile landed:', landedOneBased)
+        const res = await openModalAndWait(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
           const qty = Number(res.headcount ?? res.qty ?? 1)
           const deltas = {
@@ -604,6 +866,8 @@ export default function App() {
             revenueDelta: Number(res.revenueDelta ?? 0),
             fieldSalesDelta: qty,
           }
+          const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+          if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
           setPlayers(ps => {
             const upd = ps.map((p, i) =>
               i !== curIdx ? p : applyDeltas(p, deltas)
@@ -615,20 +879,22 @@ export default function App() {
       })()
     }
 
-    // === Vendedores Comuns: 9,28,40,45 ===
-    const isCommonSellersTile = (landedOneBased === 9 || landedOneBased === 28 || landedOneBased === 40 || landedOneBased === 45)
+    // === Vendedores Comuns ===
+    const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] COMMON tile landed:', landedOneBased)
+        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
-        const qty  = Number(res.qty ?? 0)
+        const qty  = Number(res.headcount ?? res.qty ?? 0)
         const deltas = {
-          cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? 0))),
+          cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
           vendedoresComunsDelta: qty,
           manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
           revenueDelta: Number(res.revenueDelta ?? 0),
         }
+        const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, deltas)
@@ -639,14 +905,15 @@ export default function App() {
       })()
     }
 
-    // === Mix de Produtos: 7,31,44 ===
-    const isMixTile = (landedOneBased === 7 || landedOneBased === 31 || landedOneBased === 44)
+    // === Mix de Produtos ===
+    const isMixTile = [7,31,44].includes(landedOneBased)
     if (isMixTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<MixProductsModal />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] MIX tile landed:', landedOneBased)
+        const res = await openModalAndWait(<MixProductsModal />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.compra || 0)
+        if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
         const level = String(res.level || 'D')
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
@@ -667,24 +934,25 @@ export default function App() {
       })()
     }
 
-    // === Sorte & Revés: 3,14,22,26,35,41,48,54 ===
-    const isLuckMisfortuneTile = (
-      landedOneBased === 3  || landedOneBased === 14 ||
-      landedOneBased === 22 || landedOneBased === 26 ||
-      landedOneBased === 35 || landedOneBased === 41 ||
-      landedOneBased === 48 || landedOneBased === 54
-    )
+    // === Sorte & Revés ===
+    const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
     if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
-      pushModal(<SorteRevesModal />)
       ;(async () => {
-        const res = await awaitTop()
+        console.log('[SG][Tiles] SORTE/REVÉS tile landed:', landedOneBased)
+        const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
+
+        // se a carta tiraria mais do que o jogador tem, não aplica (exige recuperação)
+        if (Number.isFinite(res.cashDelta) && Number(res.cashDelta) < 0) {
+          const need = -Number(res.cashDelta)
+          if (!requireFunds(curIdx, need, 'pagar carta Sorte & Revés')) { setTurnLockBroadcast(false); return }
+        }
 
         setPlayers(ps => {
           const upd = ps.map((p,i) => {
             if (i !== curIdx) return p
             let next = { ...p }
-            if (Number.isFinite(res.cashDelta)) next.cash = (next.cash ?? 0) + Number(res.cashDelta)
+            if (Number.isFinite(res.cashDelta)) next.cash = Math.max(0, (next.cash ?? 0) + Number(res.cashDelta))
             if (Number.isFinite(res.clientsDelta)) next.clients = Math.max(0, (next.clients || 0) + Number(res.clientsDelta))
             if (res.gainSpecialCell) {
               next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
@@ -698,7 +966,7 @@ export default function App() {
         })
 
         if (res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly) {
-          const me = players[curIdx] || players.find(p => String(p.id) === String(meId) || p.name === myName)
+          const me = players[curIdx] || players.find(isMine)
           let delta = 0
           if (res.perClientBonus) delta += (me?.clients || 0) * res.perClientBonus
           if (res.perCertifiedManagerBonus) {
@@ -720,15 +988,13 @@ export default function App() {
       })()
     }
 
-    // === MODAIS AUTOMÁTICAS POR PASSAR NAS CASAS ===
-
-    // Casa 1: Faturamento do mês (fecha também a modal abaixo, se existir)
+    // === AUTO MODAIS ===
     if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
       const meNow = players[curIdx] || {}
       const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
-      pushModal(<FaturamentoDoMesModal value={fat} />)
       ;(async () => {
-        await awaitTop()
+        console.log('[SG][Auto] FATURAMENTO +$%d', fat)
+        await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
           broadcastState(upd, nextTurnIdx, nextRound); return upd
@@ -738,26 +1004,26 @@ export default function App() {
       })()
     }
 
-    // Casa 23: Despesas operacionais (+ cobrança única de empréstimo, se houver)
     if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
       const meNow = players[curIdx] || {}
       const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
 
-      const lp = meNow.loanPending || {} // { amount, dueRound, charged }
+      const lp = meNow.loanPending || {}
       const shouldChargeLoan =
-        Number(lp.amount) > 0 &&
-        !lp.charged &&
+        Number(lp.amount) > 0 && !lp.charged &&
         (round >= Math.max(1, Number(lp.dueRound || 0)))
 
       const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
 
-      pushModal(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
       ;(async () => {
-        await awaitTop()
+        console.log('[SG][Auto] DESPESAS -$%d | loanCharge -$%d', expense, loanCharge)
+        await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
+        const totalCharge = expense + loanCharge
+        if (!requireFunds(curIdx, totalCharge, 'pagar Despesas Operacionais')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
           const upd = ps.map((p,i)=>{
             if (i!==curIdx) return p
-            const next = { ...p, cash: (p.cash||0) - (expense + loanCharge) }
+            const next = { ...p, cash: Math.max(0, (p.cash||0) - totalCharge) }
             if (shouldChargeLoan) {
               next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
             }
@@ -770,92 +1036,447 @@ export default function App() {
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
+
+    // fail-safe: solta o cadeado quando todas as modais fecharem
+    const start = Date.now()
+    const tick = () => {
+      if (modalLocksRef.current === 0) {
+        console.log('[SG][App] tick(): modalLocks=0 => unlock')
+        setTurnLockBroadcast(false); return
+      }
+      if (Date.now() - start > 20000) {
+        console.warn('[SG][App] tick(): TIMEOUT 20s => force unlock')
+        setModalLocks(0)
+        setTurnLockBroadcast(false)
+        return
+      }
+      setTimeout(tick, 80)
+    }
+    tick()
   }
 
   function nextTurn(){
     if (gameOver || !players.length) return
     const nextTurnIdx = (turnIdx + 1) % players.length
+    console.log('[SG][App] nextTurn() ->', nextTurnIdx)
     setTurnIdx(nextTurnIdx)
     broadcastState(players, nextTurnIdx, round)
   }
 
   function onAction(act){
     if (!act?.type || gameOver) return
+    console.log('[SG][App] onAction =>', act)
 
     if (act.type === 'ROLL'){
-      if (!isMyTurn) return
+      if (!isMyTurn) { console.warn('[SG][App] ROLL ignorado: não é a sua vez'); return }
       advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
       return
     }
 
     if (act.type === 'RECOVERY'){
       const recover = Math.floor(Math.random()*3000)+1000
-      const cur = players.find(p => String(p.id) === String(meId) || p.name === myName)
+      const cur = players.find(isMine)
       if (!cur) return
-      const nextPlayers = players.map(p => (String(p.id) === String(meId) || p.name === myName) ? { ...p, cash: p.cash + recover } : p)
+      const nextPlayers = players.map(p => (isMine(p) ? { ...p, cash: p.cash + recover } : p))
       appendLog(`${cur.name} ativou Recuperação Financeira (+$${recover})`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
+      setTurnLockBroadcast(false)
       return
     }
 
     if (act.type === 'RECOVERY_CUSTOM'){
       const amount = Number(act.amount || 0)
-      const cur = players.find(p => String(p.id) === String(meId) || p.name === myName)
+      const cur = players.find(isMine)
       if (!cur) return
-      const nextPlayers = players.map(p => (String(p.id) === String(meId) || p.name === myName) ? { ...p, cash: p.cash + amount } : p)
+      const nextPlayers = players.map(p => (isMine(p) ? { ...p, cash: p.cash + amount } : p))
       appendLog(`${cur.name} recuperou +$${amount}`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
+      setTurnLockBroadcast(false)
       return
     }
+
+    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+    // AJUSTE: aplica resultado da demissão (RECOVERY_FIRE)
+    if (act.type === 'RECOVERY_FIRE') {
+      // { type:'FIRE', amount, items:{ comum, field, inside, gestor }, creditByRole, note }
+      const amount = Number(act.amount || 0);
+      const items  = act.items || {};
+
+      const deltas = {
+        cashDelta: amount,
+        vendedoresComunsDelta: -Number(items.comum  || 0),
+        fieldSalesDelta:      -Number(items.field  || 0),
+        insideSalesDelta:     -Number(items.inside || 0),
+        gestoresDelta:        -Number(items.gestor || 0),
+      };
+
+      const curIdx = turnIdx;
+      setPlayers(ps => {
+        const upd = ps.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)));
+        broadcastState(upd, turnIdx, round);
+        return upd;
+      });
+
+      appendLog(`${current?.name || 'Jogador'}: ${act.note || 'Demissões'}`);
+      setTurnLockBroadcast(false);
+      return;
+    }
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+    // >>> Empréstimo (entra no caixa agora e será cobrado nas Despesas Operacionais)
+   // >>> Empréstimo: credita no caixa e agenda cobrança nas Despesas Operacionais
+// >>> Empréstimo (entra no caixa agora e agenda cobrança na próxima "Despesas Operacionais")
+if (act.type === 'RECOVERY_LOAN') {
+  const amt = Math.max(0, Number(act.amount || 0));
+  // nada a fazer se valor inválido
+  if (!amt) { setTurnLockBroadcast(false); return; }
+
+  const curIdx = turnIdx;
+  const cur = players[curIdx];
+
+  // Regra: só 1 empréstimo pendente por jogador até ser cobrado
+  if (cur?.loanPending && !cur.loanPending.charged) {
+    appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`);
+    setTurnLockBroadcast(false);
+    return;
+  }
+
+  const dueRound = round + 1; // cobrar na próxima "Despesas Operacionais"
+  setPlayers(ps => {
+    const upd = ps.map((p, i) =>
+      i !== curIdx
+        ? p
+        : {
+            ...p,
+            cash: (Number(p.cash) || 0) + amt, // entra no saldo agora
+            loanPending: { amount: amt, dueRound, charged: false }, // agendado p/ cobrança
+          }
+    );
+    broadcastState(upd, turnIdx, round);
+    return upd;
+  });
+
+  appendLog(`${cur?.name || 'Jogador'} pegou empréstimo: +$${amt.toLocaleString()}`);
+  setTurnLockBroadcast(false);
+  return;
+}
+
+// <<< dentro do onAction(act) do App.jsx >>>
+
+// -------------------------------------------------
+// COMPRA: MIX de PRODUTOS (não-escalonado, acumula)
+// Espera: act.type === 'BUY_MIX' | act.kind === 'MIX'
+// Campos: act.level ('A'|'B'|'C'|'D'), act.price (número)
+// -------------------------------------------------
+if (act.type === 'BUY_MIX' || act.kind === 'MIX_BUY' || act.type === 'DIRECT_BUY_MIX') {
+  const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
+  const price = Math.max(0, Number(act.price ?? 0));
+
+  if (!['A','B','C','D'].includes(level)) {
+    setTurnLockBroadcast(false);
+    return;
+  }
+
+  const curIdx = turnIdx;
+  const cur = players[curIdx];
+
+  if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
+
+  setPlayers(ps => {
+    const upd = ps.map((p, i) => {
+      if (i !== curIdx) return p;
+
+      // preserva o que já tinha e marca o novo nível como true
+      const mixOwned = { ...(p.mixOwned || p.mix || {}), D: true };
+      mixOwned[level] = true;
+
+      return {
+        ...p,
+        cash: Math.max(0, (Number(p.cash) || 0) - price),
+        mixOwned,
+        // mantemos alias antigos se outras partes usam:
+        mix: mixOwned,
+        // se você quiser guardar o "nível atual" exibido no painel:
+        mixLevel: level,
+        mixProdutos: level
+      };
+    });
+
+    broadcastState(upd, turnIdx, round);
+    return upd;
+  });
+
+  appendLog(`${cur?.name || 'Jogador'} comprou MIX nível ${level} por -$${price.toLocaleString()}`);
+  setTurnLockBroadcast(false);
+  return;
+}
+
+// -------------------------------------------------
+// COMPRA: ERP / SISTEMAS (não-escalonado, acumula)
+// Espera: act.type === 'BUY_ERP' | act.kind === 'ERP'
+// Campos: act.level ('A'|'B'|'C'|'D'), act.price (número)
+// -------------------------------------------------
+if (act.type === 'BUY_ERP' || act.kind === 'ERP_BUY' || act.type === 'DIRECT_BUY_ERP') {
+  const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
+  const price = Math.max(0, Number(act.price ?? 0));
+
+  if (!['A','B','C','D'].includes(level)) {
+    setTurnLockBroadcast(false);
+    return;
+  }
+
+  const curIdx = turnIdx;
+  const cur = players[curIdx];
+
+  if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
+
+  setPlayers(ps => {
+    const upd = ps.map((p, i) => {
+      if (i !== curIdx) return p;
+
+      // preserva o que já tinha e marca o novo nível como true
+      const erpOwned = { ...(p.erpOwned || p.erp || {}), D: true };
+      erpOwned[level] = true;
+
+      return {
+        ...p,
+        cash: Math.max(0, (Number(p.cash) || 0) - price),
+        erpOwned,
+        // manter aliases/estruturas legadas:
+        erp: erpOwned,
+        // se você guarda o "nível exibido" no painel:
+        erpLevel: level,
+        erpSystems: { ...(p.erpSystems || {}), level }
+      };
+    });
+
+    broadcastState(upd, turnIdx, round);
+    return upd;
+  });
+
+  appendLog(`${cur?.name || 'Jogador'} comprou ERP nível ${level} por -$${price.toLocaleString()}`);
+  setTurnLockBroadcast(false);
+  return;
+}
+
+
+// >>> Reduzir nível (vende um nível de MIX ou ERP e recebe o crédito agora)
+// >>> Reduzir nível (vende um ou mais níveis de MIX/ERP e recebe o crédito agora)
+if (act.type === 'RECOVERY_REDUCE') {
+  // ---- Normaliza o payload vindo da modal ----
+  // Aceita:
+  //  - act.items      [ { group:'MIX'|'ERP', level:'A'|'B'|'C'|'D', credit:number, owned?:bool, selected?:bool }, ... ]
+  //  - act.selection  { group, level, credit }
+  //  - act.target     { group, level, credit }
+  //  - act.amount     apenas valor (sem mexer na posse)
+  const normLevel = (v) => String(v || '').toUpperCase();
+  const normGroup = (v) => {
+    const g = String(v || '').toUpperCase();
+    if (g === 'MIX' || g === 'ERP') return g;
+    // compat: "mix" / "erp" / "erp/sistemas" etc.
+    if (g.includes('MIX')) return 'MIX';
+    if (g.includes('ERP')) return 'ERP';
+    return '';
+  };
+
+  /** retorna um array de seleções normalizadas */
+  const collectSelections = () => {
+    // novo formato (lista)
+    if (Array.isArray(act.items) && act.items.length) {
+      return act.items
+        .filter(it => (it?.selected ?? true)) // se existir selected=false, ignora
+        .map(it => ({
+          group: normGroup(it.group || it.kind),
+          level: normLevel(it.level),
+          credit: Math.max(0, Number(it.credit ?? it.amount ?? 0)),
+        }))
+        .filter(s => (s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level));
+    }
+
+    // formato antigo (uma seleção)
+    const one = act.selection || act.target || null;
+    if (one) {
+      const s = {
+        group: normGroup(one.group || one.kind),
+        level: normLevel(one.level),
+        credit: Math.max(0, Number(one.credit ?? one.amount ?? act.amount ?? 0)),
+      };
+      if ((s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level)) {
+        return [s];
+      }
+    }
+
+    return [];
+  };
+
+  const selections = collectSelections();
+
+  // Se não houve seleção mas veio só amount, credita e sai (fallback)
+  if (!selections.length) {
+    const creditOnly = Math.max(0, Number(act.amount ?? 0));
+    if (creditOnly > 0) {
+      const curIdx = turnIdx;
+      const cur = players[curIdx];
+      setPlayers(ps => {
+        const upd = ps.map((p, i) =>
+          i !== curIdx ? p : { ...p, cash: (Number(p.cash) || 0) + creditOnly }
+        );
+        broadcastState(upd, turnIdx, round);
+        return upd;
+      });
+    }
+    setTurnLockBroadcast(false);
+    return;
+  }
+
+  const curIdx = turnIdx;
+  const cur = players[curIdx];
+
+  // helpers para montar/derivar posse e a “letra” do painel
+  const ensureOwnedFromLetter = (store, letter) => {
+    const s = { A:false, B:false, C:false, D:false, ...(store || {}) };
+    const L = normLevel(letter);
+    if (!s.A && !s.B && !s.C && !s.D) {
+      if (['A','B','C','D'].includes(L)) s[L] = true;
+      else s.D = true; // base se nada existir
+    }
+    return s;
+  };
+  const letterFromOwned = (s) => {
+    if (s?.A) return 'A';
+    if (s?.B) return 'B';
+    if (s?.C) return 'C';
+    if (s?.D) return 'D';
+    return '-';
+  };
+
+  setPlayers(ps => {
+    const upd = ps.map((p, i) => {
+      if (i !== curIdx) return p;
+
+      // Clona posse atual (compat com chaves antigas)
+      let mixOwned = { A:false, B:false, C:false, D:false, ...(p.mixOwned || p.mix || {}) };
+      let erpOwned = { A:false, B:false, C:false, D:false, ...(p.erpOwned || p.erp || {}) };
+
+      // Se não há nada marcado, tenta inferir a partir das letras do painel
+      mixOwned = ensureOwnedFromLetter(mixOwned, p.mixProdutos);
+      erpOwned = ensureOwnedFromLetter(erpOwned, p.erpSistemas);
+
+      // Aplica as reduções (vende os níveis selecionados)
+      let totalCredit = 0;
+      for (const s of selections) {
+        totalCredit += Math.max(0, Number(s.credit || 0));
+        if (s.group === 'MIX') {
+          mixOwned[s.level] = false;
+        } else if (s.group === 'ERP') {
+          erpOwned[s.level] = false;
+        }
+      }
+
+      // Recalcula letra para o painel (A > B > C > D; se nenhum: '-')
+      const mixLetter = letterFromOwned(mixOwned);
+      const erpLetter = letterFromOwned(erpOwned);
+
+      return {
+        ...p,
+        cash: (Number(p.cash) || 0) + totalCredit,
+
+        // novas chaves de posse
+        mixOwned,
+        erpOwned,
+
+        // compat com código legado que lê p.mix/p.erp como posse
+        mix: mixOwned,
+        erp: erpOwned,
+
+        // letras usadas no HUD/painel (prints seus mostram esses nomes)
+        mixProdutos: mixLetter,
+        erpSistemas: erpLetter,
+      };
+    });
+
+    broadcastState(upd, turnIdx, round);
+    return upd;
+  });
+
+  // log bonitinho
+  const total = selections.reduce((acc, s) => acc + Math.max(0, Number(s.credit || 0)), 0);
+  if (selections.length === 1) {
+    const s = selections[0];
+    appendLog(`${cur?.name || 'Jogador'} reduziu ${s.group} nível ${s.level} e recebeu +$${total.toLocaleString()}`);
+  } else {
+    appendLog(`${cur?.name || 'Jogador'} reduziu ${selections.length} níveis e recebeu +$${total.toLocaleString()}`);
+  }
+
+  setTurnLockBroadcast(false);
+  return;
+}
+
+
+
 
     if (act.type === 'BANKRUPT'){
       appendLog(`${current?.name || 'Jogador'} declarou falência!`)
       nextTurn()
+      setTurnLockBroadcast(false)
       return
     }
   }
 
-  // === Totais para o HUD (do jogador desta ABA)
-  const totals = useMemo(() => {
-    const me = players.find(p => String(p.id) === String(meId) || p.name === myName) || players[0] || {}
+  // Mantém possibAt e clientsAt corretos
+  useEffect(() => {
+    const mine = players.find(isMine);
+    if (!mine) return;
+    const { cap, inAtt } = capacityAndAttendance(mine);
+    console.log('[SG][App] capacity/attendance -> cap=%d inAtt=%d', cap, inAtt)
+    setMeHud(h => ({ ...h, possibAt: cap, clientsAt: inAtt }));
+  }, [players, meId, myName]) // eslint-disable-line
 
-    const insideQty = Number(me.insideSales || 0)
-    const insideCertsCount = new Set(me?.trainingsByVendor?.inside || []).size
-    const insideRevenuePer = 1500 + 500 * insideCertsCount
-    const insideExpensePer = 2000 + 100 * insideCertsCount
-    const insideRevenueTotal = insideQty * insideRevenuePer
-    const insideExpenseTotal = insideQty * insideExpensePer
-
-    const ERP = {
-      A:{ fat:1000, desp:400 },
-      B:{ fat:500,  desp:200 },
-      C:{ fat:200,  desp:100 },
-      D:{ fat:70,   desp:50  },
+  // Fail-safe: solta o cadeado assim que não houver modal aberta
+  useEffect(() => {
+    if (modalLocks === 0 && turnLock) {
+      console.log('[SG][App] useEffect unlock: modalLocks=0 & turnLock=true')
+      setTurnLockBroadcast(false);
     }
-    const lvl = String(me.erpLevel || 'D').toUpperCase()
-    const erpFat  = (ERP[lvl]?.fat  ?? 0)
-    const erpDesp = (ERP[lvl]?.desp ?? 0)
+  }, [modalLocks, turnLock]) // eslint-disable-line
 
-    const dynamicRevenue = Number(me.revenue || 0)
+  // [FIX] Quando virar MINHA vez e não houver modal, garanto unlock local.
+  useEffect(() => {
+    if (isMyTurn && !hasBlockingModal && turnLock) {
+      console.log('[SG][FIX] Minha vez + sem modal => auto-unlock')
+      setTurnLock(false)
+    }
+  }, [isMyTurn, hasBlockingModal, turnLock]) // eslint-disable-line
 
+  // === Totais para o HUD
+  const totals = useMemo(() => {
+    const me = players.find(isMine) || players[0] || {};
+    const fat = computeFaturamentoFor(me);
+    const desp = computeDespesasFor(me);
+    const { cap, inAtt } = capacityAndAttendance(me);
+    const lvl = String(me.erpLevel || 'D').toUpperCase();
+    const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0);
     return {
-      faturamento: 770 + insideRevenueTotal + erpFat + dynamicRevenue,
-      manutencao: 1150 + (me.manutencao || 0) + insideExpenseTotal + erpDesp,
-      emprestimos: 0,
+      faturamento: fat,
+      manutencao: desp,
+      emprestimos: (me.loanPending && !me.loanPending.charged) ? Number(me.loanPending.amount || 0) : 0,
       vendedoresComuns: me.vendedoresComuns || 0,
       fieldSales: me.fieldSales || 0,
-      insideSales: insideQty,
+      insideSales: me.insideSales || 0,
       mixProdutos: me.mixProdutos || 'D',
       bens: me.bens ?? 0,
       erpSistemas: lvl,
       clientes: me.clients || 0,
       onboarding: !!me.onboarding,
       az: me.az || 0, am: me.am || 0, rox: me.rox || 0,
-      gestores: me.gestores || 0,
-    }
-  }, [players, meId, myName])
+      gestores: managerQty,
+      gestoresComerciais: managerQty,
+      possibAt: cap,
+      clientsAt: inAtt,
+    };
+  }, [players, meId, myName]) // eslint-disable-line
 
   // === Start ===
   if (phase === 'start'){
@@ -863,9 +1484,10 @@ export default function App() {
       <StartScreen
         onEnter={(typedName) => {
           const name = getOrSetTabPlayerName(typedName || 'Jogador')
-          setPlayers([{ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 }])
+          setPlayers([applyStarterKit({ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })])
           setRound(1); setTurnIdx(0); setLog([`Bem-vindo, ${name}!`])
           setGameOver(false); setWinner(null)
+          setRoundFlags(new Array(1).fill(false))
           setPhase('lobbies')
         }}
       />
@@ -884,7 +1506,7 @@ export default function App() {
     )
   }
 
-  // === Players Lobby (pronto / host / iniciar) ===
+  // === Players Lobby ===
   if (phase === 'playersLobby'){
     return (
       <PlayersLobby
@@ -894,25 +1516,24 @@ export default function App() {
           const raw = Array.isArray(payload)
             ? payload
             : (payload?.players ?? payload?.lobbyPlayers ?? [])
-          // mantém id (string) vindo do lobby; ordem do lobby define ordem dos turnos
-          const mapped = raw.map((p, i) => ({
-            id: String(p.id ?? p.player_id),
-            name: p.name ?? p.player_name,
-            cash: 18000,
-            pos: 0,
-            bens: 4000,
-            color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4]
-          }))
-
+          const mapped = raw.map((p, i) =>
+            applyStarterKit({
+              id: String(p.id ?? p.player_id),
+              name: p.name ?? p.player_name,
+              cash: 18000,
+              pos: 0,
+              bens: 4000,
+              color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4]
+            })
+          )
           if (mapped.length === 0) return
-
           setPlayers(mapped)
           setTurnIdx(0)
           setRound(1)
           setLog(['Jogo iniciado!'])
           setGameOver(false); setWinner(null)
           setMeHud(h => {
-            const mine = mapped.find(x => String(x.id) === String(meId) || x.name === myName)
+            const mine = mapped.find(isMine)
             return {
               ...h,
               name: mine?.name || mapped[0]?.name || 'Jogador',
@@ -921,6 +1542,8 @@ export default function App() {
               possibAt: 0, clientsAt: 0
             }
           })
+          setRoundFlags(new Array(mapped.length).fill(false))
+          broadcastStart(mapped)
           setPhase('game')
         }}
       />
@@ -928,6 +1551,9 @@ export default function App() {
   }
 
   // === Jogo ===
+  const controlsCanRoll = isMyTurn && !turnLock // << nunca bloqueia por saldo
+  console.log('[SG][Render] controlsCanRoll=%o | isMyTurn=%o turnLock=%o myCash=%d modalLocks=%d', controlsCanRoll, isMyTurn, turnLock, myCash, modalLocks)
+
   return (
     <div className="page">
       <header className="topbar">
@@ -940,7 +1566,7 @@ export default function App() {
               background: meHud.color
             }}
           />
-        <span style={{
+          <span style={{
             background:'#1f2430', border:'1px solid rgba(255,255,255,.12)',
             borderRadius:10, padding:'4px 10px', fontWeight:800
           }}>
@@ -969,7 +1595,8 @@ export default function App() {
 
           {/* CONTROLES FIXOS NO RODAPÉ DA SIDEBAR */}
           <div className="controlsSticky">
-            <Controls onAction={onAction} current={current} isMyTurn={isMyTurn} />
+            {/* usa o cadeado de turno entre abas + bloqueio por saldo */}
+            <Controls onAction={onAction} current={current} isMyTurn={controlsCanRoll} />
             <div style={{ marginTop: 10 }}>
               <button className="btn dark" onClick={() => setPhase('lobbies')}>Sair para Lobbies</button>
             </div>
@@ -981,13 +1608,14 @@ export default function App() {
               players={players}
               onExit={() => setPhase('lobbies')}
               onRestart={() => {
-                const reset = players.map(p => ({ ...p, cash:18000, bens:4000, pos:0 }))
+                const reset = players.map(p => applyStarterKit({ ...p, cash:18000, bens:4000, pos:0 }))
                 setPlayers(reset)
                 setTurnIdx(0)
                 setRound(1)
                 setLog(['Novo jogo iniciado!'])
                 setGameOver(false)
                 setWinner(null)
+                setRoundFlags(new Array(reset.length).fill(false))
               }}
             />
           )}

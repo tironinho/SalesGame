@@ -7,12 +7,12 @@ const LEVELS = {
   A: { compra: 10000, despesa: 400, faturamento: 1000, color:'#1d4ed8', pill:'NÍVEL A' },
   B: { compra: 4000,  despesa: 200, faturamento: 500,  color:'#16a34a', pill:'NÍVEL B' },
   C: { compra: 1500,  despesa: 100, faturamento: 200,  color:'#f59e0b', pill:'NÍVEL C' },
-  D: { compra: 500,   despesa:  50, faturamento:  70,  color:'#6b7280', pill:'BASE D' } // base / default
+  D: { compra: 500,   despesa:  50, faturamento:  70,  color:'#6b7280', pill:'NÍVEL D' } // agora comprável
 }
 
 /**
  * onResolve(payload)
- *  - {action:'BUY', level:'A'|'B'|'C', values:{...}}
+ *  - {action:'BUY', level:'A'|'B'|'C'|'D', values:{...}}
  *  - {action:'SKIP'}
  *
  * Props:
@@ -64,11 +64,11 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
 
         <h2 style={S.title}>Escolha o nível de <b>ERP / Sistemas</b>:</h2>
 
-        {/* Nota explicativa (padrão das demais modais) */}
+        {/* Nota explicativa */}
         <div style={S.note}>
           <div style={{fontWeight:900, marginBottom:4}}>ERP / SISTEMAS</div>
           <div><b>Impacto mensal:</b> adiciona <b>Despesa</b> e <b>Faturamento</b> de acordo com o nível.</div>
-          <div>O nível <b>D</b> é a base inicial. Você pode adquirir A, B ou C quando cair nas casas de ERP.</div>
+          <div>O nível <b>D</b> também pode ser adquirido.</div>
         </div>
 
         {/* Saldo disponível (ajuda visual) */}
@@ -88,11 +88,10 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
           <Row label="FATURAMENTO" fmt vA={LEVELS.A.faturamento} vB={LEVELS.B.faturamento} vC={LEVELS.C.faturamento} vD={LEVELS.D.faturamento} />
         </div>
 
-        {/* Cards coloridos estilo “mix/treino” + botões */}
+        {/* Cards + botões */}
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
-            const canBuy = k !== 'D'
             return (
               <div key={k} style={{...S.cardItem, borderColor:'rgba(255,255,255,.15)'}}>
                 <div style={{...S.pill, background:'#fff', color:'#111'}}>{v.pill}</div>
@@ -102,18 +101,14 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
                   <li>Despesa: <b>$ {v.despesa.toLocaleString()}</b></li>
                   <li>Faturamento: <b>$ {v.faturamento.toLocaleString()}</b></li>
                 </ul>
-                {canBuy ? (
-                  <button
-                    type="button"
-                    style={S.buyBtn}
-                    onClick={() => handleBuy(k)}
-                    title={`Comprar ERP nível ${k}`}
-                  >
-                    Comprar {k}
-                  </button>
-                ) : (
-                  <div style={{...S.buyBtn, background:'#3a3a3a', cursor:'default'}}>Base</div>
-                )}
+                <button
+                  type="button"
+                  style={S.buyBtn}
+                  onClick={() => handleBuy(k)}
+                  title={`Comprar ERP nível ${k}`}
+                >
+                  Comprar {k}
+                </button>
               </div>
             )
           })}
@@ -166,7 +161,7 @@ const S = {
   trHead: { display:'grid', gridTemplateColumns:'1fr repeat(4, 1fr)', background:'#121621' },
   th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
   tr: { display:'grid', gridTemplateColumns:'1fr repeat(4, 1fr)', background:'#0f1320' },
-  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
+  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255/.06)' },
 
   cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, marginTop:8 },
   cardItem:{ background:'#0f1320', border:'1px solid', borderRadius:14, padding:'12px', display:'flex', flexDirection:'column', gap:8 },

@@ -27,7 +27,7 @@ export default function BuyManagerModal({
 }) {
   const closeRef = useRef(null)
   const inputRef = useRef(null)
-  const { pushModal, awaitTop } = useModal()
+  const { pushModal, awaitTop, closeTop } = useModal() // <- usar closeTop p/ resolver a modal
 
   const [qty, setQty] = useState('')
 
@@ -55,10 +55,16 @@ export default function BuyManagerModal({
     setQty(String(bounded))
   }
 
+  // helper: resolve a modal preferindo closeTop (para awaitTop do App.jsx)
+  const resolve = (payload) => {
+    if (typeof closeTop === 'function') return closeTop(payload)
+    onResolve?.(payload)
+  }
+
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
-    onResolve?.({ action: 'SKIP' })
+    resolve({ action: 'SKIP' })
   }
 
   const handleBuy = async () => {
@@ -77,20 +83,29 @@ export default function BuyManagerModal({
       return
     }
 
-    onResolve?.({
+    resolve({
       action: 'BUY',
       role: 'MANAGER',
       qty: qtyNum,
+      headcount: qtyNum,            // compat extra
+      gestoresDelta: qtyNum,        // <- faz o painel somar Gestores
+
       unitHire: priceHire,
       unitExpense: monthly,
+
       totalHire,
       totalExpense,
-      // compatibilidade com App.jsx atual:
+
+      // compat com fluxos que leem 'cost'/'total'
       cost: totalHire,
       total: totalHire,
+
       // deltas explícitos para o painel:
       cashDelta: -totalHire,
       expenseDelta: totalExpense,
+
+      // dica opcional p/ HUD
+      hudUpdate: { category: 'Gestores Comerciais', addQty: qtyNum },
     })
   }
 
