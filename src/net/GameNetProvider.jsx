@@ -1,10 +1,7 @@
 // src/net/GameNetProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY
-const supabase = (supabaseUrl && supabaseAnon) ? createClient(supabaseUrl, supabaseAnon) : null
+// ❗️Usa o client único (singleton)
+import { supabase } from '../supabaseClient'
 
 const Ctx = createContext(null)
 export const useGameNet = () => useContext(Ctx)
@@ -19,8 +16,8 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const enabled = !!supabase && !!roomCode
   const code = String(roomCode || '').trim()
 
-  const [ready, setReady]   = useState(false)
-  const [state, setState]   = useState({})
+  const [ready, setReady] = useState(false)
+  const [state, setState] = useState({})
   const [version, setVersion] = useState(0)
 
   const stateRef   = useRef(state)
@@ -28,6 +25,15 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const lastEvtRef = useRef(0)
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { versionRef.current = version }, [version])
+
+  // Se desabilitar (sem sala), limpa rapidamente o provider
+  useEffect(() => {
+    if (!enabled) {
+      setReady(false)
+      setState({})
+      setVersion(0)
+    }
+  }, [enabled, code])
 
   // bootstrap: carrega/cria pelo code
   useEffect(() => {
@@ -67,7 +73,8 @@ function GameNetProvider({ roomCode, hostId, children }) {
     if (!enabled) return
     const ch = supabase
       .channel(`rooms:${code}`)
-      .on('postgres_changes',
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => {
           const row = payload.new || payload.old || {}
@@ -104,14 +111,19 @@ function GameNetProvider({ roomCode, hostId, children }) {
     const prev = stateRef.current || {}
     const next = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
     const newVersion = (versionRef.current || 0) + 1
-    const { data, error } = await supabase
-      .from('rooms')
-      .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
-      .eq('code', code)
-      .select('state, version')
-      .single()
-    if (error) { console.warn('[NET] commit:', error.message || error); return }
-    setState(data?.state || next); setVersion(data?.version ?? newVersion)
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
+        .eq('code', code)
+        .select('state, version')
+        .single()
+      if (error) { console.warn('[NET] commit:', error.message || error); return }
+      setState(data?.state || next); setVersion(data?.version ?? newVersion)
+      lastEvtRef.current = Date.now()
+    } catch (e) {
+      console.warn('[NET] commit exception:', e)
+    }
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])
