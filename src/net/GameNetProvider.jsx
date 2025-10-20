@@ -1,13 +1,13 @@
 // src/net/GameNetProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-// ❗️Usa o client único (singleton)
-import { supabase } from '../supabaseClient'
+// use sempre o único client central
+import { supabase } from '../lib/supabaseClient.js'
 
 const Ctx = createContext(null)
 export const useGameNet = () => useContext(Ctx)
 
 /**
- * rooms: { id uuid, code text UNIQUE, host_id text, state jsonb, version int, updated_at timestamptz }
+ * Tabela rooms: { id, code (UNIQUE), host_id, state (jsonb), version (int), updated_at }
  * Props:
  *  - roomCode: string que identifica a sala (use o UUID do lobby!)
  *  - hostId: opcional
@@ -20,20 +20,11 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const [state, setState] = useState({})
   const [version, setVersion] = useState(0)
 
-  const stateRef   = useRef(state)
+  const stateRef = useRef(state)
   const versionRef = useRef(version)
   const lastEvtRef = useRef(0)
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { versionRef.current = version }, [version])
-
-  // Se desabilitar (sem sala), limpa rapidamente o provider
-  useEffect(() => {
-    if (!enabled) {
-      setReady(false)
-      setState({})
-      setVersion(0)
-    }
-  }, [enabled, code])
 
   // bootstrap: carrega/cria pelo code
   useEffect(() => {
@@ -87,7 +78,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
     return () => { try { supabase.removeChannel(ch) } catch {} }
   }, [enabled, code])
 
-  // polling de segurança (caso Realtime esteja off)
+  // polling de segurança (se o realtime estiver off)
   useEffect(() => {
     if (!enabled) return
     const id = setInterval(async () => {
@@ -111,19 +102,14 @@ function GameNetProvider({ roomCode, hostId, children }) {
     const prev = stateRef.current || {}
     const next = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
     const newVersion = (versionRef.current || 0) + 1
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
-        .eq('code', code)
-        .select('state, version')
-        .single()
-      if (error) { console.warn('[NET] commit:', error.message || error); return }
-      setState(data?.state || next); setVersion(data?.version ?? newVersion)
-      lastEvtRef.current = Date.now()
-    } catch (e) {
-      console.warn('[NET] commit exception:', e)
-    }
+    const { data, error } = await supabase
+      .from('rooms')
+      .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
+      .eq('code', code)
+      .select('state, version')
+      .single()
+    if (error) { console.warn('[NET] commit:', error.message || error); return }
+    setState(data?.state || next); setVersion(data?.version ?? newVersion)
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])
