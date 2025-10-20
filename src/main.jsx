@@ -1,16 +1,26 @@
+// src/main.jsx
 import React from 'react'
-import { createRoot } from 'react-dom/client'
+import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import GameNetProvider from './net/GameNetProvider.jsx' // ✅ default export
 
-// Provider do sistema de modais (nomeado)
-import { ModalProvider } from './modals/ModalContext.jsx'
+// Defina o "roomCode" (nome da sala) — pode vir da querystring ou de localStorage.
+// Ex.: http://localhost:5173/?room=Sala%20de%20Jogador
+const qs = new URLSearchParams(window.location.search)
+let roomName = qs.get('room')
 
-import './styles.css'
+// fallback: tenta recuperar do localStorage (última sala usada)
+if (!roomName) {
+  roomName = localStorage.getItem('sg:lastRoomName') || 'sala-demo'
+} else {
+  localStorage.setItem('sg:lastRoomName', roomName)
+}
 
-createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <ModalProvider>
+    {/* O App usa o hook useGameNet internamente; aqui só passamos o identificador da sala */}
+    <GameNetProvider roomCode={roomName}>
       <App />
-    </ModalProvider>
+    </GameNetProvider>
   </React.StrictMode>
 )
