@@ -2,25 +2,40 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
-import GameNetProvider from './net/GameNetProvider.jsx' // ✅ default export
+import GameNetProvider from './net/GameNetProvider.jsx'
 
-// Defina o "roomCode" (nome da sala) — pode vir da querystring ou de localStorage.
-// Ex.: http://localhost:5173/?room=Sala%20de%20Jogador
-const qs = new URLSearchParams(window.location.search)
-let roomName = qs.get('room')
+function initialRoomFromURL () {
+  const qs = new URLSearchParams(window.location.search)
+  const q = qs.get('room')
+  return (q && String(q).trim()) || null   // null = sem sync remoto até escolher uma sala
+}
 
-// fallback: tenta recuperar do localStorage (última sala usada)
-if (!roomName) {
-  roomName = localStorage.getItem('sg:lastRoomName') || 'sala-demo'
-} else {
-  localStorage.setItem('sg:lastRoomName', roomName)
+function Root() {
+  const [roomCode, setRoomCode] = React.useState(initialRoomFromURL())
+
+  // expõe um setter global para o App trocar a sala dinamicamente
+  React.useEffect(() => {
+    window.__setRoomCode = (code) => {
+      const c = String(code || '').trim() || null
+      setRoomCode(c)
+      // mantém a URL coerente com a sala atual
+      const url = new URL(window.location.href)
+      if (c) url.searchParams.set('room', c)
+      else url.searchParams.delete('room')
+      window.history.replaceState({}, '', url)
+    }
+    return () => { delete window.__setRoomCode }
+  }, [])
+
+  return (
+    <GameNetProvider roomCode={roomCode}>
+      <App />
+    </GameNetProvider>
+  )
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* O App usa o hook useGameNet internamente; aqui só passamos o identificador da sala */}
-    <GameNetProvider roomCode={roomName}>
-      <App />
-    </GameNetProvider>
+    <Root />
   </React.StrictMode>
 )

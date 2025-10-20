@@ -11,7 +11,7 @@ import HUD from './components/HUD.jsx'
 import Controls from './components/Controls.jsx'
 import { TRACK_LEN } from './data/track'
 
-// >>> usa identidade POR ABA (evita bloquear em todo mundo)
+// >>> identidade POR ABA (evita bloquear em todo mundo)
 import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
 
 // >>> modal ERP
@@ -86,8 +86,9 @@ export default function App() {
     (String(s ?? '').normalize ? String(s ?? '').normalize('NFKC') : String(s ?? ''))
       .trim()
       .toLowerCase()
-  const sameName = (a, b) => norm(a) === norm(b)
-  const isMine = (p) => !!p && (String(p.id) === String(meId) || sameName(p.name, myName))
+
+  // AJUSTE: só pelo ID (nunca pelo nome)
+  const isMine = React.useCallback((p) => !!p && String(p.id) === String(meId), [meId])
 
   useEffect(() => {
     setTurnIdx(t => (players.length > 0 ? (t % players.length + players.length) % players.length : 0))
@@ -101,8 +102,7 @@ export default function App() {
     const owner = players[turnIdx]
     if (!owner) return false
     const byId = owner.id != null && String(owner.id) === String(meId)
-    const byName = sameName(owner.name || '', myName || '')
-    const turn = byId || byName
+    const turn = byId
     console.log('[SG][App] isMyTurn? %o | owner=%o | meId=%s | myName=%s', turn, owner, meId, myName)
     return turn
   }, [players, turnIdx, meId, myName])
@@ -164,7 +164,7 @@ export default function App() {
   // saldo desta aba
   const myCash = useMemo(
     () => (players.find(isMine)?.cash ?? 0),
-    [players, meId, myName]
+    [players, isMine]
   )
 
   // sync meHud.cash
@@ -174,7 +174,7 @@ export default function App() {
     if (meHud.cash !== mine.cash) {
       console.log('[SG][App] meHud.cash <-', mine.cash)
       setMeHud(h => ({ ...h, cash: mine.cash })) }
-  }, [players, meId, myName]) // eslint-disable-line
+  }, [players, isMine]) // eslint-disable-line
 
   // ======= Tabelas/Helpers de Cálculo =======
   const VENDOR_CONF = {
@@ -286,7 +286,7 @@ export default function App() {
 
     const dComum  = qComum  * (VENDOR_CONF.comum.baseDesp  + VENDOR_CONF.comum.incDesp  * cComum );
     const dInside = qInside * (VENDOR_CONF.inside.baseDesp + VENDOR_CONF.inside.incDesp * cInside);
-    const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp * cField );
+    const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp  * cField );
     const dGestor = qGestor * (GESTOR.baseDesp + GESTOR.incDesp * cGestor);
 
     const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
@@ -398,7 +398,7 @@ export default function App() {
     } catch (e) {
       console.warn('[SG][App] BroadcastChannel init failed:', e)
     }
-  }, [syncKey, meId, myName, phase]) // eslint-disable-line
+  }, [syncKey, meId, myName, phase, isMine]) // eslint-disable-line
 
   // ===== (NOVO) Multiplayer em rede: lê/commita estado autoritativo se o provider estiver presente =====
   const net = (() => {
@@ -599,17 +599,17 @@ export default function App() {
     }
 
     // === Compra Direta: 5,10,43 ===
-   const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
-if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
-  ;(async () => {
-    console.log('[SG][Tiles] DIRECT BUY tile landed:', landedOneBased)
-    // use o saldo já atualizado (nextPlayers) caso exista,
-    // caindo para o myCash se algo falhar
-    const cashNow =
-      (Array.isArray(nextPlayers) && nextPlayers[curIdx]?.cash) ??
-      (players[curIdx]?.cash ?? myCash)
+    const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
+    if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+      ;(async () => {
+        console.log('[SG][Tiles] DIRECT BUY tile landed:', landedOneBased)
+        // use o saldo já atualizado (nextPlayers) caso exista,
+        // caindo para o myCash se algo falhar
+        const cashNow =
+          (Array.isArray(nextPlayers) && nextPlayers[curIdx]?.cash) ??
+          (players[curIdx]?.cash ?? myCash)
 
-    const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
+        const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
         if (!res) return
 
         if (res.action === 'OPEN') {
@@ -1174,296 +1174,245 @@ if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
     // >>> Empréstimo (entra no caixa agora e será cobrado nas Despesas Operacionais)
-   // >>> Empréstimo: credita no caixa e agenda cobrança nas Despesas Operacionais
-// >>> Empréstimo (entra no caixa agora e agenda cobrança na próxima "Despesas Operacionais")
-if (act.type === 'RECOVERY_LOAN') {
-  const amt = Math.max(0, Number(act.amount || 0));
-  // nada a fazer se valor inválido
-  if (!amt) { setTurnLockBroadcast(false); return; }
+    if (act.type === 'RECOVERY_LOAN') {
+      const amt = Math.max(0, Number(act.amount || 0));
+      if (!amt) { setTurnLockBroadcast(false); return; }
 
-  const curIdx = turnIdx;
-  const cur = players[curIdx];
-
-  // Regra: só 1 empréstimo pendente por jogador até ser cobrado
-  if (cur?.loanPending && !cur.loanPending.charged) {
-    appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`);
-    setTurnLockBroadcast(false);
-    return;
-  }
-
-  const dueRound = round + 1; // cobrar na próxima "Despesas Operacionais"
-  setPlayers(ps => {
-    const upd = ps.map((p, i) =>
-      i !== curIdx
-        ? p
-        : {
-            ...p,
-            cash: (Number(p.cash) || 0) + amt, // entra no saldo agora
-            loanPending: { amount: amt, dueRound, charged: false }, // agendado p/ cobrança
-          }
-    );
-    broadcastState(upd, turnIdx, round);
-    return upd;
-  });
-
-  appendLog(`${cur?.name || 'Jogador'} pegou empréstimo: +$${amt.toLocaleString()}`);
-  setTurnLockBroadcast(false);
-  return;
-}
-
-// <<< dentro do onAction(act) do App.jsx >>>
-
-// -------------------------------------------------
-// COMPRA: MIX de PRODUTOS (não-escalonado, acumula)
-// Espera: act.type === 'BUY_MIX' | act.kind === 'MIX'
-// Campos: act.level ('A'|'B'|'C'|'D'), act.price (número)
-// -------------------------------------------------
-if (act.type === 'BUY_MIX' || act.kind === 'MIX_BUY' || act.type === 'DIRECT_BUY_MIX') {
-  const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
-  const price = Math.max(0, Number(act.price ?? 0));
-
-  if (!['A','B','C','D'].includes(level)) {
-    setTurnLockBroadcast(false);
-    return;
-  }
-
-  const curIdx = turnIdx;
-  const cur = players[curIdx];
-
-  if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
-
-  setPlayers(ps => {
-    const upd = ps.map((p, i) => {
-      if (i !== curIdx) return p;
-
-      // preserva o que já tinha e marca o novo nível como true
-      const mixOwned = { ...(p.mixOwned || p.mix || {}), D: true };
-      mixOwned[level] = true;
-
-      return {
-        ...p,
-        cash: Math.max(0, (Number(p.cash) || 0) - price),
-        mixOwned,
-        // mantemos alias antigos se outras partes usam:
-        mix: mixOwned,
-        // se você quiser guardar o "nível atual" exibido no painel:
-        mixLevel: level,
-        mixProdutos: level
-      };
-    });
-
-    broadcastState(upd, turnIdx, round);
-    return upd;
-  });
-
-  appendLog(`${cur?.name || 'Jogador'} comprou MIX nível ${level} por -$${price.toLocaleString()}`);
-  setTurnLockBroadcast(false);
-  return;
-}
-
-// -------------------------------------------------
-// COMPRA: ERP / SISTEMAS (não-escalonado, acumula)
-// Espera: act.type === 'BUY_ERP' | act.kind === 'ERP'
-// Campos: act.level ('A'|'B'|'C'|'D'), act.price (número)
-// -------------------------------------------------
-if (act.type === 'BUY_ERP' || act.kind === 'ERP_BUY' || act.type === 'DIRECT_BUY_ERP') {
-  const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
-  const price = Math.max(0, Number(act.price ?? 0));
-
-  if (!['A','B','C','D'].includes(level)) {
-    setTurnLockBroadcast(false);
-    return;
-  }
-
-  const curIdx = turnIdx;
-  const cur = players[curIdx];
-
-  if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
-
-  setPlayers(ps => {
-    const upd = ps.map((p, i) => {
-      if (i !== curIdx) return p;
-
-      // preserva o que já tinha e marca o novo nível como true
-      const erpOwned = { ...(p.erpOwned || p.erp || {}), D: true };
-      erpOwned[level] = true;
-
-      return {
-        ...p,
-        cash: Math.max(0, (Number(p.cash) || 0) - price),
-        erpOwned,
-        // manter aliases/estruturas legadas:
-        erp: erpOwned,
-        // se você guarda o "nível exibido" no painel:
-        erpLevel: level,
-        erpSystems: { ...(p.erpSystems || {}), level }
-      };
-    });
-
-    broadcastState(upd, turnIdx, round);
-    return upd;
-  });
-
-  appendLog(`${cur?.name || 'Jogador'} comprou ERP nível ${level} por -$${price.toLocaleString()}`);
-  setTurnLockBroadcast(false);
-  return;
-}
-
-
-// >>> Reduzir nível (vende um nível de MIX ou ERP e recebe o crédito agora)
-// >>> Reduzir nível (vende um ou mais níveis de MIX/ERP e recebe o crédito agora)
-if (act.type === 'RECOVERY_REDUCE') {
-  // ---- Normaliza o payload vindo da modal ----
-  // Aceita:
-  //  - act.items      [ { group:'MIX'|'ERP', level:'A'|'B'|'C'|'D', credit:number, owned?:bool, selected?:bool }, ... ]
-  //  - act.selection  { group, level, credit }
-  //  - act.target     { group, level, credit }
-  //  - act.amount     apenas valor (sem mexer na posse)
-  const normLevel = (v) => String(v || '').toUpperCase();
-  const normGroup = (v) => {
-    const g = String(v || '').toUpperCase();
-    if (g === 'MIX' || g === 'ERP') return g;
-    // compat: "mix" / "erp" / "erp/sistemas" etc.
-    if (g.includes('MIX')) return 'MIX';
-    if (g.includes('ERP')) return 'ERP';
-    return '';
-  };
-
-  /** retorna um array de seleções normalizadas */
-  const collectSelections = () => {
-    // novo formato (lista)
-    if (Array.isArray(act.items) && act.items.length) {
-      return act.items
-        .filter(it => (it?.selected ?? true)) // se existir selected=false, ignora
-        .map(it => ({
-          group: normGroup(it.group || it.kind),
-          level: normLevel(it.level),
-          credit: Math.max(0, Number(it.credit ?? it.amount ?? 0)),
-        }))
-        .filter(s => (s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level));
-    }
-
-    // formato antigo (uma seleção)
-    const one = act.selection || act.target || null;
-    if (one) {
-      const s = {
-        group: normGroup(one.group || one.kind),
-        level: normLevel(one.level),
-        credit: Math.max(0, Number(one.credit ?? one.amount ?? act.amount ?? 0)),
-      };
-      if ((s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level)) {
-        return [s];
-      }
-    }
-
-    return [];
-  };
-
-  const selections = collectSelections();
-
-  // Se não houve seleção mas veio só amount, credita e sai (fallback)
-  if (!selections.length) {
-    const creditOnly = Math.max(0, Number(act.amount ?? 0));
-    if (creditOnly > 0) {
       const curIdx = turnIdx;
       const cur = players[curIdx];
+
+      if (cur?.loanPending && !cur.loanPending.charged) {
+        appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`);
+        setTurnLockBroadcast(false);
+        return;
+      }
+
+      const dueRound = round + 1; // cobrar na próxima "Despesas Operacionais"
       setPlayers(ps => {
         const upd = ps.map((p, i) =>
-          i !== curIdx ? p : { ...p, cash: (Number(p.cash) || 0) + creditOnly }
+          i !== curIdx
+            ? p
+            : {
+                ...p,
+                cash: (Number(p.cash) || 0) + amt,
+                loanPending: { amount: amt, dueRound, charged: false },
+              }
         );
         broadcastState(upd, turnIdx, round);
         return upd;
       });
+
+      appendLog(`${cur?.name || 'Jogador'} pegou empréstimo: +$${amt.toLocaleString()}`);
+      setTurnLockBroadcast(false);
+      return;
     }
-    setTurnLockBroadcast(false);
-    return;
-  }
 
-  const curIdx = turnIdx;
-  const cur = players[curIdx];
+    // -------------------------------------------------
+    // COMPRA: MIX (acumula posse de níveis)
+    // -------------------------------------------------
+    if (act.type === 'BUY_MIX' || act.kind === 'MIX_BUY' || act.type === 'DIRECT_BUY_MIX') {
+      const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
+      const price = Math.max(0, Number(act.price ?? 0));
+      if (!['A','B','C','D'].includes(level)) { setTurnLockBroadcast(false); return; }
 
-  // helpers para montar/derivar posse e a “letra” do painel
-  const ensureOwnedFromLetter = (store, letter) => {
-    const s = { A:false, B:false, C:false, D:false, ...(store || {}) };
-    const L = normLevel(letter);
-    if (!s.A && !s.B && !s.C && !s.D) {
-      if (['A','B','C','D'].includes(L)) s[L] = true;
-      else s.D = true; // base se nada existir
+      const curIdx = turnIdx;
+      if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
+
+      setPlayers(ps => {
+        const upd = ps.map((p, i) => {
+          if (i !== curIdx) return p;
+          const mixOwned = { ...(p.mixOwned || p.mix || {}), D: true };
+          mixOwned[level] = true;
+
+          return {
+            ...p,
+            cash: Math.max(0, (Number(p.cash) || 0) - price),
+            mixOwned,
+            mix: mixOwned,
+            mixLevel: level,
+            mixProdutos: level
+          };
+        });
+
+        broadcastState(upd, turnIdx, round);
+        return upd;
+      });
+
+      appendLog(`${players[curIdx]?.name || 'Jogador'} comprou MIX nível ${level} por -$${price.toLocaleString()}`);
+      setTurnLockBroadcast(false);
+      return;
     }
-    return s;
-  };
-  const letterFromOwned = (s) => {
-    if (s?.A) return 'A';
-    if (s?.B) return 'B';
-    if (s?.C) return 'C';
-    if (s?.D) return 'D';
-    return '-';
-  };
 
-  setPlayers(ps => {
-    const upd = ps.map((p, i) => {
-      if (i !== curIdx) return p;
+    // -------------------------------------------------
+    // COMPRA: ERP / SISTEMAS (acumula posse de níveis)
+    // -------------------------------------------------
+    if (act.type === 'BUY_ERP' || act.kind === 'ERP_BUY' || act.type === 'DIRECT_BUY_ERP') {
+      const level = String(act.level || '').toUpperCase();   // 'A' | 'B' | 'C' | 'D'
+      const price = Math.max(0, Number(act.price ?? 0));
+      if (!['A','B','C','D'].includes(level)) { setTurnLockBroadcast(false); return; }
 
-      // Clona posse atual (compat com chaves antigas)
-      let mixOwned = { A:false, B:false, C:false, D:false, ...(p.mixOwned || p.mix || {}) };
-      let erpOwned = { A:false, B:false, C:false, D:false, ...(p.erpOwned || p.erp || {}) };
+      const curIdx = turnIdx;
+      if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
 
-      // Se não há nada marcado, tenta inferir a partir das letras do painel
-      mixOwned = ensureOwnedFromLetter(mixOwned, p.mixProdutos);
-      erpOwned = ensureOwnedFromLetter(erpOwned, p.erpSistemas);
+      setPlayers(ps => {
+        const upd = ps.map((p, i) => {
+          if (i !== curIdx) return p;
 
-      // Aplica as reduções (vende os níveis selecionados)
-      let totalCredit = 0;
-      for (const s of selections) {
-        totalCredit += Math.max(0, Number(s.credit || 0));
-        if (s.group === 'MIX') {
-          mixOwned[s.level] = false;
-        } else if (s.group === 'ERP') {
-          erpOwned[s.level] = false;
+          const erpOwned = { ...(p.erpOwned || p.erp || {}), D: true };
+          erpOwned[level] = true;
+
+          return {
+            ...p,
+            cash: Math.max(0, (Number(p.cash) || 0) - price),
+            erpOwned,
+            erp: erpOwned,
+            erpLevel: level,
+            erpSystems: { ...(p.erpSystems || {}), level }
+          };
+        });
+
+        broadcastState(upd, turnIdx, round);
+        return upd;
+      });
+
+      appendLog(`${players[curIdx]?.name || 'Jogador'} comprou ERP nível ${level} por -$${price.toLocaleString()}`);
+      setTurnLockBroadcast(false);
+      return;
+    }
+
+    // >>> Reduzir nível (vende um ou mais níveis de MIX/ERP e recebe o crédito agora)
+    if (act.type === 'RECOVERY_REDUCE') {
+      const normLevel = (v) => String(v || '').toUpperCase();
+      const normGroup = (v) => {
+        const g = String(v || '').toUpperCase();
+        if (g === 'MIX' || g === 'ERP') return g;
+        if (g.includes('MIX')) return 'MIX';
+        if (g.includes('ERP')) return 'ERP';
+        return '';
+      };
+
+      const collectSelections = () => {
+        if (Array.isArray(act.items) && act.items.length) {
+          return act.items
+            .filter(it => (it?.selected ?? true))
+            .map(it => ({
+              group: normGroup(it.group || it.kind),
+              level: normLevel(it.level),
+              credit: Math.max(0, Number(it.credit ?? it.amount ?? 0)),
+            }))
+            .filter(s => (s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level));
         }
+
+        const one = act.selection || act.target || null;
+        if (one) {
+          const s = {
+            group: normGroup(one.group || one.kind),
+            level: normLevel(one.level),
+            credit: Math.max(0, Number(one.credit ?? one.amount ?? act.amount ?? 0)),
+          };
+          if ((s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level)) {
+            return [s];
+          }
+        }
+
+        return [];
+      };
+
+      const selections = collectSelections();
+
+      // Fallback: apenas credita amount
+      if (!selections.length) {
+        const creditOnly = Math.max(0, Number(act.amount ?? 0));
+        if (creditOnly > 0) {
+          const curIdx = turnIdx;
+          setPlayers(ps => {
+            const upd = ps.map((p, i) =>
+              i !== curIdx ? p : { ...p, cash: (Number(p.cash) || 0) + creditOnly }
+            );
+            broadcastState(upd, turnIdx, round);
+            return upd;
+          });
+        }
+        setTurnLockBroadcast(false);
+        return;
       }
 
-      // Recalcula letra para o painel (A > B > C > D; se nenhum: '-')
-      const mixLetter = letterFromOwned(mixOwned);
-      const erpLetter = letterFromOwned(erpOwned);
-
-      return {
-        ...p,
-        cash: (Number(p.cash) || 0) + totalCredit,
-
-        // novas chaves de posse
-        mixOwned,
-        erpOwned,
-
-        // compat com código legado que lê p.mix/p.erp como posse
-        mix: mixOwned,
-        erp: erpOwned,
-
-        // letras usadas no HUD/painel (prints seus mostram esses nomes)
-        mixProdutos: mixLetter,
-        erpSistemas: erpLetter,
+      const ensureOwnedFromLetter = (store, letter) => {
+        const s = { A:false, B:false, C:false, D:false, ...(store || {}) };
+        const L = normLevel(letter);
+        if (!s.A && !s.B && !s.C && !s.D) {
+          if (['A','B','C','D'].includes(L)) s[L] = true;
+          else s.D = true; // base se nada existir
+        }
+        return s;
       };
-    });
+      const letterFromOwned = (s) => {
+        if (s?.A) return 'A';
+        if (s?.B) return 'B';
+        if (s?.C) return 'C';
+        if (s?.D) return 'D';
+        return '-';
+      };
 
-    broadcastState(upd, turnIdx, round);
-    return upd;
-  });
+      const curIdx = turnIdx;
+      const cur = players[curIdx];
 
-  // log bonitinho
-  const total = selections.reduce((acc, s) => acc + Math.max(0, Number(s.credit || 0)), 0);
-  if (selections.length === 1) {
-    const s = selections[0];
-    appendLog(`${cur?.name || 'Jogador'} reduziu ${s.group} nível ${s.level} e recebeu +$${total.toLocaleString()}`);
-  } else {
-    appendLog(`${cur?.name || 'Jogador'} reduziu ${selections.length} níveis e recebeu +$${total.toLocaleString()}`);
-  }
+      setPlayers(ps => {
+        const upd = ps.map((p, i) => {
+          if (i !== curIdx) return p;
 
-  setTurnLockBroadcast(false);
-  return;
-}
+          let mixOwned = { A:false, B:false, C:false, D:false, ...(p.mixOwned || p.mix || {}) };
+          let erpOwned = { A:false, B:false, C:false, D:false, ...(p.erpOwned || p.erp || {}) };
 
+          mixOwned = ensureOwnedFromLetter(mixOwned, p.mixProdutos);
+          erpOwned = ensureOwnedFromLetter(erpOwned, p.erpSistemas);
 
+          let totalCredit = 0;
+          for (const s of selections) {
+            totalCredit += Math.max(0, Number(s.credit || 0));
+            if (s.group === 'MIX') {
+              mixOwned[s.level] = false;
+            } else if (s.group === 'ERP') {
+              erpOwned[s.level] = false;
+            }
+          }
 
+          const mixLetter = letterFromOwned(mixOwned);
+          const erpLetter = letterFromOwned(erpOwned);
+
+          return {
+            ...p,
+            cash: (Number(p.cash) || 0) + totalCredit,
+
+            // novas chaves de posse
+            mixOwned,
+            erpOwned,
+
+            // compat com código legado que lê p.mix/p.erp como posse
+            mix: mixOwned,
+            erp: erpOwned,
+
+            // letras usadas no HUD/painel
+            mixProdutos: mixLetter,
+            erpSistemas: erpLetter,
+          };
+        });
+
+        broadcastState(upd, turnIdx, round);
+        return upd;
+      });
+
+      const total = selections.reduce((acc, s) => acc + Math.max(0, Number(s.credit || 0)), 0);
+      if (selections.length === 1) {
+        const s = selections[0];
+        appendLog(`${cur?.name || 'Jogador'} reduziu ${s.group} nível ${s.level} e recebeu +$${total.toLocaleString()}`);
+      } else {
+        appendLog(`${cur?.name || 'Jogador'} reduziu ${selections.length} níveis e recebeu +$${total.toLocaleString()}`);
+      }
+
+      setTurnLockBroadcast(false);
+      return;
+    }
 
     if (act.type === 'BANKRUPT'){
       appendLog(`${current?.name || 'Jogador'} declarou falência!`)
@@ -1480,7 +1429,7 @@ if (act.type === 'RECOVERY_REDUCE') {
     const { cap, inAtt } = capacityAndAttendance(mine);
     console.log('[SG][App] capacity/attendance -> cap=%d inAtt=%d', cap, inAtt)
     setMeHud(h => ({ ...h, possibAt: cap, clientsAt: inAtt }));
-  }, [players, meId, myName]) // eslint-disable-line
+  }, [players, isMine]) // eslint-disable-line
 
   // Fail-safe: solta o cadeado assim que não houver modal aberta
   useEffect(() => {
@@ -1524,7 +1473,7 @@ if (act.type === 'RECOVERY_REDUCE') {
       possibAt: cap,
       clientsAt: inAtt,
     };
-  }, [players, meId, myName]) // eslint-disable-line
+  }, [players, isMine]) // eslint-disable-line
 
   // === Start ===
   if (phase === 'start'){
@@ -1548,6 +1497,8 @@ if (act.type === 'RECOVERY_REDUCE') {
       <LobbyList
         onEnterRoom={(id) => {
           setCurrentLobbyId(id)
+          // >>> informa ao provider para sincronizar nesta sala (use o UUID do lobby)
+          window.__setRoomCode?.(id)
           setPhase('playersLobby')
         }}
       />
@@ -1559,7 +1510,11 @@ if (act.type === 'RECOVERY_REDUCE') {
     return (
       <PlayersLobby
         lobbyId={currentLobbyId}
-        onBack={() => setPhase('lobbies')}
+        onBack={() => {
+          // sair do lobby: pausa sync remoto
+          window.__setRoomCode?.(null)
+          setPhase('lobbies')
+        }}
         onStartGame={(payload) => {
           const raw = Array.isArray(payload)
             ? payload
@@ -1646,7 +1601,15 @@ if (act.type === 'RECOVERY_REDUCE') {
             {/* usa o cadeado de turno entre abas + bloqueio por saldo */}
             <Controls onAction={onAction} current={current} isMyTurn={controlsCanRoll} />
             <div style={{ marginTop: 10 }}>
-              <button className="btn dark" onClick={() => setPhase('lobbies')}>Sair para Lobbies</button>
+              <button
+                className="btn dark"
+                onClick={() => {
+                  window.__setRoomCode?.(null) // pausa sync remoto ao sair
+                  setPhase('lobbies')
+                }}
+              >
+                Sair para Lobbies
+              </button>
             </div>
           </div>
 
@@ -1654,7 +1617,10 @@ if (act.type === 'RECOVERY_REDUCE') {
           {gameOver && (
             <FinalWinners
               players={players}
-              onExit={() => setPhase('lobbies')}
+              onExit={() => {
+                window.__setRoomCode?.(null)
+                setPhase('lobbies')
+              }}
               onRestart={() => {
                 const reset = players.map(p => applyStarterKit({ ...p, cash:18000, bens:4000, pos:0 }))
                 setPlayers(reset)
