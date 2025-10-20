@@ -42,6 +42,9 @@ import FinalWinners from './components/FinalWinners.jsx'
 import FaturamentoDoMesModal from './modals/FaturamentoMesModal'
 import DespesasOperacionaisModal from './modals/DespesasOperacionaisModal'
 
+// >>> (NOVO) Multiplayer em rede via Supabase Realtime (opcional se o provider existir)
+import { useGameNet } from './net/GameNetProvider.jsx'
+
 export default function App() {
   const [phase, setPhase] = useState('start')
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
@@ -397,8 +400,50 @@ export default function App() {
     }
   }, [syncKey, meId, myName, phase]) // eslint-disable-line
 
+  // ===== (NOVO) Multiplayer em rede: lê/commita estado autoritativo se o provider estiver presente =====
+  const net = (() => {
+    try { return useGameNet?.() } catch { return null }
+  })() || null
+  const netState = net?.state
+  const netVersion = net?.version
+  const netCommit = net?.commit
+
+  // Recebe estado remoto e espelha no local (somente se de fato mudou)
+  useEffect(() => {
+    if (!netState) return
+    const np = Array.isArray(netState.players) ? netState.players : null
+    const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
+    const nr = Number.isInteger(netState.round) ? netState.round : null
+
+    let changed = false
+    if (np && JSON.stringify(np) !== JSON.stringify(players)) { setPlayers(np); changed = true }
+    if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
+    if (nr !== null && nr !== round)  { setRound(nr); changed = true }
+    if (changed) console.log('[SG][NET] applied remote state v=%d', netVersion)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [netVersion])
+
+  // helpers para commitar estado remoto e manter compat local/entre abas
+  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
+    if (typeof netCommit === 'function') {
+      try {
+        await netCommit(prev => ({
+          ...(prev || {}),
+          players: nextPlayers,
+          turnIdx: nextTurnIdx,
+          round: nextRound,
+        }))
+      } catch (e) {
+        console.warn('[SG][NET] commit failed:', e?.message || e)
+      }
+    }
+  }
+
   function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
     console.log('[SG][BC] SYNC -> turnIdx=%d round=%d', nextTurnIdx, nextRound)
+    // 1) rede (outros computadores)
+    commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    // 2) entre abas (mesma máquina)
     try {
       bcRef.current?.postMessage?.({
         type: 'SYNC',
@@ -412,6 +457,9 @@ export default function App() {
 
   function broadcastStart(nextPlayers) {
     console.log('[SG][BC] START ->')
+    // publica estado inicial na rede
+    commitRemoteState(nextPlayers, 0, 1)
+    // e no BroadcastChannel local
     try {
       bcRef.current?.postMessage?.({
         type: 'START',
