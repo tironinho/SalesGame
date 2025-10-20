@@ -81,6 +81,9 @@ export default function App() {
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
   const myName = useMemo(() => getOrSetTabPlayerName('Jogador'), [])
 
+  // --- id efetivo para comparar "de quem é a vez" (pode ser diferente do meId se vier do lobby)
+  const [myUid, setMyUid] = useState(meId)
+
   // ==== helpers ====
   const norm = (s) =>
     (String(s ?? '').normalize ? String(s ?? '').normalize('NFKC') : String(s ?? ''))
@@ -88,7 +91,7 @@ export default function App() {
       .toLowerCase()
 
   // AJUSTE: só pelo ID (nunca pelo nome)
-  const isMine = React.useCallback((p) => !!p && String(p.id) === String(meId), [meId])
+  const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
 
   useEffect(() => {
     setTurnIdx(t => (players.length > 0 ? (t % players.length + players.length) % players.length : 0))
@@ -101,11 +104,11 @@ export default function App() {
   const isMyTurn = useMemo(() => {
     const owner = players[turnIdx]
     if (!owner) return false
-    const byId = owner.id != null && String(owner.id) === String(meId)
+    const byId = owner.id != null && String(owner.id) === String(myUid)
     const turn = byId
-    console.log('[SG][App] isMyTurn? %o | owner=%o | meId=%s | myName=%s', turn, owner, meId, myName)
+    console.log('[SG][App] isMyTurn? %o | owner=%o | myUid=%s | meId=%s | myName=%s', turn, owner, myUid, meId, myName)
     return turn
-  }, [players, turnIdx, meId, myName])
+  }, [players, turnIdx, myUid, meId, myName])
 
   // >>> modais
   const { pushModal, awaitTop, closeTop } = useModal?.() || {}
@@ -1499,6 +1502,13 @@ export default function App() {
           setCurrentLobbyId(id)
           // >>> informa ao provider para sincronizar nesta sala (use o UUID do lobby)
           window.__setRoomCode?.(id)
+          // >>> já grava ?room e localStorage para compartilhar o link certo
+          try {
+            localStorage.setItem('sg:lastRoomName', String(id))
+            const url = new URL(window.location.href)
+            url.searchParams.set('room', String(id))
+            history.replaceState(null, '', url.toString())
+          } catch {}
           setPhase('playersLobby')
         }}
       />
@@ -1516,6 +1526,25 @@ export default function App() {
           setPhase('lobbies')
         }}
         onStartGame={(payload) => {
+          // >>> garantir que todos usem a MESMA room (nome/uuid do lobby)
+          const roomName =
+            payload?.lobbyName ||
+            payload?.lobby?.name ||
+            payload?.name ||
+            currentLobbyId ||
+            'sala-demo'
+          try {
+            localStorage.setItem('sg:lastRoomName', String(roomName))
+            const url = new URL(window.location.href)
+            url.searchParams.set('room', String(roomName))
+            history.replaceState(null, '', url.toString())
+            if (!sessionStorage.getItem('sg:room-reloaded')) {
+              sessionStorage.setItem('sg:room-reloaded', '1')
+              location.reload()
+              return // evita continuar neste ciclo; após reload o Provider já vem certo
+            }
+          } catch {}
+
           const raw = Array.isArray(payload)
             ? payload
             : (payload?.players ?? payload?.lobbyPlayers ?? [])
@@ -1530,6 +1559,13 @@ export default function App() {
             })
           )
           if (mapped.length === 0) return
+
+          // >>> alinhar meu UID com o id real vindo do lobby (comparando pelo nome)
+          try {
+            const mine = mapped.find(p => norm(p.name) === norm(myName))
+            if (mine?.id) setMyUid(String(mine.id))
+          } catch {}
+
           setPlayers(mapped)
           setTurnIdx(0)
           setRound(1)
