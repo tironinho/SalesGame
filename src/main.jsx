@@ -4,6 +4,9 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import GameNetProvider from './net/GameNetProvider.jsx'
 
+// ✅ importa só o Provider (sem ModalRoot)
+import { ModalProvider } from './modals/ModalContext'
+
 function initialRoomFromURL () {
   const qs = new URLSearchParams(window.location.search)
   const q = qs.get('room')
@@ -28,9 +31,11 @@ function Root() {
   }, [])
 
   return (
-    <GameNetProvider roomCode={roomCode}>
-      <App />
-    </GameNetProvider>
+    <ModalProvider>
+      <GameNetProvider roomCode={roomCode}>
+        <App />
+      </GameNetProvider>
+    </ModalProvider>
   )
 }
 
