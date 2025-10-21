@@ -25,6 +25,10 @@ export async function createLobby({ name, capacity = DEFAULT_CAPACITY }){
 
 export async function joinLobby(lobbyId, { name }){
   const uid = auth.currentUser.uid
+
+  // [SYNC FIX] expõe meu UID globalmente para o app reconhecer “quem sou eu”
+  try { window.__MY_UID = uid } catch {}
+
   const lobbyRef = doc(db, LOBBIES, lobbyId)
   const lobbySnap = await getDoc(lobbyRef)
   if (!lobbySnap.exists()) throw new Error('Sala não encontrada')

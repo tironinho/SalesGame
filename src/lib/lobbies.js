@@ -100,6 +100,9 @@ export async function joinLobby({ lobbyId, playerId, playerName, ready = false }
   if (e2) throw e2
   if ((count || 0) >= lobby.max_players) throw new Error('Sala cheia.')
 
+  // [SYNC FIX] expõe meu player_id do lobby para o app (mesma semântica do Firebase)
+  try { window.__MY_UID = playerId } catch {}
+
   const { error: e3 } = await supabase
     .from('lobby_players')
     .upsert(

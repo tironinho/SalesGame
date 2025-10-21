@@ -84,6 +84,12 @@ export default function App() {
   // --- id efetivo para comparar "de quem é a vez" (pode ser diferente do meId se vier do lobby)
   const [myUid, setMyUid] = useState(meId)
 
+  // [SYNC FIX] se PlayersLobby / joinLobby expuseram window.__MY_UID, adote-o como meu id oficial
+  useEffect(() => {
+    const wuid = (typeof window !== 'undefined' && (window.__MY_UID || window.__myUid || window.__playerId)) || null
+    if (wuid && String(wuid) !== String(myUid)) setMyUid(String(wuid))
+  }, [])
+
   // ==== helpers ====
   const norm = (s) =>
     (String(s ?? '').normalize ? String(s ?? '').normalize('NFKC') : String(s ?? ''))
@@ -357,6 +363,17 @@ export default function App() {
           console.log('[SG][BC] START received')
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
+
+          // [SYNC FIX] tenta usar o UID global do lobby; se ausente, cai no match por nome
+          try {
+            const wuid = (typeof window !== 'undefined' && (window.__MY_UID || window.__myUid || window.__playerId)) || null
+            if (wuid) setMyUid(String(wuid))
+            else {
+              const mineByName = mapped.find(p => norm(p.name) === norm(myName))
+              if (mineByName?.id) setMyUid(String(mineByName.id))
+            }
+          } catch {}
+
           setPlayers(mapped)
           setTurnIdx(0)
           setRound(1)
@@ -422,6 +439,11 @@ export default function App() {
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { setPlayers(np); changed = true }
     if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
     if (nr !== null && nr !== round)  { setRound(nr); changed = true }
+
+    // [SYNC FIX] se o lobby já publicou meu UID, adote-o aqui também
+    const wuid = (typeof window !== 'undefined' && (window.__MY_UID || window.__myUid || window.__playerId)) || null
+    if (wuid && String(wuid) !== String(myUid)) setMyUid(String(wuid))
+
     if (changed) console.log('[SG][NET] applied remote state v=%d', netVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netVersion])
