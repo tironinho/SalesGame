@@ -351,7 +351,7 @@ function findNextAliveIdx(players, fromIdx) {
 
     const dComum  = qComum  * (VENDOR_CONF.comum.baseDesp  + VENDOR_CONF.comum.incDesp  * cComum );
     const dInside = qInside * (VENDOR_CONF.inside.baseDesp + VENDOR_CONF.inside.incDesp * cInside);
-    const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp  * cField );
+    const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp * cField );
     const dGestor = qGestor * (GESTOR.baseDesp + GESTOR.incDesp * cGestor);
 
     const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
@@ -616,7 +616,8 @@ function findNextAliveIdx(players, fromIdx) {
     }
     setRoundFlags(nextFlags)
 
-    const nextTurnIdx = (curIdx + 1) % players.length
+    // >>> AJUSTE: pular jogadores falidos ao decidir o próximo turno
+    const nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
 
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
@@ -1239,7 +1240,8 @@ function findNextAliveIdx(players, fromIdx) {
 
   function nextTurn(){
     if (gameOver || !players.length) return
-    const nextTurnIdx = (turnIdx + 1) % players.length
+    // >>> AJUSTE: usa helper para pular jogadores falidos
+    const nextTurnIdx = findNextAliveIdx(players, turnIdx)
     console.log('[SG][App] nextTurn() ->', nextTurnIdx)
     setTurnIdx(nextTurnIdx)
     broadcastState(players, nextTurnIdx, round)
