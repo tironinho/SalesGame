@@ -26,6 +26,8 @@ import ClientsModal from './modals/BuyClientsModal'
 import ManagerModal from './modals/BuyManagerModal'
 import FieldSalesModal from './modals/BuyFieldSalesModal'
 
+import BankruptOverlay from './modals/BankruptOverlay.jsx'
+
 // >>> NOVA modal: Vendedores Comuns (casas 9, 28, 40, 45)
 import BuyCommonSellersModal from './modals/BuyCommonSellersModal'
 
@@ -48,6 +50,8 @@ import { useGameNet } from './net/GameNetProvider.jsx'
 export default function App() {
   const [phase, setPhase] = useState('start')
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
+
+  const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
   // --- Starter Kit
   const STARTER_KIT = useMemo(() => Object.freeze({
@@ -88,7 +92,34 @@ export default function App() {
   useEffect(() => {
     const wuid = (typeof window !== 'undefined' && (window.__MY_UID || window.__myUid || window.__playerId)) || null
     if (wuid && String(wuid) !== String(myUid)) setMyUid(String(wuid))
-  }, [])
+  }, []) // somente no mount
+
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+  // BOOTSTRAP DE FASE: ao recarregar com ?room= ou última sala salva,
+  // pule a tela inicial e vá direto para o lobby/sala correta.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href)
+      const roomFromUrl = url.searchParams.get('room')
+      const roomFromStorage = localStorage.getItem('sg:lastRoomName')
+      const room = roomFromUrl || roomFromStorage
+
+      if (room) {
+        setCurrentLobbyId(room)
+        window.__setRoomCode?.(room)
+        // garante ?room na URL (idempotente) sem quebrar histórico
+        try {
+          url.searchParams.set('room', String(room))
+          history.replaceState(null, '', url.toString())
+        } catch {}
+        setPhase('playersLobby')
+      } else if (myName) {
+        // se já há nome salvo mas nenhuma sala, vá para a lista de lobbies
+        setPhase('lobbies')
+      }
+    } catch {}
+  }, [myName]) // roda uma vez quando o nome estiver disponível
+  // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
   // ==== helpers ====
   const norm = (s) =>
@@ -187,7 +218,7 @@ export default function App() {
 
   // ======= Tabelas/Helpers de Cálculo =======
   const VENDOR_CONF = {
-    comum:  { cap: 2, baseFat:  600, incFat: 100, baseDesp: 1000, incDesp: 100 },
+    comum:  { cap: 2, baseFat:  600, incFat: 100, baseDesp: 100, incDesp: 100 },
     inside: { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
     field:  { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
   };
@@ -198,6 +229,31 @@ export default function App() {
 
   const certCount = (player = {}, type) => new Set(player?.trainingsByVendor?.[type] || []).size;
   const num = (v) => Number(v || 0);
+
+  // === Helpers de certificados ===
+  const hasBlue   = (p) => Number(p?.az  || 0) > 0;   // certificado azul
+  const hasYellow = (p) => Number(p?.am  || 0) > 0;   // certificado amarelo
+  const hasPurple = (p) => Number(p?.rox || 0) > 0;   // certificado roxo
+  const countManagerCerts = (p) => certCount(p, 'gestor');
+
+  function countAlivePlayers(players) {
+  return players.reduce((acc, p) => acc + (p?.bankrupt ? 0 : 1), 0)
+}
+
+function findNextAliveIdx(players, fromIdx) {
+  const n = players.length
+  if (n === 0) return 0
+  let i = (fromIdx + 1) % n
+  let guard = 0
+  while (guard < n) {
+    if (!players[i]?.bankrupt) return i
+    i = (i + 1) % n
+    guard++
+  }
+  // caso todos falidos (deveria ter sido pego antes)
+  return fromIdx
+}
+
 
   function capacityAndAttendance(player = {}) {
     const qComum  = num(player.vendedoresComuns);
@@ -259,7 +315,7 @@ export default function App() {
     // >>> faturamento NÃO usa utilização (conforme regra)
     const fatComum  = qComum  * (VENDOR_CONF.comum.baseFat  + VENDOR_CONF.comum.incFat  * cComum );
     const fatInside = qInside * (VENDOR_CONF.inside.baseFat + VENDOR_CONF.inside.incFat * cInside);
-    const fatField  = qField  * (VENDOR_CONF.field.baseFat  + VENDOR_CONF.field.incFat  * cField );
+    const fatField  = qField  * (VENDOR_CONF.field.baseFat  + VENDOR_CONF.field.incFat * cField );
 
     let vendorRevenue = fatComum + fatInside + fatField;
 
@@ -562,7 +618,7 @@ export default function App() {
 
     const nextTurnIdx = (curIdx + 1) % players.length
 
-    if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${Math.abs(deltaCash)}`)
+    if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
 
     setPlayers(nextPlayers)
@@ -1015,22 +1071,63 @@ export default function App() {
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
-        // se a carta tiraria mais do que o jogador tem, não aplica (exige recuperação)
-        if (Number.isFinite(res.cashDelta) && Number(res.cashDelta) < 0) {
-          const need = -Number(res.cashDelta)
-          if (!requireFunds(curIdx, need, 'pagar carta Sorte & Revés')) { setTurnLockBroadcast(false); return }
+        // Snapshot do jogador no momento da carta
+        const meNow = players[curIdx] || players.find(isMine) || {}
+
+        // --------- Regras condicionais por carta ----------
+        // Ajusta deltas conforme certificados/estado atual
+        let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
+        let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
+
+        // (REVÉS) "Sem certificado amarelo: perca 1 cliente e pague R$ 2.000,00."
+        if (res.id === 'key_client_at_risk' && hasYellow(meNow)) {
+          cashDelta = 0
+          clientsDelta = 0
         }
 
+        // (REVÉS) "Sem Certificado Azul: perca 4 clientes."
+        if (res.id === 'needs_change_lose4' && hasBlue(meNow)) {
+          clientsDelta = 0
+        }
+
+        // (SORTE) "Se tiver colaborador com certificado roxo premiado, receba R$ 25.000,00."
+        if (res.id === 'purple_award_25k' && !hasPurple(meNow)) {
+          cashDelta = 0
+        }
+
+        // --------- Bloqueio por falta de saldo (apenas se for pagar) ----------
+        if (cashDelta < 0) {
+          const need = -cashDelta
+          if (!requireFunds(curIdx, need, 'pagar carta Sorte & Revés')) {
+            // >>> AJUSTE: exibe alerta e NÃO aplica a carta; libera o turno para o jogador se recuperar
+            try {
+              alert(`Saldo insuficiente para pagar R$ ${need.toLocaleString()}. Use RECUPERAÇÃO FINANCEIRA (demitir / emprestar / reduzir) ou DECLARAR FALÊNCIA.`)
+            } catch {}
+            setTurnLockBroadcast(false)
+            return
+          }
+        }
+
+        // --------- Aplica efeitos base (deltas simples + células especiais) ----------
         setPlayers(ps => {
           const upd = ps.map((p,i) => {
             if (i !== curIdx) return p
             let next = { ...p }
-            if (Number.isFinite(res.cashDelta)) next.cash = Math.max(0, (next.cash ?? 0) + Number(res.cashDelta))
-            if (Number.isFinite(res.clientsDelta)) next.clients = Math.max(0, (next.clients || 0) + Number(res.clientsDelta))
+            if (cashDelta)    next.cash    = Math.max(0, (next.cash    ?? 0) + cashDelta)
+            if (clientsDelta) next.clients = Math.max(0, (next.clients ?? 0) + clientsDelta)
             if (res.gainSpecialCell) {
               next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
               next.support    = (next.support    || 0) + (res.gainSpecialCell.support    || 0)
               next.gestores   = (next.gestores   || 0) + (res.gainSpecialCell.manager    || 0)
+              next.gestoresComerciais = (next.gestoresComerciais || 0) + (res.gainSpecialCell.manager || 0)
+              next.managers   = (next.managers   || 0) + (res.gainSpecialCell.manager    || 0)
+            }
+            // (SORTE) "Ganhe um certificado azul para esse vendedor."
+            if (res.id === 'casa_change_cert_blue') {
+              next.az = (next.az || 0) + 1
+              const curSet = new Set((next.trainingsByVendor?.comum || []))
+              curSet.add('personalizado') // id do treinamento que dá azul
+              next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
             }
             return next
           })
@@ -1038,21 +1135,33 @@ export default function App() {
           return upd
         })
 
-        if (res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly) {
-          const me = players[curIdx] || players.find(isMine)
-          let delta = 0
-          if (res.perClientBonus) delta += (me?.clients || 0) * res.perClientBonus
+        // --------- Efeitos derivados (bônus por cliente / gestor / mix) ----------
+        const anyDerived =
+          res.perClientBonus ||
+          res.perCertifiedManagerBonus ||
+          res.mixLevelBonusABOnly
+
+        if (anyDerived) {
+          const me2 = players[curIdx] || players.find(isMine) || {}
+          let extra = 0
+
+          if (res.perClientBonus) {
+            extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
+          }
+
           if (res.perCertifiedManagerBonus) {
-            const certifiedManagers = (me?.gestoresCertificados || 0)
-            delta += certifiedManagers * res.perCertifiedManagerBonus
+            const mgrCerts = countManagerCerts(me2) // certificados do tipo "gestor"
+            extra += mgrCerts * Number(res.perCertifiedManagerBonus || 0)
           }
+
           if (res.mixLevelBonusABOnly) {
-            const level = String(me?.mixProdutos || '').toUpperCase()
-            if (level === 'A' || level === 'B') delta += res.mixLevelBonusABOnly
+            const level = String(me2.mixProdutos || '').toUpperCase()
+            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
           }
-          if (delta) {
+
+          if (extra) {
             setPlayers(ps => {
-              const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (p.cash||0) + delta } : p)
+              const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
               broadcastState(upd, nextTurnIdx, nextRound)
               return upd
             })
@@ -1440,9 +1549,47 @@ export default function App() {
     }
 
     if (act.type === 'BANKRUPT'){
-      appendLog(`${current?.name || 'Jogador'} declarou falência!`)
-      nextTurn()
+      // >>>>>>>>>>>>>>> INÍCIO: NOVA LÓGICA DE FALÊNCIA <<<<<<<<<<<<<<<
+      const curIdx = turnIdx
+
+      // Ativa overlay FALIDO na minha tela, se eu for o jogador atual
+      try {
+        const amI = String(players[curIdx]?.id) === String(myUid)
+        if (amI) setShowBankruptOverlay(true)
+      } catch {}
+
+      // Marca o jogador como falido
+      const updatedPlayers = players.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+
+      appendLog(`${players[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
+
+      // Evita travar avanço de rodada por jogador falido
+      setRoundFlags(prev => {
+        const nf = [...prev]
+        nf[curIdx] = true
+        return nf
+      })
+
+      // Se só restar 1 vivo, encerra e abre vencedores
+      const alive = countAlivePlayers(updatedPlayers)
+      if (alive <= 1) {
+        // define vencedor (único não falido)
+        const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
+        setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+        setPlayers(updatedPlayers)
+        setGameOver(true)
+        setTurnLockBroadcast(false)
+        broadcastState(updatedPlayers, turnIdx, round)
+        return
+      }
+
+      // Caso contrário, segue o jogo pulando falidos
+      const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+      setPlayers(updatedPlayers)
+      setTurnIdx(nextIdx)
       setTurnLockBroadcast(false)
+      broadcastState(updatedPlayers, nextIdx, round)
+      // >>>>>>>>>>>>>>> FIM: NOVA LÓGICA DE FALÊNCIA <<<<<<<<<<<<<<<
       return
     }
   }
@@ -1697,6 +1844,9 @@ export default function App() {
       <footer className="foot">
         <small>Desenvolvido por <a href="https://www.tironitech.com" target="_blank" rel="noreferrer">tironitech.com</a></small>
       </footer>
+
+      {/* Overlay persistente de FALÊNCIA para o meu jogador */}
+      {showBankruptOverlay && <BankruptOverlay />}
     </div>
   )
 }

@@ -6,15 +6,19 @@ import RecoveryModal from '../modals/RecoveryModal'
 
 export default function Controls({ onAction, current, isMyTurn = true }) {
   const { pushModal, awaitTop } = useModal?.() || {}
-  const canRoll = !!isMyTurn
+
+  // AJUSTE: bloqueia tudo se o jogador atual estiver falido
+  const isBankrupt = !!current?.bankrupt
+  const canRoll = !!isMyTurn && !isBankrupt
 
   useEffect(() => {
     console.groupCollapsed('[Controls] render')
     console.log('current player:', current)
     console.log('isMyTurn prop:', isMyTurn)
+    console.log('isBankrupt:', isBankrupt) // AJUSTE: log útil
     console.log('canRoll (final):', canRoll)
     console.groupEnd()
-  }, [current?.id, current?.name, isMyTurn, canRoll])
+  }, [current?.id, current?.name, current?.bankrupt, isMyTurn, canRoll])
 
   const roll = () => {
     console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
@@ -31,6 +35,9 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
   }
 
   const onRecoveryClick = async () => {
+    // AJUSTE: se falido, não pode abrir/usar recuperação
+    if (isBankrupt) return
+
     console.log('[Controls] click => Recuperação Financeira (modal=%s)', !!(pushModal && awaitTop))
     if (pushModal && awaitTop) {
       pushModal(<RecoveryModal playerName={current?.name || 'Jogador'} currentPlayer={current} />)
@@ -143,6 +150,9 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
   }
 
   const onBankruptClick = async () => {
+    // AJUSTE: se já está falido, não faz nada
+    if (isBankrupt) return
+
     console.log('[Controls] click => Declarar Falência (modal=%s)', !!(pushModal && awaitTop))
     if (pushModal && awaitTop) {
       pushModal(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
@@ -157,12 +167,12 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
   }
 
   return (
-    <div className={`controls ${!canRoll ? 'is-wait' : ''}`}>
-      <button className="btn primary" onClick={onRecoveryClick}>
+    <div className={`controls ${!canRoll ? 'is-wait' : ''} ${isBankrupt ? 'is-bankrupt' : ''}`}>
+      <button className="btn primary" onClick={onRecoveryClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
         RECUPERAÇÃO FINANCEIRA
       </button>
 
-      <button className="btn dark" onClick={onBankruptClick}>
+      <button className="btn dark" onClick={onBankruptClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
         DECLARAR FALÊNCIA
       </button>
 
