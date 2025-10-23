@@ -274,3 +274,153 @@ export async function getLatestMatch(lobbyId) {
   if (error) throw error
   return data?.[0] || null
 }
+
+/* ==============================
+   GERENCIAMENTO DE SALAS DE JOGO (ROOMS)
+   ============================== */
+
+/**
+ * Remove um jogador de uma sala de jogo e deleta a sala se ficar vazia
+ * Trabalha com a tabela 'lobbies' que é onde as salas realmente estão armazenadas
+ */
+export async function leaveRoom({ roomCode, playerId }) {
+  if (!roomCode || !playerId) {
+    console.log('[leaveRoom] Parâmetros inválidos:', { roomCode, playerId })
+    return
+  }
+
+  try {
+    console.log(`[leaveRoom] Tentando remover jogador ${playerId} da sala ${roomCode}`)
+    
+    // 1. Busca a sala na tabela 'lobbies' pelo ID (roomCode é o ID da sala)
+    const { data: lobby, error: lobbyError } = await supabase
+      .from('lobbies')
+      .select('id, name, host_id')
+      .eq('id', roomCode)
+      .single()
+
+    if (lobbyError) {
+      console.warn('[leaveRoom] Erro ao buscar lobby:', lobbyError)
+      return
+    }
+
+    if (!lobby) {
+      console.log(`[leaveRoom] Lobby ${roomCode} não encontrado`)
+      return
+    }
+
+    console.log(`[leaveRoom] Lobby encontrado:`, lobby)
+
+    // 2. Remove o jogador da tabela 'lobby_players'
+    const { error: removeError } = await supabase
+      .from('lobby_players')
+      .delete()
+      .match({ lobby_id: roomCode, player_id: playerId })
+
+    if (removeError) {
+      console.warn('[leaveRoom] Erro ao remover jogador:', removeError)
+    } else {
+      console.log(`[leaveRoom] Jogador ${playerId} removido do lobby ${roomCode}`)
+    }
+
+    // 3. Verifica se ainda há jogadores no lobby
+    const { data: remainingPlayers, error: countError } = await supabase
+      .from('lobby_players')
+      .select('player_id')
+      .eq('lobby_id', roomCode)
+
+    if (countError) {
+      console.warn('[leaveRoom] Erro ao contar jogadores restantes:', countError)
+      return
+    }
+
+    // 4. Se não há mais jogadores, deleta o lobby
+    if (!remainingPlayers || remainingPlayers.length === 0) {
+      const { error: deleteError } = await supabase
+        .from('lobbies')
+        .delete()
+        .eq('id', roomCode)
+
+      if (deleteError) {
+        console.warn('[leaveRoom] Erro ao deletar lobby vazio:', deleteError)
+      } else {
+        console.log(`[leaveRoom] Lobby ${roomCode} deletado com sucesso (sem jogadores)`)
+      }
+    } else {
+      console.log(`[leaveRoom] Jogador ${playerId} saiu do lobby ${roomCode}. Restam ${remainingPlayers.length} jogadores.`)
+      
+      // Se o jogador que saiu era o host, transfere para o próximo jogador
+      if (lobby.host_id === playerId && remainingPlayers.length > 0) {
+        const nextHost = remainingPlayers[0].player_id
+        const { error: updateError } = await supabase
+          .from('lobbies')
+          .update({ host_id: nextHost })
+          .eq('id', roomCode)
+
+        if (updateError) {
+          console.warn('[leaveRoom] Erro ao transferir host:', updateError)
+        } else {
+          console.log(`[leaveRoom] Host transferido para ${nextHost}`)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[leaveRoom] Erro inesperado:', error)
+  }
+}
+
+/**
+ * Remove um jogador de uma sala de jogo usando o ID da sala
+ * Trabalha com a tabela 'lobbies' que é onde as salas realmente estão armazenadas
+ */
+export async function leaveRoomById({ roomId, playerId }) {
+  if (!roomId || !playerId) {
+    console.log('[leaveRoomById] Parâmetros inválidos:', { roomId, playerId })
+    return
+  }
+
+  try {
+    console.log(`[leaveRoomById] Tentando remover jogador ${playerId} da sala ${roomId}`)
+    
+    // 1. Remove o jogador da tabela 'lobby_players'
+    const { error: removeError } = await supabase
+      .from('lobby_players')
+      .delete()
+      .match({ lobby_id: roomId, player_id: playerId })
+
+    if (removeError) {
+      console.warn('[leaveRoomById] Erro ao remover jogador:', removeError)
+    } else {
+      console.log(`[leaveRoomById] Jogador ${playerId} removido do lobby ${roomId}`)
+    }
+
+    // 2. Verifica se ainda há jogadores no lobby
+    const { data: remainingPlayers, error: countError } = await supabase
+      .from('lobby_players')
+      .select('player_id')
+      .eq('lobby_id', roomId)
+
+    if (countError) {
+      console.warn('[leaveRoomById] Erro ao contar jogadores restantes:', countError)
+      return
+    }
+
+    // 3. Se não há mais jogadores, deleta o lobby
+    if (!remainingPlayers || remainingPlayers.length === 0) {
+      const { error: deleteError } = await supabase
+        .from('lobbies')
+        .delete()
+        .eq('id', roomId)
+
+      if (deleteError) {
+        console.warn('[leaveRoomById] Erro ao deletar lobby vazio:', deleteError)
+      } else {
+        console.log(`[leaveRoomById] Lobby ${roomId} deletado com sucesso (sem jogadores)`)
+      }
+    } else {
+      console.log(`[leaveRoomById] Jogador ${playerId} saiu do lobby ${roomId}. Restam ${remainingPlayers.length} jogadores.`)
+    }
+  } catch (error) {
+    console.error('[leaveRoomById] Erro inesperado:', error)
+  }
+}
