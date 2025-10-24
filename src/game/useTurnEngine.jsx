@@ -70,6 +70,20 @@ export function useTurnEngine({
   const modalLocksRef = React.useRef(0)
   React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
 
+  // 🔄 Sincronização de modalLocks entre jogadores
+  React.useEffect(() => {
+    if (isMyTurn) {
+      // Só o jogador da vez pode ter modais abertas
+      console.log('[DEBUG] modalLocks sync - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks)
+    } else {
+      // Outros jogadores devem ter modalLocks = 0
+      if (modalLocks > 0) {
+        console.log('[DEBUG] modalLocks sync - resetando modalLocks para 0 (não é minha vez)')
+        setModalLocks(0)
+      }
+    }
+  }, [isMyTurn, modalLocks])
+
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   const [lockOwner, setLockOwner] = React.useState(null)
   const lockOwnerRef = React.useRef(null)
@@ -81,12 +95,14 @@ export function useTurnEngine({
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
+    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocks, '->', modalLocks + 1)
     setModalLocks(c => c + 1)
     try {
       pushModal(element)
       const res = await awaitTop()
       return res
     } finally {
+      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', modalLocks, '->', Math.max(0, modalLocks - 1))
       setModalLocks(c => Math.max(0, c - 1))
     }
   }
@@ -1003,33 +1019,42 @@ export function useTurnEngine({
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
     const tick = () => {
-      if (modalLocksRef.current === 0) {
+      const currentModalLocks = modalLocksRef.current
+      const currentLockOwner = lockOwnerRef.current
+      const isLockOwner = String(currentLockOwner || '') === String(myUid)
+      
+      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+      
+      if (currentModalLocks === 0) {
         // libera apenas se EU for o dono do cadeado
-        console.log('[DEBUG] tick - modalLocks:', modalLocksRef.current, 'lockOwner:', lockOwnerRef.current, 'myUid:', myUid)
-        if (String(lockOwnerRef.current || '') === String(myUid)) {
+        if (isLockOwner) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
           if (turnData) {
-            console.log('[DEBUG] Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+            console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
             setTurnIdx(turnData.nextTurnIdx)
             broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
             pendingTurnDataRef.current = null // Limpa os dados após usar
           } else {
-            console.log('[DEBUG] tick - turnData é null, não mudando turno')
+            console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
           }
           setTurnLockBroadcast(false)
         } else {
-          console.log('[DEBUG] tick - não sou o dono do cadeado, não mudando turno')
+          console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
         }
         return
       }
+      
       if (Date.now() - start > 20000) {
         // força desbloqueio em caso extremo
-        if (String(lockOwnerRef.current || '') === String(myUid)) {
+        console.log('[DEBUG] ⏰ TIMEOUT - forçando desbloqueio após 20s')
+        if (isLockOwner) {
           setTurnLockBroadcast(false)
         }
         return
       }
+      
+      // Continua verificando a cada 80ms
       setTimeout(tick, 80)
     }
     tick()
