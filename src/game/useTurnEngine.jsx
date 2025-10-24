@@ -989,14 +989,6 @@ export function useTurnEngine({
       })()
     }
 
-    // Armazena as variáveis para uso na função tick
-    const nextTurnIdxRef = useRef(nextTurnIdx)
-    const nextRoundRef = useRef(nextRound)
-    const nextPlayersRef = useRef(nextPlayers)
-    nextTurnIdxRef.current = nextTurnIdx
-    nextRoundRef.current = nextRound
-    nextPlayersRef.current = nextPlayers
-
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
     const tick = () => {
@@ -1004,8 +996,8 @@ export function useTurnEngine({
         // libera apenas se EU for o dono do cadeado
         if (String(lockOwnerRef.current || '') === String(myUid)) {
           // Agora muda o turno quando todas as modais são fechadas
-          setTurnIdx(nextTurnIdxRef.current)
-          broadcastState(nextPlayersRef.current, nextTurnIdxRef.current, nextRoundRef.current)
+          setTurnIdx(nextTurnIdx)
+          broadcastState(nextPlayers, nextTurnIdx, nextRound)
           setTurnLockBroadcast(false)
         }
         return
