@@ -373,8 +373,9 @@ export function useTurnEngine({
 
     setPlayers(nextPlayers)
     setRound(nextRound)
-    setTurnIdx(nextTurnIdx)
-    broadcastState(nextPlayers, nextTurnIdx, nextRound)
+    // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
+    // setTurnIdx(nextTurnIdx)
+    // broadcastState(nextPlayers, nextTurnIdx, nextRound)
 
     // Verifica se o jogo deve terminar (quando todos os jogadores vivos completaram 5 rodadas)
     const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
@@ -876,7 +877,11 @@ export function useTurnEngine({
             if (i !== curIdx) return p
             let next = { ...p }
             if (cashDelta)    next.cash    = Math.max(0, (next.cash    ?? 0) + cashDelta)
-            if (clientsDelta) next.clients = Math.max(0, (next.clients ?? 0) + clientsDelta)
+            if (clientsDelta) {
+              const oldClients = next.clients || 0
+              next.clients = Math.max(0, oldClients + clientsDelta)
+              console.log('[DEBUG] SorteReves - Clientes alterados:', oldClients, '->', next.clients, 'delta:', clientsDelta)
+            }
             if (res.gainSpecialCell) {
               next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
               next.support    = (next.support    || 0) + (res.gainSpecialCell.support    || 0)
@@ -991,6 +996,9 @@ export function useTurnEngine({
       if (modalLocksRef.current === 0) {
         // libera apenas se EU for o dono do cadeado
         if (String(lockOwnerRef.current || '') === String(myUid)) {
+          // Agora muda o turno quando todas as modais são fechadas
+          setTurnIdx(nextTurnIdx)
+          broadcastState(nextPlayers, nextTurnIdx, nextRound)
           setTurnLockBroadcast(false)
         }
         return

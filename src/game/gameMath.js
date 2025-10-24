@@ -93,8 +93,9 @@ export function computeDespesasFor(player = {}) {
   const erpDesp = (ERP[erpLvl]?.desp || 0) * colaboradores;
 
   const extras = 0;
+  const baseMaintenance = 1000; // Valor base de manutenção inicial
 
-  const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + mixDesp + erpDesp + extras));
+  const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + mixDesp + erpDesp + extras + baseMaintenance));
   return total
 }
 

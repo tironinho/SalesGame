@@ -369,7 +369,7 @@ export default function App() {
     const lvl = String(me.erpLevel || 'D').toUpperCase()
     const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
     
-    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp)
+    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
     
     return {
       faturamento: fat,
