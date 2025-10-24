@@ -8,11 +8,14 @@ import RecoveryLoan from './RecoveryLoan'
 import RecoveryReduce from './RecoveryReduce'
 import RecoveryFire from './RecoveryFire' // mesmo diretório
 
-export default function RecoveryModal({ playerName = 'Jogador', bens = 0, currentPlayer }) {
+export default function RecoveryModal({ playerName = 'Jogador', bens = 0, currentPlayer, canClose = true }) {
   const { resolveTop, popModal } = useModal?.() || {}
   const [step, setStep] = useState('menu') // 'menu' | 'loan' | 'reduce' | 'fire'
 
-  const close = () => (popModal ? popModal(false) : resolveTop?.(null))
+  const close = () => {
+    if (!canClose) return // Não permite fechar se canClose for false
+    popModal ? popModal(false) : resolveTop?.(null)
+  }
 
   // --- preços de compra (manual) -> crédito = 50% ---
   const MIX_PRICES = useMemo(() => ({ A: 12000, B: 6000, C: 3000, D: 1000 }), [])
@@ -69,6 +72,12 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     () => Math.max(0, Math.floor(snapshot.bens * 0.5)),
     [snapshot.bens]
   )
+
+  // verifica se já tem empréstimo pendente
+  const hasPendingLoan = useMemo(() => {
+    const loanPending = snapshot.raw?.loanPending
+    return loanPending && Number(loanPending.amount) > 0
+  }, [snapshot.raw?.loanPending])
 
   // opções do menu (mantidas)
   const REDUCE_OPTIONS = useMemo(
@@ -180,13 +189,16 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
       <div style={S.card} key={step}>
         <div style={S.header}>
           <div style={{ fontWeight:900, fontSize:22 }}>RECUPERAÇÃO FINANCEIRA</div>
-          <button onClick={close} style={S.closeBtn}>×</button>
+          {canClose && (
+            <button onClick={close} style={S.closeBtn}>×</button>
+          )}
         </div>
 
         {step === 'menu' && (
           <RecoveryMenu
             playerName={snapshot.name}
             loanAvailable={loanAvailable}
+            hasPendingLoan={hasPendingLoan}
             onGoLoan={() => setStep('loan')}
             onGoReduce={() => setStep('reduce')}
             onGoFire={() => setStep('fire')}
@@ -197,9 +209,13 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
           <RecoveryLoan
             loanAvailable={loanAvailable}
             onBack={() => setStep('menu')}
-            onConfirm={(val) =>
-              resolveTop?.({ type: 'LOAN', amount: val, note: `Empréstimo +R$ ${val}` })
-            }
+            onConfirm={(payload) => {
+              // Passa o payload completo do RecoveryLoan
+              console.log('[DEBUG] RecoveryModal recebeu payload do RecoveryLoan:', payload)
+              console.log('[DEBUG] RecoveryModal chamando resolveTop com:', payload)
+              const result = resolveTop?.(payload)
+              console.log('[DEBUG] RecoveryModal resolveTop retornou:', result)
+            }}
           />
         )}
 

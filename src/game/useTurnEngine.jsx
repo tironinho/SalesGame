@@ -20,6 +20,8 @@ import MixProductsModal from '../modals/MixProductsModal'
 import SorteRevesModal from '../modals/SorteRevesModal'
 import FaturamentoDoMesModal from '../modals/FaturamentoMesModal'
 import DespesasOperacionaisModal from '../modals/DespesasOperacionaisModal'
+import InsufficientFundsModal from '../modals/InsufficientFundsModal'
+import RecoveryModal from '../modals/RecoveryModal'
 
 // Regras & helpers puros
 import {
@@ -85,6 +87,7 @@ export function useTurnEngine({
     }
   }
 
+
   // ========= regras auxiliares de saldo =========
   const canPay = React.useCallback((idx, amount) => {
     const p = players[idx]
@@ -115,6 +118,7 @@ export function useTurnEngine({
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
+    console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
     if (gameOver || !players.length) return
 
     // Bloqueia os próximos jogadores até esta ação (e todas as modais) terminar
@@ -124,10 +128,203 @@ export function useTurnEngine({
     const curIdx = turnIdx
     const cur = players[curIdx]
     if (!cur) { setTurnLockBroadcast(false); return }
+    
+    console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
+
+    // ========= função recursiva para lidar com saldo insuficiente =========
+    const handleInsufficientFunds = async (requiredAmount, context, action, currentPlayers = players) => {
+      const currentCash = Number(currentPlayers[curIdx]?.cash || 0)
+      
+      if (currentCash >= requiredAmount) {
+        // Processa o pagamento já que tem saldo suficiente
+        console.log('[DEBUG] ✅ Saldo suficiente! Processando pagamento de:', requiredAmount)
+        const updatedPlayers = currentPlayers.map((p, i) => 
+          i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+        )
+        setPlayers(updatedPlayers)
+        broadcastState(updatedPlayers, turnIdx, round)
+        return true // Tem saldo suficiente e pagou
+      }
+
+      // Mostra modal de saldo insuficiente
+      const recoveryRes = await openModalAndWait(
+        <InsufficientFundsModal
+          requiredAmount={requiredAmount}
+          currentCash={currentCash}
+          title={`Saldo insuficiente para ${action} ${context}`}
+          message={`Você precisa ${action} R$ ${requiredAmount.toLocaleString()} mas possui apenas R$ ${currentCash.toLocaleString()}.`}
+          showRecoveryOptions={true}
+        />
+      )
+      
+      if (!recoveryRes) {
+        setTurnLockBroadcast(false)
+        return false
+      }
+      
+      if (recoveryRes.action === 'RECOVERY') {
+        // Abre modal de recuperação financeira (não pode ser fechada)
+        console.log('[DEBUG] Abrindo RecoveryModal para jogador:', currentPlayers[curIdx])
+        const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={currentPlayers[curIdx]} canClose={false} />)
+        console.log('[DEBUG] RecoveryModal retornou:', recoveryModalRes)
+        if (recoveryModalRes) {
+          // Processa a ação de recuperação
+          console.log('[DEBUG] recoveryModalRes existe, tipo:', recoveryModalRes.type, 'action:', recoveryModalRes.action)
+          let updatedPlayers = currentPlayers
+          
+          if (recoveryModalRes.type === 'FIRE') {
+            console.log('[DEBUG] ✅ Condição FIRE atendida! Processando demissões:', recoveryModalRes)
+            const deltas = {
+              cashDelta: Number(recoveryModalRes.amount || 0),
+              vendedoresComunsDelta: -Number(recoveryModalRes.items?.comum || 0),
+              fieldSalesDelta: -Number(recoveryModalRes.items?.field || 0),
+              insideSalesDelta: -Number(recoveryModalRes.items?.inside || 0),
+              gestoresDelta: -Number(recoveryModalRes.items?.gestor || 0),
+            }
+            console.log('[DEBUG] Deltas de demissão:', deltas)
+            updatedPlayers = currentPlayers.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)))
+            console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[curIdx]?.cash)
+            setPlayers(updatedPlayers)
+            broadcastState(updatedPlayers, turnIdx, round)
+          } else if (recoveryModalRes.type === 'LOAN') {
+            console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
+            
+            // Verifica se o jogador já tem um empréstimo pendente
+            const currentLoan = currentPlayers[curIdx]?.loanPending
+            if (currentLoan && Number(currentLoan.amount) > 0) {
+              console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
+              // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
+              const loanModalRes = await openModalAndWait(
+                <InsufficientFundsModal
+                  requiredAmount={requiredAmount}
+                  currentCash={currentPlayers[curIdx]?.cash || 0}
+                  title="Empréstimo já realizado"
+                  message={`Você já possui um empréstimo pendente de R$ ${Number(currentLoan.amount).toLocaleString()}. Cada jogador só pode ter um empréstimo por vez.`}
+                  showRecoveryOptions={false}
+                  canClose={false} // NÃO PODE FECHAR
+                />
+              )
+              // Força o jogador a declarar falência se já tem empréstimo
+              if (!loanModalRes || loanModalRes.action !== 'BANKRUPT') {
+                setTurnLockBroadcast(false)
+                return false
+              }
+              // Processa falência
+              const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+              const alive = countAlivePlayers(updatedPlayers)
+              if (alive <= 1) {
+                const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
+                setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+                setPlayers(updatedPlayers)
+                setGameOver(true)
+                setTurnLockBroadcast(false)
+                broadcastState(updatedPlayers, turnIdx, round)
+                return false
+              }
+              const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+              setPlayers(updatedPlayers)
+              setTurnIdx(nextIdx)
+              setTurnLockBroadcast(false)
+              broadcastState(updatedPlayers, nextIdx, round)
+              return false
+            }
+            
+            const amt = Number(recoveryModalRes.amount || 0)
+            console.log('[DEBUG] Valor do empréstimo:', amt)
+            console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[curIdx]?.cash)
+            updatedPlayers = currentPlayers.map((p, i) =>
+              i !== curIdx ? p : {
+                ...p,
+                cash: (Number(p.cash) || 0) + amt,
+                loanPending: { amount: amt, dueRound: round + 1, charged: false },
+              }
+            )
+            console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Novo loanPending:', updatedPlayers[curIdx]?.loanPending)
+            setPlayers(updatedPlayers)
+            broadcastState(updatedPlayers, turnIdx, round)
+          } else if (recoveryModalRes.type === 'REDUCE') {
+            console.log('[DEBUG] ✅ Condição REDUCE atendida! Processando redução:', recoveryModalRes)
+            const selections = recoveryModalRes.items || []
+            let totalCredit = 0
+            console.log('[DEBUG] Seleções para reduzir:', selections)
+            updatedPlayers = currentPlayers.map((p, i) => {
+              if (i !== curIdx) return p
+              let next = { ...p }
+              for (const sel of selections) {
+                if (sel.selected) {
+                  totalCredit += Number(sel.credit || 0)
+                  if (sel.group === 'MIX') {
+                    next.mixOwned = { ...(next.mixOwned || {}), [sel.level]: false }
+                  } else if (sel.group === 'ERP') {
+                    next.erpOwned = { ...(next.erpOwned || {}), [sel.level]: false }
+                  }
+                }
+              }
+              next.cash = (Number(next.cash) || 0) + totalCredit
+              return next
+            })
+            console.log('[DEBUG] Total de crédito da redução:', totalCredit)
+            console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[curIdx]?.cash)
+            setPlayers(updatedPlayers)
+            broadcastState(updatedPlayers, turnIdx, round)
+          } else {
+            console.log('[DEBUG] ❌ Nenhuma condição foi atendida! Tipo:', recoveryModalRes.type, 'Action:', recoveryModalRes.action)
+          }
+          
+          // Verifica se agora tem saldo suficiente após a recuperação
+          const newCash = Number(updatedPlayers[curIdx]?.cash || 0)
+          console.log('[DEBUG] Verificando saldo após recuperação - Novo saldo:', newCash, 'Necessário:', requiredAmount)
+          
+          if (newCash >= requiredAmount) {
+            console.log('[DEBUG] ✅ Saldo suficiente após recuperação! Processando pagamento de:', requiredAmount)
+            // Processa o pagamento já que tem saldo suficiente
+            const finalPlayers = updatedPlayers.map((p, i) => 
+              i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+            )
+            console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[curIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[curIdx]?.cash)
+            setPlayers(finalPlayers)
+            broadcastState(finalPlayers, turnIdx, round)
+            return true
+          } else {
+            console.log('[DEBUG] ❌ Saldo ainda insuficiente após recuperação. Continuando recursão...')
+            // Recursivamente verifica se agora tem saldo suficiente com o estado atualizado
+            return await handleInsufficientFunds(requiredAmount, context, action, updatedPlayers)
+          }
+        } else {
+          setTurnLockBroadcast(false)
+          return false
+        }
+      } else if (recoveryRes.action === 'BANKRUPT') {
+        // Processa falência
+        const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+        const alive = countAlivePlayers(updatedPlayers)
+        if (alive <= 1) {
+          const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
+          setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+          setPlayers(updatedPlayers)
+          setGameOver(true)
+          setTurnLockBroadcast(false)
+          broadcastState(updatedPlayers, turnIdx, round)
+          return false
+        }
+        const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+        setPlayers(updatedPlayers)
+        setTurnIdx(nextIdx)
+        setTurnLockBroadcast(false)
+        broadcastState(updatedPlayers, nextIdx, round)
+        return false
+      } else {
+        setTurnLockBroadcast(false)
+        return false
+      }
+    }
 
     const oldPos = cur.pos
     const newPos = (oldPos + steps) % TRACK_LEN
     const lap = newPos < oldPos
+
+    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap)
 
     // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
     const nextPlayers = players.map((p, i) => {
@@ -135,6 +332,8 @@ export function useTurnEngine({
       const nextCash = (p.cash || 0) + (deltaCash || 0)
       return { ...p, pos: newPos, cash: Math.max(0, nextCash) }
     })
+    
+    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash)
 
     // >>> controle de rodada: só vira quando TODOS cruzarem a casa 1
     let nextRound = round
@@ -174,7 +373,11 @@ export function useTurnEngine({
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const currentErpLevel = players[curIdx]?.erpLevel || null
+        const res = await openModalAndWait(<ERPSystemsModal 
+          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentLevel={currentErpLevel}
+        />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.values?.compra || 0)
         if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
@@ -192,7 +395,7 @@ export function useTurnEngine({
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
     if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const ownerForTraining = players.find(isMine) || players[curIdx]
+        const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
         const res = await openModalAndWait(<TrainingModal
           canTrain={{
             comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -200,9 +403,15 @@ export function useTurnEngine({
             inside: Number(ownerForTraining?.insideSales) || 0,
             gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
           }}
+          ownedByType={{
+            comum: ownerForTraining?.trainingsByVendor?.comum || [],
+            field: ownerForTraining?.trainingsByVendor?.field || [],
+            inside: ownerForTraining?.trainingsByVendor?.inside || [],
+            gestor: ownerForTraining?.trainingsByVendor?.gestor || []
+          }}
         />)
         if (!res || res.action !== 'BUY') return
-        const trainCost = Number(res.total || 0)
+        const trainCost = Number(res.grandTotal || 0)
         if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
@@ -218,9 +427,7 @@ export function useTurnEngine({
     const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const cashNow =
-          (Array.isArray(nextPlayers) && nextPlayers[curIdx]?.cash) ??
-          (players[curIdx]?.cash ?? myCash)
+        const cashNow = nextPlayers[curIdx]?.cash ?? myCash
 
         const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
         if (!res) return
@@ -229,7 +436,11 @@ export function useTurnEngine({
           const open = String(res.open || '').toUpperCase()
 
           if (open === 'MIX') {
-            const r2 = await openModalAndWait(<MixProductsModal />)
+            const currentMixLevel = players[curIdx]?.mixProdutos || null
+            const r2 = await openModalAndWait(<MixProductsModal 
+              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentLevel={currentMixLevel}
+            />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.compra || 0)
               const level = String(r2.level || 'D')
@@ -251,8 +462,8 @@ export function useTurnEngine({
             return
           }
 
-          if (open === 'GESTOR') {
-            const r2 = await openModalAndWait(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
+          if (open === 'MANAGER') {
+            const r2 = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
               const cashDelta = Number(
@@ -276,7 +487,7 @@ export function useTurnEngine({
           }
 
           if (open === 'INSIDE') {
-            const r2 = await openModalAndWait(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const cost = Number(r2.cost ?? r2.total ?? 0)
               if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
@@ -290,7 +501,7 @@ export function useTurnEngine({
           }
 
           if (open === 'FIELD') {
-            const r2 = await openModalAndWait(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
               const qty = Number(r2.headcount ?? r2.qty ?? 1)
               const deltas = {
@@ -310,7 +521,7 @@ export function useTurnEngine({
           }
 
           if (open === 'COMMON') {
-            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const qty  = Number(r2.headcount ?? r2.qty ?? 0)
               const deltas = {
@@ -330,7 +541,11 @@ export function useTurnEngine({
           }
 
           if (open === 'ERP') {
-            const r2 = await openModalAndWait(<ERPSystemsModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            const currentErpLevel = players[curIdx]?.erpLevel || null
+            const r2 = await openModalAndWait(<ERPSystemsModal 
+              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentLevel={currentErpLevel}
+            />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.values?.compra || 0)
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
@@ -343,7 +558,7 @@ export function useTurnEngine({
           }
 
           if (open === 'CLIENTS') {
-            const r2 = await openModalAndWait(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
               if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
@@ -364,7 +579,7 @@ export function useTurnEngine({
           }
 
           if (open === 'TRAINING') {
-            const ownerForTraining = players.find(isMine) || players[curIdx]
+            const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
             const r2 = await openModalAndWait(<TrainingModal
               canTrain={{
                 comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -372,9 +587,15 @@ export function useTurnEngine({
                 inside: Number(ownerForTraining?.insideSales) || 0,
                 gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
               }}
+              ownedByType={{
+                comum: ownerForTraining?.trainingsByVendor?.comum || [],
+                field: ownerForTraining?.trainingsByVendor?.field || [],
+                inside: ownerForTraining?.trainingsByVendor?.inside || [],
+                gestor: ownerForTraining?.trainingsByVendor?.gestor || []
+              }}
             />)
             if (r2 && r2.action === 'BUY') {
-              const trainCost = Number(r2.total || 0)
+              const trainCost = Number(r2.grandTotal || 0)
               if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
@@ -441,7 +662,7 @@ export function useTurnEngine({
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<InsideSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
         const cost = Number(res.cost ?? res.total ?? 0)
         if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
@@ -460,7 +681,7 @@ export function useTurnEngine({
     const isClientsTile = [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<ClientsModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const cost  = Number(res.totalCost || 0)
         if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
@@ -488,7 +709,7 @@ export function useTurnEngine({
     const isManagerTile = [18,24,29,51].includes(landedOneBased)
     if (isManagerTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<ManagerModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
         const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
         const cashDelta = Number(
@@ -513,7 +734,7 @@ export function useTurnEngine({
     const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
     if (isFieldTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<FieldSalesModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
           const qty = Number(res.headcount ?? res.qty ?? 1)
           const deltas = {
@@ -539,7 +760,7 @@ export function useTurnEngine({
     const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={players[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const qty  = Number(res.headcount ?? res.qty ?? 0)
         const deltas = {
@@ -564,7 +785,11 @@ export function useTurnEngine({
     const isMixTile = [7,31,44].includes(landedOneBased)
     if (isMixTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<MixProductsModal />)
+        const currentMixLevel = players[curIdx]?.mixProdutos || null
+        const res = await openModalAndWait(<MixProductsModal 
+          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentLevel={currentMixLevel}
+        />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.compra || 0)
         if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
@@ -595,7 +820,7 @@ export function useTurnEngine({
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
-        const meNow = players[curIdx] || players.find(isMine) || {}
+        const meNow = nextPlayers[curIdx] || players.find(isMine) || {}
 
         let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
         let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
@@ -606,11 +831,7 @@ export function useTurnEngine({
 
         if (cashDelta < 0) {
           const need = -cashDelta
-          if (!requireFunds(curIdx, need, 'pagar carta Sorte & Revés')) {
-            try { alert(`Saldo insuficiente para pagar R$ ${need.toLocaleString()}. Use RECUPERAÇÃO FINANCEIRA (demitir / emprestar / reduzir) ou DECLARAR FALÊNCIA.`) } catch {}
-            setTurnLockBroadcast(false)
-            return
-          }
+          await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', nextPlayers)
         }
 
         setPlayers(ps => {
@@ -640,7 +861,7 @@ export function useTurnEngine({
 
         const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
         if (anyDerived) {
-          const me2 = players[curIdx] || players.find(isMine) || {}
+          const me2 = nextPlayers[curIdx] || players.find(isMine) || {}
           let extra = 0
           if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
           if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
@@ -660,7 +881,7 @@ export function useTurnEngine({
 
     // === AUTO-MODAIS (Faturamento / Despesas) ===
     if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
-      const meNow = players[curIdx] || {}
+      const meNow = nextPlayers[curIdx] || {}
       const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
       ;(async () => {
         await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
@@ -674,30 +895,55 @@ export function useTurnEngine({
     }
 
     if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
-      const meNow = players[curIdx] || {}
+      console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
+      const meNow = nextPlayers[curIdx] || {}
       const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
 
       const lp = meNow.loanPending || {}
       const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (round >= Math.max(1, Number(lp.dueRound || 0)))
       const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
 
+      console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
+      console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
+        amount: Number(lp.amount),
+        charged: lp.charged,
+        dueRound: Number(lp.dueRound || 0),
+        currentRound: round,
+        shouldCharge: shouldChargeLoan
+      })
+
       ;(async () => {
         await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
-        if (!requireFunds(curIdx, totalCharge, 'pagar Despesas Operacionais')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
-          const upd = ps.map((p,i)=>{
-            if (i!==curIdx) return p
-            const next = { ...p, cash: Math.max(0, (p.cash||0) - totalCharge) }
-            if (shouldChargeLoan) {
+        
+        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge)
+        const canPayExpenses = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', nextPlayers)
+        console.log('[DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses:', canPayExpenses)
+        if (!canPayExpenses) {
+          setTurnLockBroadcast(false)
+          return
+        }
+        
+        // O handleInsufficientFunds já processou o pagamento, não precisa duplicar
+        // Apenas marca o empréstimo como cobrado se necessário
+        if (shouldChargeLoan) {
+          setPlayers(ps => {
+            const upd = ps.map((p,i)=>{
+              if (i!==curIdx) return p
+              const next = { ...p }
               next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
-            }
-            return next
+              return next
+            })
+            broadcastState(upd, turnIdx, round); return upd
           })
-          broadcastState(upd, nextTurnIdx, nextRound); return upd
-        })
+        }
         appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
         if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+        // Log do saldo final após o processamento
+        setPlayers(ps => {
+          console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', ps[curIdx]?.name, 'Posição final:', ps[curIdx]?.pos, 'Saldo final:', ps[curIdx]?.cash)
+          return ps
+        })
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
@@ -1030,8 +1276,10 @@ export function useTurnEngine({
       setTurnIdx(nextIdx)
       setTurnLockBroadcast(false)
       broadcastState(updatedPlayers, nextIdx, round)
+      console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
       return
     }
+    console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
   }, [
     players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,

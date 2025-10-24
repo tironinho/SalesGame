@@ -135,27 +135,34 @@ export function applyDeltas(player, deltas = {}) {
 }
 
 export function applyTrainingPurchase(player, payload) {
-  const { vendorType, items = [], total = 0 } = payload || {}
+  const { purchases = [], grandTotal = 0 } = payload || {}
   const certMap = { personalizado: 'az', fieldsales: 'am', imersaomultiplier: 'rox' }
 
   const next = { ...player }
-  next.cash = (next.cash ?? 0) - Number(total || 0)
-  next.bens = (next.bens ?? 0) + Number(total || 0)
+  next.cash = (next.cash ?? 0) - Number(grandTotal || 0)
+  next.bens = (next.bens ?? 0) + Number(grandTotal || 0)
   next.onboarding = true
 
-  items.forEach(it => {
-    const key = certMap[it?.id]
-    if (key) next[key] = (next[key] ?? 0) + 1
+  // Processa cada compra (cada tipo de vendedor)
+  purchases.forEach(purchase => {
+    const { vendorType, items = [] } = purchase || {}
+    
+    // Adiciona certificados globais
+    items.forEach(it => {
+      const key = certMap[it?.id]
+      if (key) next[key] = (next[key] ?? 0) + 1
+    })
+
+    // Adiciona treinamentos específicos por tipo de vendedor
+    const tv = String(vendorType || 'comum')
+    const current = new Set( (next.trainingsByVendor?.[tv] || []) )
+    items.forEach(it => { if (it?.id) current.add(it.id) })
+
+    next.trainingsByVendor = {
+      ...(next.trainingsByVendor || {}),
+      [tv]: Array.from(current)
+    }
   })
-
-  const tv = String(vendorType || 'comum')
-  const current = new Set( (next.trainingsByVendor?.[tv] || []) )
-  items.forEach(it => { if (it?.id) current.add(it.id) })
-
-  next.trainingsByVendor = {
-    ...(next.trainingsByVendor || {}),
-    [tv]: Array.from(current)
-  }
 
   return next
 }

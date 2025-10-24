@@ -11,8 +11,12 @@ import InsufficientFundsModal from './InsufficientFundsModal'
  *  • { action:'SKIP' }
  *
  * Obs.: "despesa" e "faturamento" são valores-base por cliente (multiplicar pelos clientes totais).
+ * 
+ * Props:
+ *  - currentCash?: number (saldo atual do jogador; usado para validar compra)
+ *  - currentLevel?: string (nível atual do Mix: 'A', 'B', 'C', 'D' ou null)
  */
-export default function MixProductsModal({ onResolve, currentCash }) {
+export default function MixProductsModal({ onResolve, currentCash, currentLevel = null }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
@@ -25,6 +29,11 @@ export default function MixProductsModal({ onResolve, currentCash }) {
   }
 
   async function resolveBuy(level){
+    // Verifica se o nível já foi adquirido
+    if (currentLevel === level) {
+      return // Não permite comprar o mesmo nível
+    }
+
     const row = LEVELS[level]
     const need = Number(row?.compra || 0)
     const cash = Number(currentCash)
@@ -76,9 +85,22 @@ export default function MixProductsModal({ onResolve, currentCash }) {
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
+            const isOwned = currentLevel === k
+            const isDisabled = isOwned
+            
             return (
-              <div key={k} style={{...S.cardItem, borderColor:'rgba(255,255,255,.15)'}}>
-                <div style={{...S.pill, background:'#fff', color:'#111'}}>{v.pill}</div>
+              <div key={k} style={{
+                ...S.cardItem, 
+                borderColor: isOwned ? '#16a34a' : 'rgba(255,255,255,.15)',
+                opacity: isDisabled ? 0.6 : 1
+              }}>
+                <div style={{
+                  ...S.pill, 
+                  background: isOwned ? '#16a34a' : '#fff', 
+                  color: isOwned ? '#fff' : '#111'
+                }}>
+                  {isOwned ? '✓ ADQUIRIDO' : v.pill}
+                </div>
                 <div style={{...S.cardBadge, background:v.color}} />
                 <ul style={S.lines}>
                   <li><b>{v.label}</b></li>
@@ -88,11 +110,16 @@ export default function MixProductsModal({ onResolve, currentCash }) {
                 </ul>
                 <button
                   type="button"
-                  style={S.buyBtn}
+                  style={{
+                    ...S.buyBtn,
+                    background: isDisabled ? '#6b7280' : '#2442f9',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer'
+                  }}
                   onClick={() => resolveBuy(k)}
-                  title={`Comprar Mix de Produtos ${k}`}
+                  disabled={isDisabled}
+                  title={isDisabled ? `Mix nível ${k} já adquirido` : `Comprar Mix de Produtos ${k}`}
                 >
-                  Comprar {k}
+                  {isDisabled ? 'Já Adquirido' : `Comprar ${k}`}
                 </button>
               </div>
             )

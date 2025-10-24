@@ -47,7 +47,7 @@ export default function RecoveryLoan({
 
     if (val > 0) {
       // Envia um payload autoexplicativo para o modal pai / App aplicar.
-      onConfirm?.({
+      const payload = {
         type: 'LOAN',
         amount: val,
         cashDelta: val, // somar no saldo imediatamente
@@ -55,7 +55,9 @@ export default function RecoveryLoan({
           amount: val,
           charged: false // será cobrado na próxima "Despesas Operacionais"
         }
-      })
+      }
+      console.log('[DEBUG] RecoveryLoan enviando payload:', payload)
+      onConfirm?.(payload)
     } else {
       onConfirm?.({ type: 'LOAN_DENIED', reason: 'INVALID_AMOUNT' })
     }

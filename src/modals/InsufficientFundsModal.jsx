@@ -8,11 +8,14 @@ import React, { useEffect, useMemo, useRef } from 'react'
  *  - onResolve: function(payload)
  *      • { action: 'ACK' }   // usuário leu/confirmou
  *      • { action: 'SKIP' }  // usuário fechou
+ *      • { action: 'RECOVERY' }  // usuário escolheu recuperação financeira
+ *      • { action: 'BANKRUPT' }  // usuário escolheu declarar falência
  *  - requiredAmount: number  (quanto precisa)
  *  - currentCash: number     (saldo atual)
  *  - title?: string          (padrão: "Saldo insuficiente")
  *  - message?: string        (mensagem adicional)
  *  - okLabel?: string        (padrão: "OK")
+ *  - showRecoveryOptions?: boolean  // se deve mostrar botões de recuperação/falência
  */
 export default function InsufficientFundsModal({
   onResolve,
@@ -21,6 +24,8 @@ export default function InsufficientFundsModal({
   title = 'Saldo insuficiente',
   message = 'Seu saldo atual não é suficiente para concluir esta compra.',
   okLabel = 'OK',
+  showRecoveryOptions = false,
+  canClose = true,
 }) {
   const closeRef = useRef(null)
 
@@ -40,7 +45,23 @@ export default function InsufficientFundsModal({
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
+    // Não permite fechar quando showRecoveryOptions está ativo ou canClose é false
+    if (showRecoveryOptions || !canClose) {
+      return
+    }
     onResolve?.({ action: 'SKIP' })
+  }
+
+  const handleRecovery = (e) => {
+    e?.preventDefault?.()
+    e?.stopPropagation?.()
+    onResolve?.({ action: 'RECOVERY' })
+  }
+
+  const handleBankrupt = (e) => {
+    e?.preventDefault?.()
+    e?.stopPropagation?.()
+    onResolve?.({ action: 'BANKRUPT' })
   }
 
   // Bloqueia scroll e foca no botão primário (ESC NÃO fecha)
@@ -63,14 +84,16 @@ export default function InsufficientFundsModal({
         style={S.card}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          style={S.close}
-          onClick={handleClose}
-          aria-label="Fechar"
-        >
-          ✕
-        </button>
+        {!showRecoveryOptions && canClose && (
+          <button
+            type="button"
+            style={S.close}
+            onClick={handleClose}
+            aria-label="Fechar"
+          >
+            ✕
+          </button>
+        )}
 
         <div style={S.icon}>⚠️</div>
         <h2 style={S.title}>{title}</h2>
@@ -83,14 +106,33 @@ export default function InsufficientFundsModal({
         </div>
 
         <div style={S.actions}>
-          <button
-            ref={closeRef}
-            type="button"
-            style={{ ...S.btn, background:'#6b7280', color:'#fff' }}
-            onClick={handleOk}
-          >
-            {okLabel}
-          </button>
+          {showRecoveryOptions ? (
+            <>
+              <button
+                type="button"
+                style={{ ...S.btn, background:'#f59e0b', color:'#fff', marginRight: '8px' }}
+                onClick={handleRecovery}
+              >
+                Recuperação Financeira
+              </button>
+              <button
+                type="button"
+                style={{ ...S.btn, background:'#dc2626', color:'#fff' }}
+                onClick={handleBankrupt}
+              >
+                Declarar Falência
+              </button>
+            </>
+          ) : (
+            <button
+              ref={closeRef}
+              type="button"
+              style={{ ...S.btn, background:'#6b7280', color:'#fff' }}
+              onClick={handleOk}
+            >
+              {okLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

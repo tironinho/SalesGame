@@ -17,8 +17,9 @@ const LEVELS = {
  *
  * Props:
  *  - currentCash?: number (saldo atual do jogador; usado para validar compra)
+ *  - currentLevel?: string (nível atual do ERP: 'A', 'B', 'C', 'D' ou null)
  */
-export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
+export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
@@ -29,6 +30,11 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
   }
 
   const handleBuy = async (level) => {
+    // Verifica se o nível já foi adquirido
+    if (currentLevel === level) {
+      return // Não permite comprar o mesmo nível
+    }
+
     const values = LEVELS[level]
     const need = Number(values?.compra || 0)
     const cash = Number(currentCash || 0)
@@ -92,9 +98,22 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
+            const isOwned = currentLevel === k
+            const isDisabled = isOwned
+            
             return (
-              <div key={k} style={{...S.cardItem, borderColor:'rgba(255,255,255,.15)'}}>
-                <div style={{...S.pill, background:'#fff', color:'#111'}}>{v.pill}</div>
+              <div key={k} style={{
+                ...S.cardItem, 
+                borderColor: isOwned ? '#16a34a' : 'rgba(255,255,255,.15)',
+                opacity: isDisabled ? 0.6 : 1
+              }}>
+                <div style={{
+                  ...S.pill, 
+                  background: isOwned ? '#16a34a' : '#fff', 
+                  color: isOwned ? '#fff' : '#111'
+                }}>
+                  {isOwned ? '✓ ADQUIRIDO' : v.pill}
+                </div>
                 <div style={{...S.cardBadge, background:v.color}} />
                 <ul style={S.lines}>
                   <li>Compra: <b>$ {v.compra.toLocaleString()}</b></li>
@@ -103,11 +122,16 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0 }) {
                 </ul>
                 <button
                   type="button"
-                  style={S.buyBtn}
+                  style={{
+                    ...S.buyBtn,
+                    background: isDisabled ? '#6b7280' : '#2442f9',
+                    cursor: isDisabled ? 'not-allowed' : 'pointer'
+                  }}
                   onClick={() => handleBuy(k)}
-                  title={`Comprar ERP nível ${k}`}
+                  disabled={isDisabled}
+                  title={isDisabled ? `ERP nível ${k} já adquirido` : `Comprar ERP nível ${k}`}
                 >
-                  Comprar {k}
+                  {isDisabled ? 'Já Adquirido' : `Comprar ${k}`}
                 </button>
               </div>
             )

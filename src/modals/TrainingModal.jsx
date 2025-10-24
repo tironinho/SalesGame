@@ -36,9 +36,8 @@ const PRODUCTS = [
  * Props:
  * - onResolve(payload)
  *      • { action:'BUY',
- *          vendorType:'comum'|'field'|'inside'|'gestor',
- *          items:[{id,label,price,cert}],
- *          total:number,
+ *          purchases:[{vendorType:'comum'|'field'|'inside'|'gestor', items:[{id,label,price,cert}], total:number}],
+ *          grandTotal:number,
  *          bensDelta:number,
  *          certsCount:{ azul:number, amarelo:number, roxo:number },
  *          ownedUpdate: { [vendorType]: string[] } }
@@ -79,61 +78,110 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
     })
   , [ownedByType, canMap])
 
-  // Seleciona automaticamente o primeiro tipo habilitado
-  const [vendorType, setVendorType] = useState(() => typeList[0]?.id || 'comum')
-  const [selected, setSelected] = useState(() => new Set())
+  // Estado para seleção múltipla de tipos de vendedores e treinamentos únicos
+  const [selectedVendorTypes, setSelectedVendorTypes] = useState(() => new Set())
+  const [selectedTrainings, setSelectedTrainings] = useState(() => new Set()) // Set<trainingId> - aplicado a todos os tipos
+  
+  // Inicializa com o primeiro tipo disponível se não houver seleção
   useEffect(() => {
-    if (!typeList.find(t => t.id === vendorType)) {
-      setVendorType(typeList[0]?.id)   // se o atual sumiu (sem profissional/completo), troca
-      setSelected(new Set())           // e limpa a seleção
+    if (selectedVendorTypes.size === 0 && typeList.length > 0) {
+      setSelectedVendorTypes(new Set([typeList[0].id]))
     }
-  }, [typeList, vendorType])
+  }, [typeList, selectedVendorTypes.size])
 
   const closeRef = useRef(null)
 
-  const disabledIdsForType = useMemo(() => {
-    const owned = ownedByType[vendorType] instanceof Set
-      ? ownedByType[vendorType]
-      : new Set(ownedByType[vendorType] || [])
-    return owned
-  }, [ownedByType, vendorType])
+  // Calcula totais e estatísticas - aplica os mesmos treinamentos a todos os tipos selecionados
+  const purchases = useMemo(() => {
+    const result = []
+    if (selectedTrainings.size > 0) {
+      const items = Array.from(selectedTrainings).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
+      const totalPerType = items.reduce((acc, item) => acc + (item?.price || 0), 0)
+      
+      selectedVendorTypes.forEach(vendorType => {
+        result.push({ vendorType, items, total: totalPerType })
+      })
+    }
+    return result
+  }, [selectedVendorTypes, selectedTrainings])
 
-  const total = useMemo(
-    () => Array.from(selected).reduce((acc, id) => {
-      const p = PRODUCTS.find(x => x.id === id)
-      return acc + (p?.price || 0)
-    }, 0),
-    [selected]
+  const grandTotal = useMemo(() => 
+    purchases.reduce((acc, p) => acc + p.total, 0), 
+    [purchases]
   )
 
-  const toggle = (id) =>
-    setSelected(s => {
-      if (disabledIdsForType.has(id)) return s // já comprado para este tipo
-      const n = new Set(s)
-      n.has(id) ? n.delete(id) : n.add(id)
-      return n
+  const certsCount = useMemo(() => {
+    const counts = { azul: 0, amarelo: 0, roxo: 0 }
+    if (selectedTrainings.size > 0) {
+      const items = Array.from(selectedTrainings).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
+      items.forEach(item => {
+        counts[item.cert] = (counts[item.cert] || 0) + selectedVendorTypes.size
+      })
+    }
+    return counts
+  }, [selectedTrainings, selectedVendorTypes.size])
+
+  const ownedUpdate = useMemo(() => {
+    const result = {}
+    if (selectedTrainings.size > 0) {
+      const trainingIds = Array.from(selectedTrainings)
+      selectedVendorTypes.forEach(vendorType => {
+        result[vendorType] = trainingIds
+      })
+    }
+    return result
+  }, [selectedTrainings, selectedVendorTypes])
+
+  const toggleVendorType = (vendorType) => {
+    setSelectedVendorTypes(prev => {
+      const next = new Set(prev)
+      if (next.has(vendorType)) {
+        next.delete(vendorType)
+      } else {
+        next.add(vendorType)
+      }
+      return next
     })
+  }
+
+  const toggleTraining = (trainingId) => {
+    // Verifica se algum dos tipos selecionados já tem este treinamento
+    const isOwnedByAnySelected = Array.from(selectedVendorTypes).some(vendorType => {
+      const owned = ownedByType[vendorType] instanceof Set
+        ? ownedByType[vendorType]
+        : new Set(ownedByType[vendorType] || [])
+      return owned.has(trainingId)
+    })
+    
+    if (isOwnedByAnySelected) return // já comprado para algum tipo selecionado
+
+    setSelectedTrainings(prev => {
+      const next = new Set(prev)
+      if (next.has(trainingId)) {
+        next.delete(trainingId)
+      } else {
+        next.add(trainingId)
+      }
+      return next
+    })
+  }
 
   const handleBuy = () => {
-    if (!selected.size || !vendorType) return
-    const items = Array.from(selected).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
-
-    const certsCount = items.reduce((acc, it) => {
-      acc[it.cert] = (acc[it.cert] || 0) + 1
-      return acc
-    }, { azul:0, amarelo:0, roxo:0 })
-
-    const ownedUpdate = { [vendorType]: items.map(it => it.id) }
+    if (purchases.length === 0) return
 
     onResolve?.({
       action: 'BUY',
-      vendorType,
-      items,
-      total,
-      bensDelta: total,
+      purchases,
+      grandTotal,
+      bensDelta: grandTotal,
       certsCount,
       ownedUpdate,
     })
+  }
+
+  const clearAll = () => {
+    setSelectedVendorTypes(new Set())
+    setSelectedTrainings(new Set())
   }
 
   const handleClose = (e) => {
@@ -158,7 +206,7 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
       <div style={S.card}>
         <button ref={closeRef} type="button" style={S.close} onClick={handleClose} aria-label="Fechar">✕</button>
 
-        <h2 style={S.title}>Escolha para qual vendedor quer atribuir o treinamento:</h2>
+        <h2 style={S.title}>Escolha os vendedores e treinamentos que deseja comprar:</h2>
 
         {noTypesLeft ? (
           <div style={S.allDoneBox}>
@@ -167,84 +215,116 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
               : 'Todos os treinamentos já foram comprados para os profissionais disponíveis.'}
           </div>
         ) : (
-          <div style={{
-            ...S.vendorRow,
-            gridTemplateColumns: `repeat(${typeList.length}, minmax(0,1fr))`
-          }}>
-            {typeList.map(v => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={()=>{ setVendorType(v.id); setSelected(new Set()) }}
-                style={{
-                  ...S.vendorBtn,
-                  background: vendorType === v.id ? '#6f5bd6' : '#2a2f3b',
-                  borderColor: vendorType === v.id ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.15)'
-                }}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div style={{marginBottom: '16px'}}>
+              <p style={{margin: '0 0 8px', opacity: 0.9, fontSize: '14px'}}>
+                Selecione os tipos de vendedores que deseja treinar:
+              </p>
+              <div style={{
+                ...S.vendorRow,
+                gridTemplateColumns: `repeat(${typeList.length}, minmax(0,1fr))`
+              }}>
+                {typeList.map(v => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => toggleVendorType(v.id)}
+                    style={{
+                      ...S.vendorBtn,
+                      background: selectedVendorTypes.has(v.id) ? '#6f5bd6' : '#2a2f3b',
+                      borderColor: selectedVendorTypes.has(v.id) ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.15)'
+                    }}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
 
-        {!noTypesLeft && (
+        {!noTypesLeft && selectedVendorTypes.size > 0 && (
           <>
             <p style={{margin:'10px 2px 14px', opacity:.9}}>
-              Escolha abaixo qual nível/treinamento quer adquirir
+              Escolha os treinamentos que serão aplicados a todos os tipos selecionados:
             </p>
 
-            <div style={S.products}>
-              {PRODUCTS.map(p => {
-                const active = selected.has(p.id)
-                const disabled = disabledIdsForType.has(p.id)
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={()=>toggle(p.id)}
-                    disabled={disabled}
-                    style={{
-                      ...S.productCard,
-                      background: p.colors.bg,
-                      borderColor: p.colors.border,
-                      boxShadow: active ? `0 0 0 3px ${p.colors.pill}` : 'none',
-                      opacity: disabled ? .45 : 1,
-                      cursor: disabled ? 'not-allowed' : 'pointer'
-                    }}
-                    title={disabled ? 'Já adquirido para este tipo de vendedor' : undefined}
-                  >
-                    <div style={S.pill(p.colors.pill)}>
-                      Certificado {p.cert === 'azul' ? 'Azul' : p.cert === 'amarelo' ? 'Amarelo' : 'Roxo'}
-                    </div>
-                    <div style={{whiteSpace:'pre-line', fontWeight:800, marginBottom:10}}>{p.label}</div>
-                    <div style={{fontSize:22, fontWeight:900}}>$ {p.price.toLocaleString()}</div>
-                  </button>
-                )
-              })}
+            <div style={{marginBottom: '16px'}}>
+              <div style={{marginBottom: '12px', padding: '8px 12px', background: '#2a2f3b', borderRadius: '8px', border: '1px solid rgba(255,255,255,.15)'}}>
+                <div style={{fontWeight: 'bold', marginBottom: '4px'}}>Tipos selecionados:</div>
+                <div style={{fontSize: '14px', opacity: 0.9}}>
+                  {Array.from(selectedVendorTypes).map(vendorType => {
+                    const typeInfo = typeList.find(t => t.id === vendorType)
+                    return typeInfo?.label
+                  }).join(', ')}
+                </div>
+              </div>
+              
+              <div style={S.products}>
+                {PRODUCTS.map(p => {
+                  const active = selectedTrainings.has(p.id)
+                  const isOwnedByAnySelected = Array.from(selectedVendorTypes).some(vendorType => {
+                    const owned = ownedByType[vendorType] instanceof Set
+                      ? ownedByType[vendorType]
+                      : new Set(ownedByType[vendorType] || [])
+                    return owned.has(p.id)
+                  })
+                  
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => toggleTraining(p.id)}
+                      disabled={isOwnedByAnySelected}
+                      style={{
+                        ...S.productCard,
+                        background: p.colors.bg,
+                        borderColor: p.colors.border,
+                        boxShadow: active ? `0 0 0 3px ${p.colors.pill}` : 'none',
+                        opacity: isOwnedByAnySelected ? .45 : 1,
+                        cursor: isOwnedByAnySelected ? 'not-allowed' : 'pointer'
+                      }}
+                      title={isOwnedByAnySelected ? 'Já adquirido para algum tipo selecionado' : undefined}
+                    >
+                      <div style={S.pill(p.colors.pill)}>
+                        Certificado {p.cert === 'azul' ? 'Azul' : p.cert === 'amarelo' ? 'Amarelo' : 'Roxo'}
+                      </div>
+                      <div style={{whiteSpace:'pre-line', fontWeight:800, marginBottom:10}}>{p.label}</div>
+                      <div style={{fontSize:22, fontWeight:900}}>$ {p.price.toLocaleString()}</div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             <div style={S.actionsRow}>
               <button
                 type="button"
                 style={{...S.smallBtn, background:'#3a4152'}}
-                onClick={()=>setSelected(new Set())}
+                onClick={clearAll}
               >
-                Limpar
+                Limpar Tudo
               </button>
               <div style={{flex:1}} />
-              <div style={{fontWeight:900}}>Total: $ {total.toLocaleString()}</div>
+              <div style={{fontWeight:900}}>
+                Total: $ {grandTotal.toLocaleString()} 
+                {selectedVendorTypes.size > 1 && (
+                  <span style={{fontSize: '12px', opacity: 0.8, marginLeft: '8px'}}>
+                    ({selectedTrainings.size} treinamentos × {selectedVendorTypes.size} tipos)
+                  </span>
+                )}
+              </div>
             </div>
 
             <div style={S.btnRow}>
               <button type="button" style={{ ...S.bigBtn, background:'#444' }} onClick={handleClose}>Não comprar</button>
               <button
                 type="button"
-                disabled={!selected.size}
-                style={{ ...S.bigBtn, background: selected.size ? '#6f5bd6' : '#3a3a3a', opacity: selected.size ? 1 : .6, cursor: selected.size ? 'pointer' : 'not-allowed' }}
+                disabled={purchases.length === 0}
+                style={{ ...S.bigBtn, background: purchases.length > 0 ? '#6f5bd6' : '#3a3a3a', opacity: purchases.length > 0 ? 1 : .6, cursor: purchases.length > 0 ? 'pointer' : 'not-allowed' }}
                 onClick={handleBuy}
               >
-                Comprar
+                Comprar ({purchases.length} tipo{purchases.length !== 1 ? 's' : ''})
               </button>
             </div>
           </>

@@ -463,7 +463,7 @@ export default function App() {
   }
 
   // 4) Jogo
-  const controlsCanRoll = isMyTurn && !turnLock
+  const controlsCanRoll = isMyTurn
 
   return (
     <div className="page">
