@@ -34,6 +34,20 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
   const amHost = useMemo(() => lobby?.host_id === meId, [lobby, meId])
   const me = useMemo(() => players.find(p => p.player_id === meId), [players, meId])
   const readyCount = useMemo(() => players.filter(p => p.ready).length, [players])
+  
+  // precisa ser host, sala 'open', >=1 jogador e todos prontos
+  const canStart = amHost && lobby?.status === 'open' && players.length >= 1 && readyCount === players.length
+  
+  // Debug logs para identificar o problema
+  console.log('[PlayersLobby] Debug:', {
+    players: players.length,
+    readyCount,
+    lobbyStatus: lobby?.status,
+    amHost,
+    canStart,
+    meId,
+    meName
+  })
 
   // navega assim que existir match (evita corrida de eventos)
   async function maybeNavigate(pls) {
@@ -58,26 +72,42 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
   async function refreshAll() {
     if (firstLoad.current) setLoading(true)
     try {
+      console.log('[PlayersLobby] refreshAll - buscando lobby:', lobbyId)
       const [lb, pls] = await Promise.all([ getLobby(lobbyId), listLobbyPlayers(lobbyId) ])
+      console.log('[PlayersLobby] refreshAll - lobby:', lb, 'players:', pls)
       setLobby(lb)
       setPlayers(pls)
 
       const mine = pls.find(p => p.player_id === meId)
+      console.log('[PlayersLobby] refreshAll - mine:', mine, 'meId:', meId)
 
       // 1) Se não estou na sala, entra (uma vez)
       if (!mine && !triedEnsure.current && lb?.status === 'open') {
+        console.log('[PlayersLobby] refreshAll - entrando na sala')
         triedEnsure.current = true
-        try { await joinLobby({ lobbyId, playerId: meId, playerName: meName, ready: false }) } catch {}
+        try { 
+          await joinLobby({ lobbyId, playerId: meId, playerName: meName, ready: false })
+          console.log('[PlayersLobby] refreshAll - entrada na sala bem-sucedida')
+          // Recarrega os jogadores após entrar na sala
+          const newPls = await listLobbyPlayers(lobbyId)
+          console.log('[PlayersLobby] refreshAll - jogadores após entrada:', newPls)
+          setPlayers(newPls)
+        } catch (e) {
+          console.error('[PlayersLobby] refreshAll - erro ao entrar na sala:', e)
+        }
       }
 
       // 2) Se estou na sala e o nome diverge, sincroniza (uma vez)
       if (mine && !nameSynced.current && meName && mine.player_name !== meName) {
+        console.log('[PlayersLobby] refreshAll - sincronizando nome')
         nameSynced.current = true
         try { await setPlayerName({ lobbyId, playerId: meId, playerName: meName }) } catch {}
       }
 
       // 3) Se já existe match (host iniciou), navega todos imediatamente
       await maybeNavigate(pls)
+    } catch (e) {
+      console.error('[PlayersLobby] refreshAll - erro:', e)
     } finally {
       if (firstLoad.current) { firstLoad.current = false; setLoading(false) }
     }
@@ -133,9 +163,6 @@ useEffect(() => {
   async function handleLeave() {
     try { await leaveLobby({ lobbyId, playerId: meId }) } finally { onBack?.() }
   }
-
-  // precisa ser host, sala 'open', >=2 jogadores e todos prontos
-  const canStart = amHost && lobby?.status === 'open' && players.length >= 1 && readyCount === players.length
 
   async function handleStart() {
     if (!canStart) return

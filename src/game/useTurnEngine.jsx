@@ -22,6 +22,7 @@ import FaturamentoDoMesModal from '../modals/FaturamentoMesModal'
 import DespesasOperacionaisModal from '../modals/DespesasOperacionaisModal'
 import InsufficientFundsModal from '../modals/InsufficientFundsModal'
 import RecoveryModal from '../modals/RecoveryModal'
+import BankruptcyModal from '../modals/BankruptcyModal'
 
 // Regras & helpers puros
 import {
@@ -106,10 +107,24 @@ export function useTurnEngine({
   // ========= fim de jogo =========
   const maybeFinishGame = React.useCallback((nextPlayers, nextRound) => {
     if (nextRound <= 5) return
-    const ranked = [...nextPlayers].map(p => ({
+    
+    // Filtra apenas jogadores vivos (não falidos) para determinar o vencedor
+    const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
+    if (alivePlayers.length === 0) {
+      console.log('[DEBUG] 🏁 FIM DE JOGO - Nenhum jogador vivo restante')
+      setWinner(null)
+      setGameOver(true)
+      appendLog('Fim de jogo! Todos os jogadores falidos.')
+      setTurnLockBroadcast(false)
+      return
+    }
+    
+    const ranked = alivePlayers.map(p => ({
       ...p,
       patrimonio: (p.cash || 0) + (p.bens || 0)
     })).sort((a,b) => b.patrimonio - a.patrimonio)
+    
+    console.log('[DEBUG] 🏆 VENCEDOR - Jogadores vivos:', alivePlayers.map(p => p.name), 'Vencedor:', ranked[0]?.name)
     setWinner(ranked[0] || null)
     setGameOver(true)
     appendLog('Fim de jogo! 5 rodadas completas.')
@@ -218,7 +233,7 @@ export function useTurnEngine({
                 setPlayers(updatedPlayers)
                 setGameOver(true)
                 setTurnLockBroadcast(false)
-                broadcastState(updatedPlayers, turnIdx, round)
+                broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
                 return false
               }
               const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
@@ -305,7 +320,7 @@ export function useTurnEngine({
           setPlayers(updatedPlayers)
           setGameOver(true)
           setTurnLockBroadcast(false)
-          broadcastState(updatedPlayers, turnIdx, round)
+          broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
           return false
         }
         const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
@@ -345,6 +360,7 @@ export function useTurnEngine({
       if (allDone) {
         nextRound = round + 1
         nextFlags = new Array(players.length).fill(false)
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound)
       }
     }
     setRoundFlags(nextFlags)
@@ -360,8 +376,30 @@ export function useTurnEngine({
     setTurnIdx(nextTurnIdx)
     broadcastState(nextPlayers, nextTurnIdx, nextRound)
 
-    maybeFinishGame(nextPlayers, nextRound)
-    if (nextRound > 5) { setTurnLockBroadcast(false); return }
+    // Verifica se o jogo deve terminar (quando todos os jogadores vivos completaram 5 rodadas)
+    const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
+    const allCompleted5Rounds = alivePlayers.every(p => {
+      // Conta quantas vezes o jogador passou pela casa 1 (faturamento)
+      // Cada volta completa no tabuleiro = 1 rodada completada
+      const roundsCompleted = Math.floor((p.pos || 0) / TRACK_LEN)
+      return roundsCompleted >= 5
+    })
+    
+    if (allCompleted5Rounds) {
+      console.log('[DEBUG] 🏁 FIM DE JOGO - Todos os jogadores completaram 5 rodadas')
+      maybeFinishGame(nextPlayers, nextRound)
+      setTurnLockBroadcast(false)
+      return
+    }
+    
+    // Se o jogador atual completou 5 rodadas, pula para o próximo
+    const currentPlayerRounds = Math.floor((nextPlayers[curIdx]?.pos || 0) / TRACK_LEN)
+    if (currentPlayerRounds >= 5) {
+      console.log('[DEBUG] ⏭️ JOGADOR COMPLETOU 5 RODADAS - Pulando para próximo:', nextPlayers[curIdx]?.name)
+      // O jogador que completou 5 rodadas aguarda, mas o jogo continua para os outros
+      setTurnLockBroadcast(false)
+      return
+    }
 
     const landedOneBased = newPos + 1
     const crossedStart1 = crossedTile(oldPos, newPos, 0)
@@ -825,9 +863,8 @@ export function useTurnEngine({
         let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
         let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
 
-        if (res.id === 'key_client_at_risk' && hasYellow(meNow)) { cashDelta = 0; clientsDelta = 0 }
-        if (res.id === 'needs_change_lose4' && hasBlue(meNow))   { clientsDelta = 0 }
-        if (res.id === 'purple_award_25k' && !hasPurple(meNow))  { cashDelta = 0 }
+        // O modal já calculou os efeitos baseados no estado do jogador
+        // Não precisamos verificar novamente aqui
 
         if (cashDelta < 0) {
           const need = -cashDelta
@@ -1015,6 +1052,121 @@ export function useTurnEngine({
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
       setTurnLockBroadcast(false)
+      return
+    }
+
+    if (act.type === 'RECOVERY_MODAL') {
+      if (!isMyTurn || !pushModal || !awaitTop) return
+      ;(async () => {
+        const res = await openModalAndWait(<RecoveryModal playerName={current?.name || 'Jogador'} currentPlayer={current} />)
+        if (!res) return
+
+        switch (res.type) {
+          case 'FIRE':
+            onAction?.({
+              type: 'RECOVERY_FIRE',
+              items: res.items,
+              amount: res.totalCredit ?? res.amount ?? 0,
+              note: res.note,
+              creditByRole: res.creditByRole
+            })
+            break
+
+          case 'REDUCE': {
+            // --- SUPORTE: seleção única ou múltipla ---
+            const isMulti = Array.isArray(res.items) && res.items.length > 0
+
+            // Se veio lista, marcamos selected=true para o App.jsx aceitar (ele usa o primeiro "selected")
+            const items = isMulti
+              ? res.items.map((i, idx) => ({
+                  ...i,
+                  // garante campos padronizados
+                  group: String(i.group || i.tipo || '').toUpperCase(),
+                  level: String(i.level || i.nivel || '').toUpperCase(),
+                  credit: Number(i.credit ?? i.amount ?? 0),
+                  selected: idx === 0 ? true : !!i.selected
+                }))
+              : undefined
+
+            // Seleção "principal" (o App.jsx usa sel/selection quando presente)
+            const first =
+              (isMulti && items?.[0]) ||
+              res.selection ||
+              res.sel ||
+              (res.group && res.level
+                ? {
+                    group: String(res.group).toUpperCase(),
+                    level: String(res.level).toUpperCase(),
+                    credit: Number(res.credit ?? res.amount ?? 0)
+                  }
+                : null)
+
+            // Valor total: total/totalCredit quando múltiplo; senão credit/amount
+            const amount = Number(
+              (isMulti ? (res.total ?? res.totalCredit) : undefined) ??
+              first?.credit ??
+              res.amount ??
+              0
+            )
+
+            const note =
+              res.note ||
+              (isMulti
+                ? `Redução múltipla +R$ ${amount.toLocaleString()}`
+                : (first
+                    ? `Redução ${first.group} nível ${first.level} +R$ ${amount.toLocaleString()}`
+                    : `Redução +R$ ${amount.toLocaleString()}`))
+
+            onAction?.({
+              type: 'RECOVERY_REDUCE',
+              // passa a lista completa para o App.jsx (ele já entende 'items' e usa o primeiro selecionado)
+              items,
+              selection: first || null,
+              amount,
+              note
+            })
+            break
+          }
+
+          case 'LOAN': {
+            // Normaliza a resposta do empréstimo
+            const pack = (typeof res.amount === 'object' && res.amount !== null)
+              ? res.amount
+              : {
+                  amount: Number(res.amount ?? 0),
+                  cashDelta: Number(res.cashDelta ?? res.amount ?? 0),
+                  loan: res.loan
+                }
+
+            const amount = Number(pack.amount ?? 0)
+            const cashDelta = Number(pack.cashDelta ?? amount ?? 0)
+            const loan = pack.loan ?? res.loan ?? {}
+
+            onAction?.({
+              type: 'RECOVERY_LOAN',
+              amount,
+              cashDelta,
+              loan,
+              note: res.note
+            })
+            break
+          }
+
+          default:
+            if (res.amount > 0) {
+              onAction?.({ type: 'RECOVERY_CUSTOM', amount: res.amount, note: res.note })
+            }
+        }
+      })()
+      return
+    }
+
+    if (act.type === 'BANKRUPT_MODAL') {
+      if (!isMyTurn || !pushModal || !awaitTop) return
+      ;(async () => {
+        const ok = await openModalAndWait(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
+        if (ok) onAction?.({ type: 'BANKRUPT' })
+      })()
       return
     }
 
@@ -1267,7 +1419,7 @@ export function useTurnEngine({
         setPlayers(updatedPlayers)
         setGameOver(true)
         setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, turnIdx, round)
+        broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
         return
       }
 

@@ -43,9 +43,8 @@ export default function App() {
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
   const myName = useMemo(() => {
-    // Limpar nome antigo para forçar tela inicial
-    sessionStorage.removeItem('sg_tab_player_name')
-    return ''
+    // Obter nome salvo do sessionStorage
+    return getOrSetTabPlayerName('')
   }, [])
   const [myUid, setMyUid] = useState(meId)
 
@@ -158,9 +157,42 @@ export default function App() {
         }
 
         if (d.type === 'SYNC' && phase === 'game') {
-          setPlayers(d.players)
+          console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
+          console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
+          
+          // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
           setTurnIdx(d.turnIdx)
           setRound(d.round)
+          
+          // Preserva apenas certificados e treinamentos locais (dados de progresso)
+          const currentPlayers = players
+          const syncedPlayers = d.players.map(syncedPlayer => {
+            const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
+            if (!localPlayer) return syncedPlayer
+            
+            return {
+              ...syncedPlayer,
+              // Preserva apenas dados de progresso local (certificados e treinamentos)
+              az: localPlayer.az || syncedPlayer.az || 0,
+              am: localPlayer.am || syncedPlayer.am || 0,
+              rox: localPlayer.rox || syncedPlayer.rox || 0,
+              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+            }
+          })
+          setPlayers(syncedPlayers)
+          
+          console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
+          console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
+          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
+          
+          // Sincroniza estado do jogo (gameOver e winner)
+          if (d.gameOver !== undefined) {
+            setGameOver(d.gameOver)
+          }
+          if (d.winner !== undefined) {
+            setWinner(d.winner)
+          }
         }
       }
       bcRef.current = bc
@@ -235,7 +267,26 @@ export default function App() {
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
     let changed = false
-    if (np && JSON.stringify(np) !== JSON.stringify(players)) { setPlayers(np); changed = true }
+    if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
+      // Preserva apenas certificados e treinamentos locais (dados de progresso)
+      const currentPlayers = players
+      const syncedPlayers = np.map(syncedPlayer => {
+        const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
+        if (!localPlayer) return syncedPlayer
+        
+        return {
+          ...syncedPlayer,
+          // Preserva apenas dados de progresso local (certificados e treinamentos)
+          az: localPlayer.az || syncedPlayer.az || 0,
+          am: localPlayer.am || syncedPlayer.am || 0,
+          rox: localPlayer.rox || syncedPlayer.rox || 0,
+          trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+          onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+        }
+      })
+      setPlayers(syncedPlayers); 
+      changed = true 
+    }
     if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
     if (nr !== null && nr !== round)  { setRound(nr); changed = true }
 
@@ -258,7 +309,7 @@ export default function App() {
     }
   }
 
-  function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
     // 2) entre abas
@@ -268,6 +319,8 @@ export default function App() {
         players: nextPlayers,
         turnIdx: nextTurnIdx,
         round: nextRound,
+        gameOver: gameOverState,
+        winner: winnerState,
         source: meId,
       })
     } catch (e) { console.warn('[App] broadcastState failed:', e) }
@@ -286,12 +339,17 @@ export default function App() {
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
   }
 
-  // ====== “é minha vez?”
+  // ====== "é minha vez?"
   const current = players[turnIdx]
   const isMyTurn = useMemo(() => {
     const owner = players[turnIdx]
-    if (!owner) return false
-    return (owner.id != null && String(owner.id) === String(myUid))
+    if (!owner) {
+      console.log('[App] isMyTurn - owner não encontrado, turnIdx:', turnIdx, 'players.length:', players.length)
+      return false
+    }
+    const isMine = owner.id != null && String(owner.id) === String(myUid)
+    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
+    return isMine
   }, [players, turnIdx, myUid])
 
   // ====== HUD -> possibAt & clientsAt sincronizados do meu jogador
@@ -310,6 +368,9 @@ export default function App() {
     const { cap, inAtt } = capacityAndAttendance(me)
     const lvl = String(me.erpLevel || 'D').toUpperCase()
     const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
+    
+    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp)
+    
     return {
       faturamento: fat,
       manutencao: desp,
@@ -338,6 +399,7 @@ export default function App() {
     advanceAndMaybeLap,
     onAction,
     nextTurn,
+    modalLocks,
   } = useTurnEngine({
     players, setPlayers,
     round, setRound,
@@ -468,7 +530,8 @@ export default function App() {
   }
 
   // 4) Jogo
-  const controlsCanRoll = isMyTurn
+  const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
+  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'result:', controlsCanRoll)
 
   return (
     <div className="page">
