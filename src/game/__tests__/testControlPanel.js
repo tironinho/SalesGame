@@ -12,7 +12,7 @@ import {
   enableRealTimeValidation, 
   disableRealTimeValidation, 
   clearValidationLogs, 
-  getValidationStats 
+  getValidationStats as getValidatorStats 
 } from './realTimeValidator.js'
 
 class TestControlPanel {
@@ -91,7 +91,7 @@ class TestControlPanel {
   }
 
   getValidationStats() {
-    const stats = getValidationStats()
+    const stats = getValidatorStats()
     console.log('📊 Estatísticas de Validação:', stats)
     return stats
   }
