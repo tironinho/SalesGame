@@ -21,6 +21,9 @@ import {
   capacityAndAttendance
 } from './game/gameMath'
 import { debugMode, validateGameState, validateCalculations } from './game/debugMode.js'
+import { validateGameState as validateGameStateRealTime } from './game/__tests__/realTimeValidator.js'
+// Carrega sistema de testes completo
+import './game/__tests__/index.js'
 
 // Identidade por aba
 import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
@@ -358,6 +361,8 @@ export default function App() {
   useEffect(() => {
     if (phase === 'game') {
       validateGameState(players, turnIdx, round, gameOver, winner, 'Game State Update')
+      // Validação em tempo real adicional
+      validateGameStateRealTime(players, turnIdx, round, gameOver, winner, 'Real-time Validation')
     }
   }, [players, turnIdx, round, gameOver, winner, phase])
 
