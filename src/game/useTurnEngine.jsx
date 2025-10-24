@@ -75,6 +75,9 @@ export function useTurnEngine({
   const lockOwnerRef = React.useRef(null)
   React.useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
+  // 🔄 dados do próximo turno (para evitar stale closure)
+  const pendingTurnDataRef = React.useRef(null)
+
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
@@ -373,6 +376,14 @@ export function useTurnEngine({
 
     setPlayers(nextPlayers)
     setRound(nextRound)
+    
+    // Armazena os dados do próximo turno para uso na função tick
+    pendingTurnDataRef.current = {
+      nextPlayers,
+      nextTurnIdx,
+      nextRound
+    }
+    
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
 
@@ -996,8 +1007,13 @@ export function useTurnEngine({
         // libera apenas se EU for o dono do cadeado
         if (String(lockOwnerRef.current || '') === String(myUid)) {
           // Agora muda o turno quando todas as modais são fechadas
-          setTurnIdx(nextTurnIdx)
-          broadcastState(nextPlayers, nextTurnIdx, nextRound)
+          const turnData = pendingTurnDataRef.current
+          if (turnData) {
+            console.log('[DEBUG] Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+            setTurnIdx(turnData.nextTurnIdx)
+            broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
+            pendingTurnDataRef.current = null // Limpa os dados após usar
+          }
           setTurnLockBroadcast(false)
         }
         return
