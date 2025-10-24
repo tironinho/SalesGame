@@ -1,5 +1,6 @@
 // src/game/debugMode.js
 import { validateGame, validateAction } from './gameValidator.js'
+import { computeFaturamentoFor, computeDespesasFor, capacityAndAttendance } from './gameMath.js'
 
 /**
  * Modo debug para validação em tempo real das regras de negócio
@@ -146,8 +147,6 @@ class DebugMode {
     if (!this.enabled) return
 
     try {
-      const { computeFaturamentoFor, computeDespesasFor, capacityAndAttendance } = require('./gameMath.js')
-      
       const faturamento = computeFaturamentoFor(player)
       const manutencao = computeDespesasFor(player)
       const { cap, inAtt } = capacityAndAttendance(player)
