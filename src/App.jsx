@@ -218,7 +218,12 @@ export default function App() {
   }
 
   // ====== multiplayer em rede (opcional) via provider
-  const net = (() => { try { return useGameNet?.() } catch { return null } })() || null
+  let net = null
+  try {
+    net = useGameNet?.() || null
+  } catch (error) {
+    console.warn('[App] useGameNet not available:', error)
+  }
   const netCommit = net?.commit
   const netVersion = net?.version
   const netState = net?.state
@@ -333,7 +338,6 @@ export default function App() {
     advanceAndMaybeLap,
     onAction,
     nextTurn,
-    modalLocks,
   } = useTurnEngine({
     players, setPlayers,
     round, setRound,
@@ -464,12 +468,7 @@ export default function App() {
   }
 
   // 4) Jogo
-  const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
-  
-  // Debug: log do estado dos controles
-  useEffect(() => {
-    console.log('[App] Controls state:', { isMyTurn, modalLocks, turnLock, controlsCanRoll })
-  }, [isMyTurn, modalLocks, turnLock, controlsCanRoll])
+  const controlsCanRoll = isMyTurn
 
   return (
     <div className="page">
