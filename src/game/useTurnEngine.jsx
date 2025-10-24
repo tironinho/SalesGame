@@ -374,8 +374,7 @@ export function useTurnEngine({
     setPlayers(nextPlayers)
     setRound(nextRound)
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
-    // setTurnIdx(nextTurnIdx)
-    // broadcastState(nextPlayers, nextTurnIdx, nextRound)
+    // O turno será mudado na função tick() quando modalLocks === 0
 
     // Verifica se o jogo deve terminar (quando todos os jogadores vivos completaram 5 rodadas)
     const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
@@ -990,6 +989,14 @@ export function useTurnEngine({
       })()
     }
 
+    // Armazena as variáveis para uso na função tick
+    const nextTurnIdxRef = useRef(nextTurnIdx)
+    const nextRoundRef = useRef(nextRound)
+    const nextPlayersRef = useRef(nextPlayers)
+    nextTurnIdxRef.current = nextTurnIdx
+    nextRoundRef.current = nextRound
+    nextPlayersRef.current = nextPlayers
+
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
     const tick = () => {
@@ -997,8 +1004,8 @@ export function useTurnEngine({
         // libera apenas se EU for o dono do cadeado
         if (String(lockOwnerRef.current || '') === String(myUid)) {
           // Agora muda o turno quando todas as modais são fechadas
-          setTurnIdx(nextTurnIdx)
-          broadcastState(nextPlayers, nextTurnIdx, nextRound)
+          setTurnIdx(nextTurnIdxRef.current)
+          broadcastState(nextPlayersRef.current, nextTurnIdxRef.current, nextRoundRef.current)
           setTurnLockBroadcast(false)
         }
         return

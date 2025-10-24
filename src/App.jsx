@@ -11,6 +11,7 @@ import HUD from './components/HUD.jsx'
 import Controls from './components/Controls.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
+import DebugPanel from './components/DebugPanel.jsx'
 
 // Regras / Engine
 import { useTurnEngine } from './game/useTurnEngine.jsx'
@@ -19,6 +20,7 @@ import {
   computeFaturamentoFor,
   capacityAndAttendance
 } from './game/gameMath'
+import { debugMode, validateGameState, validateCalculations } from './game/debugMode.js'
 
 // Identidade por aba
 import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
@@ -352,6 +354,13 @@ export default function App() {
     return isMine
   }, [players, turnIdx, myUid])
 
+  // ====== Validação do estado do jogo (modo debug)
+  useEffect(() => {
+    if (phase === 'game') {
+      validateGameState(players, turnIdx, round, gameOver, winner, 'Game State Update')
+    }
+  }, [players, turnIdx, round, gameOver, winner, phase])
+
   // ====== HUD -> possibAt & clientsAt sincronizados do meu jogador
   useEffect(() => {
     const mine = players.find(isMine)
@@ -370,6 +379,9 @@ export default function App() {
     const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
     
     console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
+    
+    // Validação de cálculos em modo debug
+    validateCalculations(me, 'HUD Totals')
     
     return {
       faturamento: fat,
@@ -553,6 +565,7 @@ export default function App() {
           </span>
           <span>Possib. Atendimento: <b>{meHud.possibAt ?? 0}</b></span>
           <span>Clientes em Atendimento: <b>{meHud.clientsAt ?? 0}</b></span>
+          <DebugPanel players={players} turnIdx={turnIdx} round={round} gameOver={gameOver} winner={winner} />
         </div>
 
         <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
