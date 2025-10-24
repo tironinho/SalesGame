@@ -1469,6 +1469,14 @@ export function useTurnEngine({
 
   // ====== efeitos de destrava automática ======
 
+  // Atualiza lockOwner quando é minha vez (para permitir que eu passe o turno)
+  React.useEffect(() => {
+    if (isMyTurn && !gameOver) {
+      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
+      setLockOwner(String(myUid))
+    }
+  }, [isMyTurn, myUid, gameOver])
+
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
   React.useEffect(() => {
     if (modalLocks === 0 && turnLock) {
