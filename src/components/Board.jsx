@@ -143,6 +143,10 @@ export default function Board({
             const sizePx = base * (isTurn ? TOKEN_ACTIVE_SCALE : 1)
             const ring = Math.max(2, TOKEN_RING_PX * s)
 
+            // Emojis de pessoinhas para cada jogador
+            const personEmojis = ['👤', '👥', '👨', '👩', '🧑', '👦', '👧', '👶']
+            const personEmoji = personEmojis[idx % personEmojis.length]
+            
             return (
               <div
                 key={p.id}
@@ -165,12 +169,13 @@ export default function Board({
                   fontWeight: 900,
                   userSelect: 'none',
                   zIndex: isTurn ? 4 : 3,
+                  fontSize: `${Math.max(16, sizePx * 0.6)}px`, // Tamanho proporcional do emoji
                 }}
                 title={`${p.name} • Casa ${i + 1}`}
                 aria-label={`${p.name} está na casa ${i + 1}`}
               >
-                {/* opcional: uma estrela sutil no jogador da vez */}
-                {isTurn ? '★' : ''}
+                {/* Pessoinha + estrela se for a vez */}
+                {isTurn ? '⭐' : personEmoji}
               </div>
             )
           })}

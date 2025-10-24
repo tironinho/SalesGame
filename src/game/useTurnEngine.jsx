@@ -1005,6 +1005,7 @@ export function useTurnEngine({
     const tick = () => {
       if (modalLocksRef.current === 0) {
         // libera apenas se EU for o dono do cadeado
+        console.log('[DEBUG] tick - modalLocks:', modalLocksRef.current, 'lockOwner:', lockOwnerRef.current, 'myUid:', myUid)
         if (String(lockOwnerRef.current || '') === String(myUid)) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
@@ -1013,8 +1014,12 @@ export function useTurnEngine({
             setTurnIdx(turnData.nextTurnIdx)
             broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
             pendingTurnDataRef.current = null // Limpa os dados após usar
+          } else {
+            console.log('[DEBUG] tick - turnData é null, não mudando turno')
           }
           setTurnLockBroadcast(false)
+        } else {
+          console.log('[DEBUG] tick - não sou o dono do cadeado, não mudando turno')
         }
         return
       }
