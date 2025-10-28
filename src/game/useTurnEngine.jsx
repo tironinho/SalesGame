@@ -1110,7 +1110,7 @@ export function useTurnEngine({
     }
     if (!act?.type || gameOver) return
 
-    const playerName = players[curIdx]?.name || 'Jogador'
+    const playerName = players[turnIdx]?.name || 'Jogador'
     console.log(`[🎲 AÇÃO] ${playerName} - Executando ação:`, act.type)
 
     if (act.type === 'ROLL'){
