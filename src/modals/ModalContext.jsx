@@ -1,43 +1,71 @@
-import React, { createContext, useContext, useMemo, useRef, useState } from 'react'
+import React, { createContext, useContext, useCallback, useMemo, useRef, useState } from 'react'
 
-const ModalCtx = createContext(null)
+const ModalCtx = createContext({
+  pushModal: () => {},
+  awaitTop: () => Promise.resolve(null),
+  resolveTop: () => {},
+  closeModal: () => {},
+  popModal: () => {}
+})
 
 export function ModalProvider({ children }) {
   const [stack, setStack] = useState([]) // [{id, el}]
   const resolverRef = useRef(null)       // resolve da modal do topo
 
   // fecha a modal do topo e resolve a promise (se houver)
-  const resolveTop = (payload) => {
+  const resolveTop = React.useCallback((payload) => {
     const res = resolverRef.current
     resolverRef.current = null
     setStack((s) => s.slice(0, -1)) // pop
+    
+    // Logs para rastrear ações do jogador nas modais
+    if (payload) {
+      if (payload.action === 'SKIP') {
+        console.log('[🎲 MODAL] Jogador clicou em "Não comprar" ou fechou modal')
+      } else if (payload.action === 'ACK') {
+        console.log('[🎲 MODAL] Jogador clicou em "OK" ou confirmou')
+      } else if (payload.action === 'RECOVERY') {
+        console.log('[🎲 MODAL] Jogador escolheu "Recuperação Financeira"')
+      } else if (payload.action === 'BANKRUPT') {
+        console.log('[🎲 MODAL] Jogador escolheu "Declarar Falência"')
+      } else if (payload.type === 'LOAN' || payload.type === 'FIRE' || payload.type === 'REDUCE') {
+        console.log(`[🎲 MODAL] Jogador executou ação de recuperação: ${payload.type}`)
+      } else if (payload.bought || payload.purchased) {
+        console.log('[🎲 MODAL] Jogador comprou algo na modal')
+      } else {
+        console.log('[🎲 MODAL] Jogador executou ação na modal:', payload)
+      }
+    } else {
+      console.log('[🎲 MODAL] Jogador fechou modal (sem payload)')
+    }
+    
     if (res) res(payload)
-  }
+  }, [])
 
   // utilitários para botões
-  const closeModal = () => resolveTop({ action: 'SKIP' })
-  const popModal   = () => resolveTop(false)
+  const closeModal = React.useCallback(() => resolveTop({ action: 'SKIP' }), [resolveTop])
+  const popModal   = React.useCallback(() => resolveTop(false), [resolveTop])
 
   // abre uma modal (topo). Clonamos o elemento para injetar onResolve.
-  const pushModal = (element) => {
+  const pushModal = React.useCallback((element) => {
     const id = crypto?.randomUUID?.() || String(Date.now() + Math.random())
     const elWithResolve = React.cloneElement(element, {
       onResolve: (payload) => resolveTop(payload),
     })
     setStack((s) => [...s, { id, el: elWithResolve }])
-  }
+  }, [resolveTop])
 
   // retorna uma promise que será resolvida quando a modal do topo chamar onResolve
-  const awaitTop = () =>
+  const awaitTop = React.useCallback(() =>
     new Promise((resolve) => {
       resolverRef.current = resolve
-    })
+    }), [])
 
   // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
   const value = useMemo(
     () => ({ pushModal, awaitTop, resolveTop, closeModal, popModal }),
-    []
+    [pushModal, awaitTop, resolveTop, closeModal, popModal]
   )
 
   return (
@@ -51,4 +79,14 @@ export function ModalProvider({ children }) {
   )
 }
 
-export const useModal = () => useContext(ModalCtx)
+export const useModal = () => {
+  const context = useContext(ModalCtx)
+  // Sempre retorna um objeto válido, mesmo que o ModalProvider não esteja montado
+  return context || {
+    pushModal: () => {},
+    awaitTop: () => Promise.resolve(null),
+    resolveTop: () => {},
+    closeModal: () => {},
+    popModal: () => {}
+  }
+}

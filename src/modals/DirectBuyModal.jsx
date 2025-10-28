@@ -22,6 +22,7 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
+    console.log('[🎲 MODAL] Jogador clicou em "Não Comprar" ou botão X')
     onResolve?.({ action: 'SKIP' })
   }
 

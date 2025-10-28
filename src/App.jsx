@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './styles.css'
 
 // Telas
@@ -94,8 +94,8 @@ export default function App() {
   const [turnLock, setTurnLock] = useState(false)
   const bcRef = useRef(null)
 
-  // ====== “quem sou eu” no array de players
-  const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
+  // ====== "quem sou eu" no array de players
+  const isMine = useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
   const myCash = useMemo(() => (players.find(isMine)?.cash ?? 0), [players, isMine])
 
   // ====== bootstrap de fase via ?room= e último lobby salvo
@@ -408,10 +408,11 @@ export default function App() {
     }
   }, [players, isMine])
 
-  // ====== overlay “falido” (mostra quando eu declaro falência)
+  // ====== overlay "falido" (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
   // ====== Hook do motor de turnos (centraliza TODA a lógica pesada)
+  // Este hook DEVE ser chamado ANTES dos returns condicionais para manter consistência de hooks
   const {
     advanceAndMaybeLap,
     onAction,
@@ -434,6 +435,7 @@ export default function App() {
     gameOver, setGameOver,
     winner, setWinner,
     setShowBankruptOverlay,
+    phase, // Passar a fase como prop
   })
 
   // ====== fases ======
@@ -547,10 +549,10 @@ export default function App() {
   }
 
   // 4) Jogo
-  const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
-  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'result:', controlsCanRoll)
+  if (phase === 'game') {
+    const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
 
-  return (
+    return (
     <div className="page">
       <header className="topbar">
         <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -661,4 +663,8 @@ export default function App() {
       {showBankruptOverlay && <BankruptOverlay />}
     </div>
   )
+  }
+
+  // Fallback para fases não reconhecidas
+  return <div>Fase não reconhecida: {phase}</div>
 }

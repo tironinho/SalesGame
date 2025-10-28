@@ -1,5 +1,5 @@
 // src/game/useTurnEngine.jsx
-import React from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 // Pista
 import { TRACK_LEN } from '../data/track'
@@ -61,17 +61,19 @@ export function useTurnEngine({
   gameOver, setGameOver,
   winner, setWinner,
   setShowBankruptOverlay,
+  phase, // Adicionado para controle condicional dentro do hook
 }) {
   // ===== Modais =====
-  const { pushModal, awaitTop, closeTop } = useModal?.() || {}
+  const modalContext = useModal()
+  const { pushModal, awaitTop, closeTop } = modalContext || {}
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
-  const [modalLocks, setModalLocks] = React.useState(0)
-  const modalLocksRef = React.useRef(0)
-  React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
+  const [modalLocks, setModalLocks] = useState(0)
+  const modalLocksRef = useRef(0)
+  useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
 
   // 🔄 Sincronização de modalLocks entre jogadores
-  React.useEffect(() => {
+  useEffect(() => {
     if (isMyTurn) {
       // Só o jogador da vez pode ter modais abertas
       console.log('[DEBUG] modalLocks sync - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks)
@@ -85,37 +87,50 @@ export function useTurnEngine({
   }, [isMyTurn, modalLocks])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
-  const [lockOwner, setLockOwner] = React.useState(null)
-  const lockOwnerRef = React.useRef(null)
-  React.useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
+  const [lockOwner, setLockOwner] = useState(null)
+  const lockOwnerRef = useRef(null)
+  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
   // 🔄 dados do próximo turno (para evitar stale closure)
-  const pendingTurnDataRef = React.useRef(null)
+  const pendingTurnDataRef = useRef(null)
+
+  // Efeito para controlar a ativação/desativação do motor de turnos com base na fase
+  useEffect(() => {
+    if (phase !== 'game') {
+      console.log('[USE_TURN_ENGINE] Desativando motor de turnos (fase:', phase, ')');
+      setModalLocks(0);
+      setTurnLockBroadcast(false); // Resetar lock interno
+      pendingTurnDataRef.current = null; // Limpar dados de turno pendentes
+    } else {
+      console.log('[USE_TURN_ENGINE] Ativando motor de turnos (fase: game)');
+    }
+  }, [phase, setTurnLockBroadcast]); // Depende da fase para ativar/desativar
 
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
-    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocks, '->', modalLocks + 1)
+    const playerName = players[curIdx]?.name || 'Jogador'
+    console.log(`[🎲 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
     setModalLocks(c => c + 1)
     try {
       pushModal(element)
       const res = await awaitTop()
       return res
     } finally {
-      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', modalLocks, '->', Math.max(0, modalLocks - 1))
+      console.log(`[🎲 MODAL] ${playerName} - FECHANDO modal, modalLocks: ${modalLocks} → ${Math.max(0, modalLocks - 1)}`)
       setModalLocks(c => Math.max(0, c - 1))
     }
   }
 
 
   // ========= regras auxiliares de saldo =========
-  const canPay = React.useCallback((idx, amount) => {
+  const canPay = useCallback((idx, amount) => {
     const p = players[idx]
     const amt = Math.max(0, Number(amount || 0))
     return (Number(p?.cash || 0) >= amt)
   }, [players])
 
-  const requireFunds = React.useCallback((idx, amount, reason) => {
+  const requireFunds = useCallback((idx, amount, reason) => {
     const ok = canPay(idx, amount)
     if (!ok) {
       appendLog(`Saldo insuficiente${reason ? ' para ' + reason : ''}. Use RECUPERAÇÃO (demitir / emprestar / reduzir) ou declare FALÊNCIA.`)
@@ -124,7 +139,7 @@ export function useTurnEngine({
   }, [canPay, appendLog])
 
   // ========= fim de jogo =========
-  const maybeFinishGame = React.useCallback((nextPlayers, nextRound) => {
+  const maybeFinishGame = useCallback((nextPlayers, nextRound) => {
     if (nextRound <= 5) return
     
     // Filtra apenas jogadores vivos (não falidos) para determinar o vencedor
@@ -151,7 +166,11 @@ export function useTurnEngine({
   }, [appendLog, setGameOver, setTurnLockBroadcast, setWinner])
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
-  const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
+  const advanceAndMaybeLap = useCallback((steps, deltaCash, note) => {
+    if (phase !== 'game') {
+      console.warn('[advanceAndMaybeLap] Tentativa de ação fora da fase de jogo.');
+      return;
+    }
     console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
     if (gameOver || !players.length) return
 
@@ -439,6 +458,7 @@ export function useTurnEngine({
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         const currentErpLevel = players[curIdx]?.erpLevel || null
+        console.log('[DEBUG] ERP Modal - currentErpLevel:', currentErpLevel, 'player:', players[curIdx]?.name, 'erpLevel:', players[curIdx]?.erpLevel)
         const res = await openModalAndWait(<ERPSystemsModal 
           currentCash={nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
@@ -851,6 +871,7 @@ export function useTurnEngine({
     if (isMixTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         const currentMixLevel = players[curIdx]?.mixProdutos || null
+        console.log('[DEBUG] MIX Modal - currentMixLevel:', currentMixLevel, 'player:', players[curIdx]?.name, 'mixProdutos:', players[curIdx]?.mixProdutos)
         const res = await openModalAndWait(<MixProductsModal 
           currentCash={nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
@@ -1019,6 +1040,10 @@ export function useTurnEngine({
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
     const tick = () => {
+      if (phase !== 'game') {
+        // console.log('[DEBUG] tick - Não executando fora da fase de jogo.');
+        return;
+      }
       const currentModalLocks = modalLocksRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
@@ -1031,6 +1056,9 @@ export function useTurnEngine({
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
           if (turnData) {
+            const currentPlayerName = players[turnIdx]?.name || 'Jogador'
+            const nextPlayerName = turnData.nextPlayers[turnData.nextTurnIdx]?.name || 'Jogador'
+            console.log(`[🎲 TURNO] ✅ MUDANDO TURNO - ${currentPlayerName} terminou → ${nextPlayerName} pode jogar`)
             console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
             setTurnIdx(turnData.nextTurnIdx)
             broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
@@ -1059,7 +1087,7 @@ export function useTurnEngine({
     }
     tick()
   }, [
-    players, round, turnIdx, roundFlags, isMyTurn, isMine,
+    phase, players, round, turnIdx, roundFlags, isMyTurn, isMine,
     myUid, myCash, gameOver,
     appendLog, broadcastState,
     setPlayers, setRound, setTurnIdx, setRoundFlags,
@@ -1068,18 +1096,26 @@ export function useTurnEngine({
   ])
 
   // ========= handlers menores =========
-  const nextTurn = React.useCallback(() => {
+  const nextTurn = useCallback(() => {
     if (gameOver || !players.length) return
     const nextTurnIdx = findNextAliveIdx(players, turnIdx)
     setTurnIdx(nextTurnIdx)
     broadcastState(players, nextTurnIdx, round)
   }, [broadcastState, gameOver, players, round, setTurnIdx, turnIdx])
 
-  const onAction = React.useCallback((act) => {
+  const onAction = useCallback((act) => {
+    if (phase !== 'game') {
+      console.warn('[onAction] Tentativa de ação fora da fase de jogo.');
+      return;
+    }
     if (!act?.type || gameOver) return
+
+    const playerName = players[curIdx]?.name || 'Jogador'
+    console.log(`[🎲 AÇÃO] ${playerName} - Executando ação:`, act.type)
 
     if (act.type === 'ROLL'){
       if (!isMyTurn) return
+      console.log(`[🎲 DADO] ${playerName} - Rolou ${act.steps} passos`)
       advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
       return
     }
@@ -1486,7 +1522,7 @@ export function useTurnEngine({
     }
     console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
   }, [
-    players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
+    phase, players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,
     setPlayers, setRound, setTurnIdx, setTurnLockBroadcast, setGameOver, setWinner,
     requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay
@@ -1495,7 +1531,7 @@ export function useTurnEngine({
   // ====== efeitos de destrava automática ======
 
   // Atualiza lockOwner quando é minha vez (para permitir que eu passe o turno)
-  React.useEffect(() => {
+  useEffect(() => {
     if (isMyTurn && !gameOver) {
       console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
       setLockOwner(String(myUid))
@@ -1503,7 +1539,7 @@ export function useTurnEngine({
   }, [isMyTurn, myUid, gameOver])
 
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
-  React.useEffect(() => {
+  useEffect(() => {
     if (modalLocks === 0 && turnLock) {
       if (String(lockOwner || '') === String(myUid)) {
         setTurnLockBroadcast(false)
@@ -1512,7 +1548,7 @@ export function useTurnEngine({
   }, [modalLocks, turnLock, lockOwner, myUid, setTurnLockBroadcast])
 
   // b) quando virar "minha vez" e não houver modal, garanto unlock local
-  React.useEffect(() => {
+  useEffect(() => {
     if (isMyTurn && modalLocks === 0 && turnLock) {
       if (String(lockOwner || '') === String(myUid)) {
         setTurnLockBroadcast(false)

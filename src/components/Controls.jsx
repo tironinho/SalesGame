@@ -7,6 +7,20 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
   const isBankrupt = !!current?.bankrupt
   const canRoll = !!isMyTurn && !isBankrupt
 
+  // Listener para detectar mudanças no estado do botão "rolar dados"
+  useEffect(() => {
+    const playerName = current?.name || 'Jogador'
+    const playerId = current?.id || 'unknown'
+    
+    console.log(`[🎲 BOTÃO ROLAR DADOS] ${playerName} (${playerId}) - Status: ${canRoll ? '✅ HABILITADO' : '❌ DESABILITADO'}`)
+    
+    if (canRoll) {
+      console.log(`[🎲 BOTÃO ROLAR DADOS] ✅ HABILITADO para ${playerName} - Pode jogar!`)
+    } else {
+      console.log(`[🎲 BOTÃO ROLAR DADOS] ❌ DESABILITADO para ${playerName} - Motivos: isMyTurn=${isMyTurn}, isBankrupt=${isBankrupt}`)
+    }
+  }, [canRoll, current?.name, current?.id, isMyTurn, isBankrupt])
+
   useEffect(() => {
     console.groupCollapsed('[Controls] render')
     console.log('current player:', current)
