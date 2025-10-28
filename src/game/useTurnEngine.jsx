@@ -109,7 +109,7 @@ export function useTurnEngine({
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
-    const playerName = players[curIdx]?.name || 'Jogador'
+    const playerName = players[turnIdx]?.name || 'Jogador'
     console.log(`[🎲 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
     setModalLocks(c => c + 1)
     try {
