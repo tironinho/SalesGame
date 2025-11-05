@@ -647,7 +647,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
@@ -712,7 +712,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
@@ -962,7 +962,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
@@ -1014,7 +1014,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
@@ -1057,7 +1057,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         const res = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
@@ -1087,7 +1087,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         const res = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
@@ -1118,7 +1118,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         const res = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
@@ -1148,7 +1148,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         const currentMixLevel = players[curIdx]?.mixProdutos || null
         console.log('[DEBUG] MIX Modal - currentMixLevel:', currentMixLevel, 'player:', players[curIdx]?.name, 'mixProdutos:', players[curIdx]?.mixProdutos)
@@ -1207,7 +1207,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
