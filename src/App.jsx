@@ -142,21 +142,27 @@ export default function App() {
 
           console.log('[App] START recebido - jogadores:', mapped.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0 (forçado)')
 
-          // ✅ CORREÇÃO: Adota UID real se PlayersLobby tiver setado
-          // Tenta primeiro pelo window.__MY_UID, depois pelo nome
+          // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID e valida nome
           try {
             const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
             if (wuid) {
               const foundPlayer = mapped.find(p => String(p.id) === String(wuid))
               if (foundPlayer) {
-                console.log('[App] START - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
-                setMyUid(String(wuid))
+                const nameMatches = (String(foundPlayer.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+                if (String(foundPlayer.id) !== String(myUid)) {
+                  console.log('[App] START - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'myName:', myName, 'nome corresponde:', nameMatches)
+                  if (nameMatches) {
+                    setMyUid(String(wuid))
+                  } else {
+                    console.warn('[App] START - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+                  }
+                }
               }
             } else {
               // Se não encontrou pelo window.__MY_UID, tenta pelo nome
               const mineByName = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
               if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-                console.log('[App] START - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
+                console.log('[App] START - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
                 setMyUid(String(mineByName.id))
               }
             }
@@ -276,19 +282,34 @@ export default function App() {
           // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
           // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
           try {
-            // Tenta encontrar o jogador pelo nome salvo primeiro
-            const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-            if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-              console.log('[App] SYNC - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
-              setMyUid(String(mineByName.id))
+            // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
+            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+            if (wuid) {
+              const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
+              if (foundPlayerByWindow) {
+                // Valida que o nome corresponde
+                const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+                if (String(foundPlayerByWindow.id) !== String(myUid)) {
+                  console.log('[App] SYNC - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
+                  if (nameMatches) {
+                    setMyUid(String(wuid))
+                  } else {
+                    console.warn('[App] SYNC - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+                  }
+                }
+              }
             }
-            // Se não encontrou pelo nome, tenta pelo window.__MY_UID
-            else if (!mineByName) {
-              const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-              if (wuid && syncedPlayers.find(p => String(p.id) === String(wuid))) {
-                if (String(wuid) !== String(myUid)) {
-                  console.log('[App] SYNC - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
-                  setMyUid(String(wuid))
+            
+            // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
+            if (!wuid || !syncedPlayers.find(p => String(p.id) === String(wuid))) {
+              const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+                // Só atualiza se não houver window.__MY_UID ou se corresponder
+                if (!wuid || String(wuid) === String(mineByName.id)) {
+                  console.log('[App] SYNC - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
+                  setMyUid(String(mineByName.id))
+                } else {
+                  console.warn('[App] SYNC - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
                 }
               }
             }
@@ -369,12 +390,20 @@ export default function App() {
               setTurnLock(false)
             }
             // ✅ CORREÇÃO: Se o turnIdx indica que é minha vez mas o myUid não corresponde, tenta atualizar
+            // Mas só atualiza se validado pelo window.__MY_UID
             else if (!isMyTurnNow && currentTurnPlayerId) {
-              // Tenta encontrar o jogador pelo nome para atualizar myUid
-              const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-                console.log('[App] SYNC - ⚠️ myUid não corresponde ao owner.id - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentTurnPlayerId)
-                setMyUid(String(mineByName.id))
+              const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+              if (wuid) {
+                const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
+                if (foundPlayerByWindow && String(foundPlayerByWindow.id) !== String(myUid)) {
+                  const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+                  if (nameMatches) {
+                    console.log('[App] SYNC - ⚠️ myUid não corresponde ao owner.id - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'owner.id:', currentTurnPlayerId)
+                    setMyUid(String(wuid))
+                  } else {
+                    console.warn('[App] SYNC - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+                  }
+                }
               }
             }
           }
@@ -552,19 +581,32 @@ export default function App() {
       // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
       // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
       try {
-        // Tenta encontrar o jogador pelo nome salvo primeiro
-        const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-          console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
-          setMyUid(String(mineByName.id))
+        // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
+        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+        if (wuid) {
+          const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
+          if (foundPlayerByWindow) {
+            const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+            if (String(foundPlayerByWindow.id) !== String(myUid)) {
+              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
+              if (nameMatches) {
+                setMyUid(String(wuid))
+              } else {
+                console.warn('[NET] ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+              }
+            }
+          }
         }
-        // Se não encontrou pelo nome, tenta pelo window.__MY_UID
-        else if (!mineByName) {
-          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-          if (wuid && syncedPlayers.find(p => String(p.id) === String(wuid))) {
-            if (String(wuid) !== String(myUid)) {
-              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
-              setMyUid(String(wuid))
+        
+        // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
+        if (!wuid || !syncedPlayers.find(p => String(p.id) === String(wuid))) {
+          const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+            if (!wuid || String(wuid) === String(mineByName.id)) {
+              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
+              setMyUid(String(mineByName.id))
+            } else {
+              console.warn('[NET] ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
             }
           }
         }
@@ -728,42 +770,58 @@ export default function App() {
       if (currentOwner && !isMyTurnBasedOnOwner) {
         console.log('[App] useEffect - ⚠️ myUid não corresponde ao owner.id - turnIdx:', turnIdx, 'owner.id:', currentOwner.id, 'myUid:', myUid, 'owner.name:', currentOwner.name)
         
-        // Tenta encontrar o jogador pelo nome primeiro
-        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-          console.log('[App] useEffect - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
-          setMyUid(String(mineByName.id))
-          return // Para evitar verificações duplicadas
+        // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
+        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+        if (wuid) {
+          const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
+          if (foundPlayerByWindow) {
+            const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+            if (String(foundPlayerByWindow.id) !== String(myUid)) {
+              console.log('[App] useEffect - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches, 'owner.id:', currentOwner.id)
+              if (nameMatches) {
+                setMyUid(String(wuid))
+                return
+              } else {
+                console.warn('[App] useEffect - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+              }
+            }
+          }
         }
         
-        // Se não encontrou pelo nome, tenta pelo window.__MY_UID
-        if (!mineByName) {
-          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-          if (wuid) {
-            const foundPlayer = players.find(p => String(p.id) === String(wuid))
-            if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
-              console.log('[App] useEffect - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'owner.id:', currentOwner.id)
-              setMyUid(String(wuid))
-              return
-            }
+        // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
+        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+          if (!wuid || String(wuid) === String(mineByName.id)) {
+            console.log('[App] useEffect - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
+            setMyUid(String(mineByName.id))
+            return
+          } else {
+            console.warn('[App] useEffect - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
           }
         }
       }
       
       // Se não é minha vez, ainda verifica se o myUid está correto (para garantir que está sincronizado)
-      const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-      if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-        console.log('[App] useEffect - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
-        setMyUid(String(mineByName.id))
-      }
-      // Se não encontrou pelo nome, tenta pelo window.__MY_UID
-      else if (!mineByName) {
-        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-        if (wuid) {
-          const foundPlayer = players.find(p => String(p.id) === String(wuid))
-          if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
-            console.log('[App] useEffect - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name)
+      // Mas prioriza window.__MY_UID
+      const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+      if (wuid) {
+        const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
+        if (foundPlayerByWindow && String(foundPlayerByWindow.id) !== String(myUid)) {
+          const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+          if (nameMatches) {
+            console.log('[App] useEffect - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name)
             setMyUid(String(wuid))
+          }
+        }
+      }
+      
+      // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
+      if (!wuid || !players.find(p => String(p.id) === String(wuid))) {
+        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+          if (!wuid || String(wuid) === String(mineByName.id)) {
+            console.log('[App] useEffect - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
+            setMyUid(String(mineByName.id))
           }
         }
       }
@@ -784,24 +842,39 @@ export default function App() {
           console.log('[App] useEffect turnIdx - ⚠️ players:', players.map(p => ({ name: p.name, id: p.id })))
           console.log('[App] useEffect turnIdx - ⚠️ myName:', myName)
           
-          // ✅ CORREÇÃO CRÍTICA: Tenta encontrar o jogador pelo nome PRIMEIRO
-          const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-            console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
-            setMyUid(String(mineByName.id))
-            return // Para evitar verificações duplicadas
+          // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
+          // Isso previne que o myUid seja atualizado incorretamente para outro jogador
+          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+          if (wuid) {
+            const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
+            if (foundPlayerByWindow) {
+              // Se encontrou pelo window.__MY_UID, valida que o nome corresponde
+              const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
+              if (String(foundPlayerByWindow.id) !== String(myUid)) {
+                console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
+                if (nameMatches) {
+                  setMyUid(String(wuid))
+                  return
+                } else {
+                  console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
+                  console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID encontrou:', foundPlayerByWindow.name, 'mas myName é:', myName)
+                }
+              }
+            }
           }
           
-          // Se não encontrou pelo nome, tenta pelo window.__MY_UID
-          if (!mineByName) {
-            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-            if (wuid) {
-              const foundPlayer = players.find(p => String(p.id) === String(wuid))
-              if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
-                console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'owner.id:', currentOwner.id)
-                setMyUid(String(wuid))
-                return
-              }
+          // Se não encontrou pelo window.__MY_UID ou não corresponde, tenta pelo nome
+          // Mas só atualiza se o nome corresponder EXATAMENTE
+          const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+            // ✅ CORREÇÃO CRÍTICA: Valida que o window.__MY_UID não está definido ou corresponde ao jogador encontrado
+            if (!wuid || String(wuid) === String(mineByName.id)) {
+              console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
+              setMyUid(String(mineByName.id))
+              return
+            } else {
+              console.warn('[App] useEffect turnIdx - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
+              console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID:', wuid, 'jogador encontrado pelo nome:', mineByName.id)
             }
           }
           
