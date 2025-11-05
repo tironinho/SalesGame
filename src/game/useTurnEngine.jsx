@@ -7,22 +7,8 @@ import { TRACK_LEN } from '../data/track'
 // Modal system
 import { useModal } from '../modals/ModalContext'
 
-// Modais de jogo
-import ERPSystemsModal from '../modals/ERPSystemsModal'
-import TrainingModal from '../modals/TrainingModal'
-import DirectBuyModal from '../modals/DirectBuyModal'
-import InsideSalesModal from '../modals/InsideSalesModal'
-import ClientsModal from '../modals/BuyClientsModal'
-import ManagerModal from '../modals/BuyManagerModal'
-import FieldSalesModal from '../modals/BuyFieldSalesModal'
-import BuyCommonSellersModal from '../modals/BuyCommonSellersModal'
-import MixProductsModal from '../modals/MixProductsModal'
-import SorteRevesModal from '../modals/SorteRevesModal'
-import FaturamentoDoMesModal from '../modals/FaturamentoMesModal'
-import DespesasOperacionaisModal from '../modals/DespesasOperacionaisModal'
-import InsufficientFundsModal from '../modals/InsufficientFundsModal'
-import RecoveryModal from '../modals/RecoveryModal'
-import BankruptcyModal from '../modals/BankruptcyModal'
+// ✅ CORREÇÃO: Removidos imports estáticos de modais para quebrar ciclos de importação
+// Modais serão carregadas dinamicamente quando necessário
 
 // Regras & helpers puros
 import {
@@ -70,6 +56,12 @@ export function useTurnEngine({
   // ✅ CORREÇÃO: Mantém referência ao modalContext para usar stackLength atualizado
   const modalContextRef = useRef(modalContext)
   useEffect(() => { modalContextRef.current = modalContext }, [modalContext])
+
+  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
+  // ✅ PATCH 1: Movido para cima para evitar "Cannot access 'lockOwner' before initialization"
+  const [lockOwner, setLockOwner] = useState(null)
+  const lockOwnerRef = useRef(null)
+  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = useState(0)
@@ -124,11 +116,6 @@ export function useTurnEngine({
       }
     }
   }, [isMyTurn, modalLocks, stackLength, closeAllModals, resolveTop, lockOwner, myUid])
-
-  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
-  const [lockOwner, setLockOwner] = useState(null)
-  const lockOwnerRef = useRef(null)
-  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
   // 🔄 dados do próximo turno (para evitar stale closure)
   const pendingTurnDataRef = useRef(null)
@@ -298,6 +285,8 @@ export function useTurnEngine({
       }
 
       // Mostra modal de saldo insuficiente
+      // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+      const { default: InsufficientFundsModal } = await import('../modals/InsufficientFundsModal.jsx')
       const recoveryRes = await openModalAndWait(
         <InsufficientFundsModal
           requiredAmount={requiredAmount}
@@ -316,6 +305,8 @@ export function useTurnEngine({
       if (recoveryRes.action === 'RECOVERY') {
         // Abre modal de recuperação financeira (não pode ser fechada)
         console.log('[DEBUG] Abrindo RecoveryModal para jogador:', currentPlayers[capturedCurIdx])
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: RecoveryModal } = await import('../modals/RecoveryModal.jsx')
         const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={currentPlayers[capturedCurIdx]} canClose={false} />)
         console.log('[DEBUG] RecoveryModal retornou:', recoveryModalRes)
         if (recoveryModalRes) {
@@ -345,6 +336,8 @@ export function useTurnEngine({
             if (currentLoan && Number(currentLoan.amount) > 0) {
               console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
               // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
+              // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+              const { default: InsufficientFundsModal } = await import('../modals/InsufficientFundsModal.jsx')
               const loanModalRes = await openModalAndWait(
                 <InsufficientFundsModal
                   requiredAmount={requiredAmount}
@@ -514,6 +507,15 @@ export function useTurnEngine({
     setPlayers(nextPlayers)
     setRound(finalNextRound)
     
+    // 🔚 Encerramento por rodada: quando round passar de 5 após as marcações, encerramos
+    // ✅ PATCH 2: Simplificado - usa finalNextRound diretamente, que já é incrementado corretamente via roundFlags
+    if (finalNextRound > 5) {
+      console.log('[DEBUG] 🏁 FIM DE JOGO - 5 rodadas completas')
+      maybeFinishGame(nextPlayers, finalNextRound)
+      setTurnLockBroadcast(false)
+      return
+    }
+    
     // ✅ CORREÇÃO CRÍTICA: Verifica se há tiles de modal antes de definir pendingTurnDataRef
     // Isso previne que o tick mude o turno antes das modais serem abertas
     const landedOneBased = newPos + 1
@@ -546,31 +548,6 @@ export function useTurnEngine({
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
-
-    // Verifica se o jogo deve terminar (quando todos os jogadores vivos completaram 5 rodadas)
-    const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
-    const allCompleted5Rounds = alivePlayers.every(p => {
-      // Conta quantas vezes o jogador passou pela casa 1 (faturamento)
-      // Cada volta completa no tabuleiro = 1 rodada completada
-      const roundsCompleted = Math.floor((p.pos || 0) / TRACK_LEN)
-      return roundsCompleted >= 5
-    })
-    
-    if (allCompleted5Rounds) {
-      console.log('[DEBUG] 🏁 FIM DE JOGO - Todos os jogadores completaram 5 rodadas')
-      maybeFinishGame(nextPlayers, finalNextRound)
-      setTurnLockBroadcast(false)
-      return
-    }
-    
-    // Se o jogador atual completou 5 rodadas, pula para o próximo
-    const currentPlayerRounds = Math.floor((nextPlayers[curIdx]?.pos || 0) / TRACK_LEN)
-    if (currentPlayerRounds >= 5) {
-      console.log('[DEBUG] ⏭️ JOGADOR COMPLETOU 5 RODADAS - Pulando para próximo:', nextPlayers[curIdx]?.name)
-      // O jogador que completou 5 rodadas aguarda, mas o jogo continua para os outros
-      setTurnLockBroadcast(false)
-      return
-    }
 
     // ✅ CORREÇÃO: landedOneBased, crossedStart1 e crossedExpenses23 já foram definidos acima (para verificar hasModalTile)
 
@@ -627,6 +604,8 @@ export function useTurnEngine({
         }
         const currentErpLevel = players[curIdx]?.erpLevel || null
         console.log('[DEBUG] ERP Modal - currentErpLevel:', currentErpLevel, 'player:', players[curIdx]?.name, 'erpLevel:', players[curIdx]?.erpLevel)
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: ERPSystemsModal } = await import('../modals/ERPSystemsModal.jsx')
         const res = await openModalAndWait(<ERPSystemsModal 
           currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
@@ -664,6 +643,8 @@ export function useTurnEngine({
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Treinamento)')
         }
         const ownerForTraining = players.find(isMine) || capturedNextPlayers[curIdx]
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: TrainingModal } = await import('../modals/TrainingModal.jsx')
         const res = await openModalAndWait(<TrainingModal
           canTrain={{
             comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -729,7 +710,8 @@ export function useTurnEngine({
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Compra Direta)')
         }
         const cashNow = capturedNextPlayers[curIdx]?.cash ?? myCash
-
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: DirectBuyModal } = await import('../modals/DirectBuyModal.jsx')
         const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
         if (!res) return
 
@@ -738,6 +720,8 @@ export function useTurnEngine({
 
           if (open === 'MIX') {
             const currentMixLevel = players[curIdx]?.mixProdutos || null
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: MixProductsModal } = await import('../modals/MixProductsModal.jsx')
             const r2 = await openModalAndWait(<MixProductsModal 
               currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentMixLevel}
@@ -764,6 +748,8 @@ export function useTurnEngine({
           }
 
           if (open === 'MANAGER') {
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: ManagerModal } = await import('../modals/BuyManagerModal.jsx')
             const r2 = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
@@ -788,6 +774,8 @@ export function useTurnEngine({
           }
 
           if (open === 'INSIDE') {
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: InsideSalesModal } = await import('../modals/InsideSalesModal.jsx')
             const r2 = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const cost = Number(r2.cost ?? r2.total ?? 0)
@@ -802,6 +790,8 @@ export function useTurnEngine({
           }
 
           if (open === 'FIELD') {
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: FieldSalesModal } = await import('../modals/BuyFieldSalesModal.jsx')
             const r2 = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
               const qty = Number(r2.headcount ?? r2.qty ?? 1)
@@ -822,6 +812,8 @@ export function useTurnEngine({
           }
 
           if (open === 'COMMON') {
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: BuyCommonSellersModal } = await import('../modals/BuyCommonSellersModal.jsx')
             const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const qty  = Number(r2.headcount ?? r2.qty ?? 0)
@@ -843,6 +835,8 @@ export function useTurnEngine({
 
           if (open === 'ERP') {
             const currentErpLevel = players[curIdx]?.erpLevel || null
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: ERPSystemsModal } = await import('../modals/ERPSystemsModal.jsx')
             const r2 = await openModalAndWait(<ERPSystemsModal 
               currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentErpLevel}
@@ -859,6 +853,8 @@ export function useTurnEngine({
           }
 
           if (open === 'CLIENTS') {
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: ClientsModal } = await import('../modals/BuyClientsModal.jsx')
             const r2 = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
@@ -881,6 +877,8 @@ export function useTurnEngine({
 
           if (open === 'TRAINING') {
             const ownerForTraining = players.find(isMine) || capturedNextPlayers[curIdx]
+            // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+            const { default: TrainingModal } = await import('../modals/TrainingModal.jsx')
             const r2 = await openModalAndWait(<TrainingModal
               canTrain={{
                 comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -978,6 +976,8 @@ export function useTurnEngine({
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Inside Sales)')
         }
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: InsideSalesModal } = await import('../modals/InsideSalesModal.jsx')
         const res = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
         const cost = Number(res.cost ?? res.total ?? 0)
@@ -1030,6 +1030,8 @@ export function useTurnEngine({
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Clientes)')
         }
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: ClientsModal } = await import('../modals/BuyClientsModal.jsx')
         const res = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const cost  = Number(res.totalCost || 0)
@@ -1063,6 +1065,8 @@ export function useTurnEngine({
         const capturedNextTurnIdx = nextTurnIdx
         const capturedNextRound = finalNextRound
         
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: ManagerModal } = await import('../modals/BuyManagerModal.jsx')
         const res = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
         const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
@@ -1093,6 +1097,8 @@ export function useTurnEngine({
         const capturedNextTurnIdx = nextTurnIdx
         const capturedNextRound = finalNextRound
         
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: FieldSalesModal } = await import('../modals/BuyFieldSalesModal.jsx')
         const res = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
           const qty = Number(res.headcount ?? res.qty ?? 1)
@@ -1124,6 +1130,8 @@ export function useTurnEngine({
         const capturedNextTurnIdx = nextTurnIdx
         const capturedNextRound = finalNextRound
         
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: BuyCommonSellersModal } = await import('../modals/BuyCommonSellersModal.jsx')
         const res = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const qty  = Number(res.headcount ?? res.qty ?? 0)
@@ -1156,6 +1164,8 @@ export function useTurnEngine({
         
         const currentMixLevel = players[curIdx]?.mixProdutos || null
         console.log('[DEBUG] MIX Modal - currentMixLevel:', currentMixLevel, 'player:', players[curIdx]?.name, 'mixProdutos:', players[curIdx]?.mixProdutos)
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: MixProductsModal } = await import('../modals/MixProductsModal.jsx')
         const res = await openModalAndWait(<MixProductsModal 
           currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
@@ -1223,6 +1233,8 @@ export function useTurnEngine({
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Sorte & Revés)')
         }
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: SorteRevesModal } = await import('../modals/SorteRevesModal.jsx')
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
@@ -1310,6 +1322,8 @@ export function useTurnEngine({
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Faturamento)')
         }
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: FaturamentoDoMesModal } = await import('../modals/FaturamentoMesModal.jsx')
         await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
@@ -1355,6 +1369,8 @@ export function useTurnEngine({
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Despesas Operacionais)')
         }
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: DespesasOperacionaisModal } = await import('../modals/DespesasOperacionaisModal.jsx')
         await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
         
@@ -1585,6 +1601,8 @@ export function useTurnEngine({
     if (act.type === 'RECOVERY_MODAL') {
       if (!isMyTurn || !pushModal || !awaitTop) return
       ;(async () => {
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: RecoveryModal } = await import('../modals/RecoveryModal.jsx')
         const res = await openModalAndWait(<RecoveryModal playerName={current?.name || 'Jogador'} currentPlayer={current} />)
         if (!res) return
 
@@ -1691,6 +1709,8 @@ export function useTurnEngine({
     if (act.type === 'BANKRUPT_MODAL') {
       if (!isMyTurn || !pushModal || !awaitTop) return
       ;(async () => {
+        // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
+        const { default: BankruptcyModal } = await import('../modals/BankruptcyModal.jsx')
         const ok = await openModalAndWait(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
         if (ok) onAction?.({ type: 'BANKRUPT' })
       })()

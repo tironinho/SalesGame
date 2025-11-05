@@ -888,8 +888,9 @@ export default function App() {
     }
   }, [turnIdx, players, phase, myName, myUid])
 
-  // ====== "é minha vez?"
-  const current = players[turnIdx]
+  // ====== "é minha vez?" e player atual
+  // ✅ PATCH 3: Definidos antes do hook useTurnEngine para garantir ordem correta
+  const current = useMemo(() => players[turnIdx] || null, [players, turnIdx])
   const isMyTurn = useMemo(() => {
     const owner = players[turnIdx]
     if (!owner) {
@@ -981,11 +982,13 @@ export default function App() {
 
   // ====== Hook do motor de turnos (centraliza TODA a lógica pesada)
   // Este hook DEVE ser chamado ANTES dos returns condicionais para manter consistência de hooks
+  // ✅ PATCH 3: Garantir que todos os parâmetros estejam sendo passados corretamente
   const {
     advanceAndMaybeLap,
     onAction,
     nextTurn,
     modalLocks,
+    lockOwner,
   } = useTurnEngine({
     players, setPlayers,
     round, setRound,
@@ -1267,7 +1270,10 @@ export default function App() {
       </footer>
 
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
-      {showBankruptOverlay && <BankruptOverlay />}
+      {/* ✅ PATCH 3: Renderiza overlay quando necessário */}
+      {showBankruptOverlay && (
+        <BankruptOverlay onClose={() => setShowBankruptOverlay(false)} />
+      )}
     </div>
   )
   }

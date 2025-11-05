@@ -1,19 +1,19 @@
-// src/supabaseClient.js
+// src/lib/supabaseClient.js
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY
+const url = import.meta.env.VITE_SUPABASE_URL
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Garante instância única mesmo com HMR/StrictMode/múltiplos imports
-const g = globalThis
+// ✅ CORREÇÃO: Singleton pattern para evitar múltiplas instâncias
+// Garante que apenas uma instância do Supabase client seja criada
 export const supabase =
-  g.__sg_supabase ||
-  (g.__sg_supabase = createClient(supabaseUrl, supabaseAnon, {
+  globalThis.__sb__ ??
+  (globalThis.__sb__ = createClient(url, anon, {
     auth: {
+      storageKey: 'sb-sales-game-auth', // chave única para este app
       persistSession: true,
+      detectSessionInUrl: true,
       autoRefreshToken: true,
-      // chave própria evita colisão com outros apps/instâncias
-      storageKey: 'salesgame-auth'
     },
     realtime: { params: { eventsPerSecond: 10 } },
   }))

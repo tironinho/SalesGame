@@ -5,5 +5,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173
+  },
+  // ✅ CORREÇÃO: Habilita sourcemaps para facilitar debugging
+  build: {
+    sourcemap: true
   }
 })
