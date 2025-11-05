@@ -628,7 +628,6 @@ export default function App() {
               }}
               current={current}
               isMyTurn={isMyTurn}
-              hasModalOpen={modalLocks > 0}
               turnLocked={turnLock}
             />
             <div style={{ marginTop: 10 }}>

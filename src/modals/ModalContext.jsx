@@ -5,7 +5,8 @@ const ModalCtx = createContext({
   awaitTop: () => Promise.resolve(null),
   resolveTop: () => {},
   closeModal: () => {},
-  popModal: () => {}
+  popModal: () => {},
+  stackLength: 0 // ✅ NOVO: expõe o tamanho da stack de modais
 })
 
 export function ModalProvider({ children }) {
@@ -64,8 +65,15 @@ export function ModalProvider({ children }) {
   // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
   const value = useMemo(
-    () => ({ pushModal, awaitTop, resolveTop, closeModal, popModal }),
-    [pushModal, awaitTop, resolveTop, closeModal, popModal]
+    () => ({ 
+      pushModal, 
+      awaitTop, 
+      resolveTop, 
+      closeModal, 
+      popModal,
+      stackLength: stack.length // ✅ NOVO: expõe o tamanho da stack
+    }),
+    [pushModal, awaitTop, resolveTop, closeModal, popModal, stack.length]
   )
 
   return (
@@ -87,6 +95,7 @@ export const useModal = () => {
     awaitTop: () => Promise.resolve(null),
     resolveTop: () => {},
     closeModal: () => {},
-    popModal: () => {}
+    popModal: () => {},
+    stackLength: 0 // ✅ NOVO: fallback para 0
   }
 }

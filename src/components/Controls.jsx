@@ -1,7 +1,11 @@
 // src/components/Controls.jsx
 import React, { useEffect } from 'react'
+import { useModal } from '../modals/ModalContext'
 
-export default function Controls({ onAction, current, isMyTurn = true, hasModalOpen = false, turnLocked = false }) {
+export default function Controls({ onAction, current, isMyTurn = true, turnLocked = false }) {
+  // ✅ CORREÇÃO: Verifica diretamente no ModalContext se há modais abertas
+  const { stackLength } = useModal()
+  const hasModalOpen = stackLength > 0
 
   // AJUSTE: bloqueia tudo se o jogador atual estiver falido
   const isBankrupt = !!current?.bankrupt
