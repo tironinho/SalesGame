@@ -164,46 +164,91 @@ export default function App() {
         if (d.type === 'SYNC' && phase === 'game') {
           console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
           console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
+          console.log('[App] SYNC - jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
+          console.log('[App] SYNC - jogadores remotos:', d.players?.map(p => ({ id: p.id, name: p.name })))
           
           // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
-          setTurnIdx(d.turnIdx)
+          // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
+          if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
+            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
+          } else {
+            setTurnIdx(d.turnIdx)
+          }
           setRound(d.round)
           
           // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
+          // ✅ CORREÇÃO: Garante que TODOS os jogadores sejam mantidos (mescla local + remoto)
           const currentPlayers = players
-          const syncedPlayers = d.players.map(syncedPlayer => {
-            const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
-            if (!localPlayer) return syncedPlayer
-            
-            // Se é o próprio jogador, preserva TODOS os dados locais
-            if (String(syncedPlayer.id) === String(myUid)) {
-              return {
-                ...localPlayer,
-                // Aplica apenas certificados e treinamentos sincronizados (se houver)
-                az: syncedPlayer.az || localPlayer.az || 0,
-                am: syncedPlayer.am || localPlayer.am || 0,
-                rox: syncedPlayer.rox || localPlayer.rox || 0,
-                trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
-                onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+          const syncedPlayersMap = new Map()
+          
+          // Primeiro, adiciona todos os jogadores locais
+          currentPlayers.forEach(p => {
+            syncedPlayersMap.set(String(p.id), p)
+          })
+          
+          // Depois, mescla com jogadores remotos
+          if (Array.isArray(d.players)) {
+            d.players.forEach(syncedPlayer => {
+              const playerId = String(syncedPlayer.id)
+              const localPlayer = syncedPlayersMap.get(playerId)
+              
+              if (localPlayer) {
+                // Se é o próprio jogador, preserva TODOS os dados locais
+                if (String(syncedPlayer.id) === String(myUid)) {
+                  syncedPlayersMap.set(playerId, {
+                    ...localPlayer,
+                    // Aplica apenas certificados e treinamentos sincronizados (se houver)
+                    az: syncedPlayer.az || localPlayer.az || 0,
+                    am: syncedPlayer.am || localPlayer.am || 0,
+                    rox: syncedPlayer.rox || localPlayer.rox || 0,
+                    trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
+                    onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+                  })
+                } else {
+                  // Para outros jogadores, aplica dados sincronizados (preservando progresso)
+                  syncedPlayersMap.set(playerId, {
+                    ...syncedPlayer,
+                    // Preserva certificados e treinamentos locais (dados de progresso)
+                    az: localPlayer.az || syncedPlayer.az || 0,
+                    am: localPlayer.am || syncedPlayer.am || 0,
+                    rox: localPlayer.rox || syncedPlayer.rox || 0,
+                    trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+                    onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+                  })
+                }
+              } else {
+                // Novo jogador remoto (não existe localmente)
+                syncedPlayersMap.set(playerId, syncedPlayer)
               }
-            }
-            
-            // Para outros jogadores, aplica dados sincronizados
-            return {
-              ...syncedPlayer,
-              // Preserva certificados e treinamentos locais (dados de progresso)
-              az: localPlayer.az || syncedPlayer.az || 0,
-              am: localPlayer.am || syncedPlayer.am || 0,
-              rox: localPlayer.rox || syncedPlayer.rox || 0,
-              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+            })
+          }
+          
+          // Converte Map para array, mantendo a ordem dos jogadores remotos (se existir)
+          let syncedPlayers = []
+          if (Array.isArray(d.players) && d.players.length > 0) {
+            syncedPlayers = d.players.map(sp => {
+              const playerId = String(sp.id)
+              return syncedPlayersMap.get(playerId) || sp
+            })
+          } else {
+            // Se não há jogadores remotos, usa os locais
+            syncedPlayers = Array.from(syncedPlayersMap.values())
+          }
+          
+          // Adiciona jogadores locais que não estão no remoto (segurança)
+          currentPlayers.forEach(p => {
+            const playerId = String(p.id)
+            if (!syncedPlayers.find(sp => String(sp.id) === playerId)) {
+              syncedPlayers.push(p)
             }
           })
-          setPlayers(syncedPlayers)
           
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
+          console.log('[App] SYNC - jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
           console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
           console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
+          
+          setPlayers(syncedPlayers)
           
           // Sincroniza estado do jogo (gameOver e winner)
           if (d.gameOver !== undefined) {
@@ -287,41 +332,92 @@ export default function App() {
 
     let changed = false
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
+      console.log('[NET] Sincronizando jogadores - local:', players.length, 'remoto:', np.length)
+      console.log('[NET] Jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
+      console.log('[NET] Jogadores remotos:', np.map(p => ({ id: p.id, name: p.name })))
+      
       // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
+      // ✅ CORREÇÃO: Garante que TODOS os jogadores sejam mantidos (mescla local + remoto)
       const currentPlayers = players
-      const syncedPlayers = np.map(syncedPlayer => {
-        const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
-        if (!localPlayer) return syncedPlayer
+      const syncedPlayersMap = new Map()
+      
+      // Primeiro, adiciona todos os jogadores locais
+      currentPlayers.forEach(p => {
+        syncedPlayersMap.set(String(p.id), p)
+      })
+      
+      // Depois, mescla com jogadores remotos
+      np.forEach(syncedPlayer => {
+        const playerId = String(syncedPlayer.id)
+        const localPlayer = syncedPlayersMap.get(playerId)
         
-        // Se é o próprio jogador, preserva TODOS os dados locais
-        if (String(syncedPlayer.id) === String(myUid)) {
-          return {
-            ...localPlayer,
-            // Aplica apenas certificados e treinamentos sincronizados (se houver)
-            az: syncedPlayer.az || localPlayer.az || 0,
-            am: syncedPlayer.am || localPlayer.am || 0,
-            rox: syncedPlayer.rox || localPlayer.rox || 0,
-            trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
-            onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+        if (localPlayer) {
+          // Se é o próprio jogador, preserva TODOS os dados locais
+          if (String(syncedPlayer.id) === String(myUid)) {
+            syncedPlayersMap.set(playerId, {
+              ...localPlayer,
+              // Aplica apenas certificados e treinamentos sincronizados (se houver)
+              az: syncedPlayer.az || localPlayer.az || 0,
+              am: syncedPlayer.am || localPlayer.am || 0,
+              rox: syncedPlayer.rox || localPlayer.rox || 0,
+              trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
+              onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+            })
+          } else {
+            // Para outros jogadores, aplica dados sincronizados (preservando progresso)
+            syncedPlayersMap.set(playerId, {
+              ...syncedPlayer,
+              // Preserva certificados e treinamentos locais (dados de progresso)
+              az: localPlayer.az || syncedPlayer.az || 0,
+              am: localPlayer.am || syncedPlayer.am || 0,
+              rox: localPlayer.rox || syncedPlayer.rox || 0,
+              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+            })
           }
-        }
-        
-        // Para outros jogadores, aplica dados sincronizados
-        return {
-          ...syncedPlayer,
-          // Preserva certificados e treinamentos locais (dados de progresso)
-          az: localPlayer.az || syncedPlayer.az || 0,
-          am: localPlayer.am || syncedPlayer.am || 0,
-          rox: localPlayer.rox || syncedPlayer.rox || 0,
-          trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-          onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+        } else {
+          // Novo jogador remoto (não existe localmente)
+          syncedPlayersMap.set(playerId, syncedPlayer)
         }
       })
+      
+      // Converte Map para array, mantendo a ordem dos jogadores remotos
+      const syncedPlayers = np.map(sp => {
+        const playerId = String(sp.id)
+        return syncedPlayersMap.get(playerId) || sp
+      })
+      
+      // Adiciona jogadores locais que não estão no remoto (segurança)
+      currentPlayers.forEach(p => {
+        const playerId = String(p.id)
+        if (!np.find(sp => String(sp.id) === playerId)) {
+          syncedPlayers.push(p)
+        }
+      })
+      
+      console.log('[NET] Jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
       setPlayers(syncedPlayers); 
       changed = true 
     }
-    if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
-    if (nr !== null && nr !== round)  { setRound(nr); changed = true }
+    
+    // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
+    // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
+    if (nt !== null && nt !== turnIdx) {
+      // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
+      if (round === 1 && turnIdx === 0 && nt > 0) {
+        console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', nt, 'local:', turnIdx)
+      } else {
+        console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx)
+        setTurnIdx(nt); 
+        changed = true 
+      }
+    }
+    
+    if (nr !== null && nr !== round) { 
+      console.log('[NET] Sincronizando round - remoto:', nr, 'local:', round)
+      setRound(nr); 
+      changed = true 
+    }
 
     if (changed) console.log('[NET] applied remote v=%d', netVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps
