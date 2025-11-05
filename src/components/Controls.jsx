@@ -17,14 +17,29 @@ export default function Controls({ onAction, current, isMyTurn = true, turnLocke
     const playerName = current?.name || 'Jogador'
     const playerId = current?.id || 'unknown'
     
-    console.log(`[🎲 BOTÃO ROLAR DADOS] ${playerName} (${playerId}) - Status: ${canRoll ? '✅ HABILITADO' : '❌ DESABILITADO'}`)
+    console.group(`[🎲 BOTÃO ROLAR DADOS] ${playerName} (${playerId})`)
+    console.log('Status:', canRoll ? '✅ HABILITADO' : '❌ DESABILITADO')
+    console.log('Detalhes:')
+    console.log('  - isMyTurn:', isMyTurn, '(precisa ser true)')
+    console.log('  - isBankrupt:', isBankrupt, '(precisa ser false)')
+    console.log('  - hasModalOpen:', hasModalOpen, '(precisa ser false)')
+    console.log('  - turnLocked:', turnLocked, '(precisa ser false)')
+    console.log('  - stackLength:', stackLength)
+    console.log('  - current player:', current)
+    console.log('  - canRoll (cálculo):', `isMyTurn(${isMyTurn}) && !isBankrupt(${!isBankrupt}) && !hasModalOpen(${!hasModalOpen}) && !turnLocked(${!turnLocked}) = ${canRoll}`)
     
     if (canRoll) {
-      console.log(`[🎲 BOTÃO ROLAR DADOS] ✅ HABILITADO para ${playerName} - Pode jogar!`)
+      console.log('✅ HABILITADO para', playerName, '- Pode jogar!')
     } else {
-      console.log(`[🎲 BOTÃO ROLAR DADOS] ❌ DESABILITADO para ${playerName} - Motivos: isMyTurn=${isMyTurn}, isBankrupt=${isBankrupt}, hasModalOpen=${hasModalOpen}, turnLocked=${turnLocked}`)
+      const reasons = []
+      if (!isMyTurn) reasons.push('não é sua vez')
+      if (isBankrupt) reasons.push('está falido')
+      if (hasModalOpen) reasons.push('há modal aberta')
+      if (turnLocked) reasons.push('turno bloqueado')
+      console.log('❌ DESABILITADO para', playerName, '- Motivos:', reasons.join(', '))
     }
-  }, [canRoll, current?.name, current?.id, isMyTurn, isBankrupt, hasModalOpen, turnLocked])
+    console.groupEnd()
+  }, [canRoll, current?.name, current?.id, isMyTurn, isBankrupt, hasModalOpen, turnLocked, stackLength, current])
 
   useEffect(() => {
     console.groupCollapsed('[Controls] render')

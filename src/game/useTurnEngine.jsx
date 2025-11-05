@@ -146,14 +146,38 @@ export function useTurnEngine({
 
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
-    if (!(pushModal && awaitTop)) return null
     const playerName = players[turnIdx]?.name || 'Jogador'
+    
+    // ✅ CORREÇÃO: Logs detalhados para diagnosticar problemas
+    console.log(`[🎲 MODAL] ${playerName} - Tentando abrir modal`)
+    console.log(`[🎲 MODAL] ${playerName} - pushModal:`, typeof pushModal, 'awaitTop:', typeof awaitTop)
+    console.log(`[🎲 MODAL] ${playerName} - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid)
+    console.log(`[🎲 MODAL] ${playerName} - owner.id:`, players[turnIdx]?.id)
+    
+    if (!pushModal) {
+      console.error(`[🎲 MODAL] ❌ ${playerName} - pushModal não está disponível!`)
+      return null
+    }
+    if (!awaitTop) {
+      console.error(`[🎲 MODAL] ❌ ${playerName} - awaitTop não está disponível!`)
+      return null
+    }
+    if (!isMyTurn) {
+      console.error(`[🎲 MODAL] ❌ ${playerName} - Não é minha vez! isMyTurn:`, isMyTurn)
+      return null
+    }
+    
     console.log(`[🎲 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
     setModalLocks(c => c + 1)
     try {
       pushModal(element)
+      console.log(`[🎲 MODAL] ${playerName} - Modal aberta, aguardando resposta...`)
       const res = await awaitTop()
+      console.log(`[🎲 MODAL] ${playerName} - Modal fechada, resposta:`, res)
       return res
+    } catch (error) {
+      console.error(`[🎲 MODAL] ❌ ${playerName} - Erro ao abrir/fechar modal:`, error)
+      return null
     } finally {
       console.log(`[🎲 MODAL] ${playerName} - FECHANDO modal, modalLocks: ${modalLocks} → ${Math.max(0, modalLocks - 1)}`)
       setModalLocks(c => Math.max(0, c - 1))
@@ -493,6 +517,9 @@ export function useTurnEngine({
 
     // ERP
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
+    if (isErpTile) {
+      console.log('[DEBUG] ERP Tile detectado - isMyTurn:', isMyTurn, 'pushModal:', typeof pushModal, 'awaitTop:', typeof awaitTop)
+    }
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         const currentErpLevel = players[curIdx]?.erpLevel || null
@@ -1184,8 +1211,23 @@ export function useTurnEngine({
     console.log(`[🎲 AÇÃO] ${playerName} - Executando ação:`, act.type)
 
     if (act.type === 'ROLL'){
+      // ✅ CORREÇÃO: Logs detalhados para diagnosticar problemas
+      console.log(`[🎲 DADO] ${playerName} - Tentando rolar dado`)
+      console.log(`[🎲 DADO] ${playerName} - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid)
+      console.log(`[🎲 DADO] ${playerName} - owner.id:`, players[turnIdx]?.id)
+      console.log(`[🎲 DADO] ${playerName} - pushModal:`, typeof pushModal, 'awaitTop:', typeof awaitTop)
+      console.log(`[🎲 DADO] ${playerName} - turnLock:`, turnLock, 'lockOwner:', lockOwner)
+      
       if (!isMyTurn) {
         console.log(`[🎲 DADO] ❌ ${playerName} tentou rolar dado mas não é sua vez - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
+        return
+      }
+      if (!pushModal || !awaitTop) {
+        console.error(`[🎲 DADO] ❌ ${playerName} - pushModal ou awaitTop não estão disponíveis!`)
+        return
+      }
+      if (turnLock && String(lockOwner || '') !== String(myUid)) {
+        console.error(`[🎲 DADO] ❌ ${playerName} - turnLock está ativo mas não sou o dono! lockOwner:`, lockOwner, 'myUid:', myUid)
         return
       }
       console.log(`[🎲 DADO] ${playerName} - Rolou ${act.steps} passos`)
