@@ -261,8 +261,14 @@ export default function App() {
             console.log('[App] SYNC - gameJustStarted ativo - ignorando sincronização de turnIdx remoto - remoto:', d.turnIdx, 'local:', turnIdx)
           } else if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
             console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
-          } else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
-            console.log('[App] SYNC - Sincronizando turnIdx - remoto:', d.turnIdx, 'local:', turnIdx)
+          }
+          // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo do BroadcastChannel)
+          else if (d.round !== undefined && d.round < round) {
+            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', d.round, 'local round:', round, 'turnIdx remoto:', d.turnIdx, 'turnIdx local:', turnIdx)
+          }
+          // ✅ CORREÇÃO: BroadcastChannel tem prioridade sobre Supabase - sempre sincroniza se o turnIdx é diferente
+          else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+            console.log('[App] SYNC - Sincronizando turnIdx (BroadcastChannel) - remoto:', d.turnIdx, 'local:', turnIdx, 'round remoto:', d.round, 'round local:', round)
             setTurnIdx(d.turnIdx)
           }
           
@@ -460,7 +466,17 @@ export default function App() {
       // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
       else if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
         console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-      } else {
+      }
+      // ✅ CORREÇÃO: Se o turnIdx local é maior que o remoto E estamos no mesmo round, pode ser que o local esteja mais atualizado
+      // Não sobrescreve se o turnIdx local é maior que o remoto (prioriza estado local mais recente)
+      else if (turnIdx > nt && nr === round) {
+        console.log('[NET] Ignorando sincronização de turnIdx remoto (local é mais recente) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+      }
+      // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo)
+      else if (nr !== null && nr < round) {
+        console.log('[NET] Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', nr, 'local round:', round, 'turnIdx remoto:', nt, 'turnIdx local:', turnIdx)
+      }
+      else {
         console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
         setTurnIdx(nt); 
         changed = true 
