@@ -1008,6 +1008,7 @@ export default function App() {
     setShowBankruptOverlay,
     phase, // Passar a fase como prop
     gameJustStarted, // ✅ CORREÇÃO: Passa gameJustStarted para prevenir mudança de turno imediata
+    myName, // ✅ CORREÇÃO: Passa myName para verificação de owner por nome
   })
 
   // ====== fases ======
@@ -1212,6 +1213,8 @@ export default function App() {
               current={current}
               isMyTurn={isMyTurn}
               turnLocked={turnLock}
+              myUid={myUid}
+              myName={myName}
             />
             <div style={{ marginTop: 10 }}>
               <button

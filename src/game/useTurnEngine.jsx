@@ -49,7 +49,17 @@ export function useTurnEngine({
   setShowBankruptOverlay,
   phase, // Adicionado para controle condicional dentro do hook
   gameJustStarted, // ✅ CORREÇÃO: Flag para prevenir mudança de turno imediata após início
+  myName, // ✅ CORREÇÃO: Adicionado para verificação de owner por nome
 }) {
+  // ===== Helpers =====
+  // ✅ CORREÇÃO: Helper para verificar se o owner é este jogador (por ID ou nome)
+  const isOwnerMe = useCallback((owner, myUid, myName) => {
+    return !!owner && (
+      (owner.id && String(owner.id) === String(myUid)) ||
+      (owner.name && myName && owner.name.toLowerCase() === myName.toLowerCase())
+    )
+  }, [])
+
   // ===== Modais =====
   const modalContext = useModal()
   const { pushModal, awaitTop, resolveTop, closeTop, closeAllModals, stackLength } = modalContext || {}
@@ -140,46 +150,105 @@ export function useTurnEngine({
     }
   }, [phase, gameJustStarted, setTurnLockBroadcast]); // ✅ CORREÇÃO: Adiciona gameJustStarted como dependência
 
-  // helper: abrir modal e "travar"/"destravar" o contador
-  const openModalAndWait = async (element) => {
+  // ✅ CORREÇÃO CRÍTICA: Helper para abrir modal travando o turno até resolver
+  // Trava o turno quando abre a modal e só destrava quando a modal resolve
+  const openModalWithTurnLock = useCallback(async (element) => {
     const playerName = players[turnIdx]?.name || 'Jogador'
     
-    // ✅ CORREÇÃO: Logs detalhados para diagnosticar problemas
-    console.log(`[🎲 MODAL] ${playerName} - Tentando abrir modal`)
-    console.log(`[🎲 MODAL] ${playerName} - pushModal:`, typeof pushModal, 'awaitTop:', typeof awaitTop)
-    console.log(`[🎲 MODAL] ${playerName} - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid)
-    console.log(`[🎲 MODAL] ${playerName} - owner.id:`, players[turnIdx]?.id)
+    console.log(`[🔒 MODAL] ${playerName} - Abrindo modal com lock de turno`)
+    console.log(`[🔒 MODAL] ${playerName} - pushModal:`, typeof pushModal, 'awaitTop:', typeof awaitTop)
     
     if (!pushModal) {
-      console.error(`[🎲 MODAL] ❌ ${playerName} - pushModal não está disponível!`)
+      console.error(`[🔒 MODAL] ❌ ${playerName} - pushModal não está disponível!`)
       return null
     }
     if (!awaitTop) {
-      console.error(`[🎲 MODAL] ❌ ${playerName} - awaitTop não está disponível!`)
+      console.error(`[🔒 MODAL] ❌ ${playerName} - awaitTop não está disponível!`)
       return null
     }
     if (!isMyTurn) {
-      console.error(`[🎲 MODAL] ❌ ${playerName} - Não é minha vez! isMyTurn:`, isMyTurn)
+      console.error(`[🔒 MODAL] ❌ ${playerName} - Não é minha vez! isMyTurn:`, isMyTurn)
       return null
     }
     
-    console.log(`[🎲 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
+    // ✅ CORREÇÃO: Trava o turno ANTES de abrir a modal
+    console.log(`[🔒 MODAL] ${playerName} - TRAVANDO turno (setTurnLockBroadcast(true))`)
+    setTurnLockBroadcast(true)
+    
+    // ✅ CORREÇÃO: Incrementa modalLocks para rastrear modais abertas
+    console.log(`[🔒 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
     setModalLocks(c => c + 1)
+    
     try {
+      // Abre a modal
       pushModal(element)
-      console.log(`[🎲 MODAL] ${playerName} - Modal aberta, aguardando resposta...`)
-      const res = await awaitTop()
-      console.log(`[🎲 MODAL] ${playerName} - Modal fechada, resposta:`, res)
-      return res
+      console.log(`[🔒 MODAL] ${playerName} - Modal aberta, aguardando resolução...`)
+      
+      // ✅ CORREÇÃO: Espera a resolução da modal (só sai daqui ao fechar/confirmar/skip)
+      const payload = await awaitTop()
+      console.log(`[🔒 MODAL] ${playerName} - Modal resolvida, payload:`, payload)
+      
+      return payload
     } catch (error) {
-      console.error(`[🎲 MODAL] ❌ ${playerName} - Erro ao abrir/fechar modal:`, error)
+      console.error(`[🔒 MODAL] ❌ ${playerName} - Erro ao abrir/fechar modal:`, error)
       return null
     } finally {
-      console.log(`[🎲 MODAL] ${playerName} - FECHANDO modal, modalLocks: ${modalLocks} → ${Math.max(0, modalLocks - 1)}`)
+      // ✅ CORREÇÃO: Destrava o turno DEPOIS de resolver a modal
+      console.log(`[🔒 MODAL] ${playerName} - DESTRAVANDO turno (setTurnLockBroadcast(false))`)
+      setTurnLockBroadcast(false)
+      
+      // ✅ CORREÇÃO: Decrementa modalLocks
+      console.log(`[🔒 MODAL] ${playerName} - FECHANDO modal, modalLocks: ${modalLocks} → ${Math.max(0, modalLocks - 1)}`)
       setModalLocks(c => Math.max(0, c - 1))
     }
-  }
+  }, [pushModal, awaitTop, isMyTurn, players, turnIdx, modalLocks, setModalLocks, setTurnLockBroadcast])
 
+  // Mantém compatibilidade com código existente (deprecated)
+  const openModalAndWait = openModalWithTurnLock
+
+  // ✅ CORREÇÃO CRÍTICA: Função única para avançar turno que sempre faz broadcast
+  // Garante que o turno seja atualizado localmente ANTES do broadcast
+  // playersUpdate é opcional: se fornecido, usa esses players; caso contrário, usa players atual
+  const advanceTurn = useCallback((playersUpdate = null) => {
+    if (gameOver || !players.length) {
+      console.log('[advanceTurn] ❌ Jogo acabou ou não há jogadores - não avançando turno')
+      return
+    }
+    
+    const playersToUse = playersUpdate || players
+    const total = playersToUse.length
+    const cur = turnIdx
+    const next = findNextAliveIdx(playersToUse, cur)
+    const nextRound = next === 0 ? (round + 1) : round
+    
+    console.log('[advanceTurn] ✅ Avançando turno - atual:', cur, 'próximo:', next, 'round:', round, 'próximo round:', nextRound)
+    
+    // ✅ CORREÇÃO: Atualiza players se fornecido
+    if (playersUpdate && JSON.stringify(playersUpdate) !== JSON.stringify(players)) {
+      console.log('[advanceTurn] ✅ Atualizando players antes de avançar turno')
+      setPlayers(playersUpdate)
+    }
+    
+    // ✅ CORREÇÃO: Atualiza localmente ANTES do broadcast
+    setTurnIdx(next)
+    if (nextRound !== round) {
+      setRound(nextRound)
+    }
+    
+    // ✅ CORREÇÃO: IMPORTANTE: não envie flags locais (turnLock/hasModalOpen)
+    // Se playersUpdate foi fornecido, usa-o; caso contrário, usa players atual
+    // players=null significa que só atualiza turnIdx/round, não os players
+    const playersForBroadcast = playersUpdate || null
+    broadcastState(playersForBroadcast, next, nextRound)
+    
+    // ✅ CORREÇÃO: Libera o lock do jogador que acabou de jogar
+    setTurnLockBroadcast(false)
+    
+    console.log('[advanceTurn] ✅ Turno avançado - próximo jogador:', playersToUse[next]?.name, 'turnIdx:', next)
+  }, [broadcastState, gameOver, players, round, setRound, setTurnIdx, setPlayers, turnIdx, setTurnLockBroadcast])
+
+  // Mantém compatibilidade com código existente
+  const nextTurn = advanceTurn
 
   // ========= regras auxiliares de saldo =========
   const canPay = useCallback((idx, amount) => {
@@ -586,40 +655,38 @@ export function useTurnEngine({
     }
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
-        // Isso previne erros de "Cannot access before initialization"
-        const capturedNextPlayers = nextPlayers
-        const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = finalNextRound
-        
-        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
-        // Isso garante que o tick não mude o turno antes da modal ser fechada
-        if (!pendingTurnDataRef.current) {
-          pendingTurnDataRef.current = {
-            nextPlayers: capturedNextPlayers,
-            nextTurnIdx: capturedNextTurnIdx,
-            nextRound: capturedNextRound
-          }
-          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal ERP)')
-        }
         const currentErpLevel = players[curIdx]?.erpLevel || null
-        console.log('[DEBUG] ERP Modal - currentErpLevel:', currentErpLevel, 'player:', players[curIdx]?.name, 'erpLevel:', players[curIdx]?.erpLevel)
+        console.log('[ERP] Abrindo modal ERP para:', cur?.name)
+        
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: ERPSystemsModal } = await import('../modals/ERPSystemsModal.jsx')
-        const res = await openModalAndWait(<ERPSystemsModal 
-          currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
+        
+        // ✅ CORREÇÃO: Usa openModalWithTurnLock para travar o turno até resolver
+        const res = await openModalWithTurnLock(<ERPSystemsModal 
+          currentCash={players[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
         />)
-        if (!res || res.action !== 'BUY') return
-        const price = Number(res.values?.compra || 0)
-        if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        
+        // ✅ CORREÇÃO: Processa compra se houver
+        let updatedPlayers = null
+        if (res?.action === 'BUY') {
+          const price = Number(res.values?.compra || 0)
+          if (requireFunds(curIdx, price, 'comprar ERP')) {
+            console.log('[ERP] Processando compra, price:', price, 'level:', res.level)
+            updatedPlayers = players.map((p, i) =>
+              i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
+            )
+            // ✅ CORREÇÃO: Atualiza players localmente e faz broadcast apenas dos players (mantém turno)
+            setPlayers(updatedPlayers)
+            broadcastState(updatedPlayers, undefined, undefined) // mantém turno; só sincroniza players
+          } else {
+            console.log('[ERP] Saldo insuficiente, cancelando')
+          }
+        }
+        
+        // ✅ CORREÇÃO: SEMPRE avança o turno no final (independente de compra ou não)
+        // Se houver players atualizados, passa para advanceTurn; caso contrário, usa players atual
+        advanceTurn(updatedPlayers)
       })()
     }
 
@@ -1421,11 +1488,13 @@ export function useTurnEngine({
       const currentStackLength = modalContextRef.current?.stackLength || stackLength || 0
       
       console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+      console.log('[DEBUG] tick - pendingTurnDataRef:', pendingTurnDataRef.current ? `nextTurnIdx=${pendingTurnDataRef.current.nextTurnIdx}, nextRound=${pendingTurnDataRef.current.nextRound}` : 'null')
       
       // ✅ CORREÇÃO CRÍTICA: Só muda o turno se não houver modais abertas (nem modalLocks nem stackLength)
       if (currentModalLocks === 0 && currentStackLength === 0) {
         // libera apenas se EU for o dono do cadeado
         if (isLockOwner) {
+          console.log('[DEBUG] tick - ✅ Sou o lockOwner, verificando se posso mudar turno')
           // ✅ CORREÇÃO: Previne mudança de turno imediata após início do jogo
           // Se o jogo acabou de começar e o turnIdx é 0, não muda o turno mesmo que haja pendingTurnData
           if (gameJustStarted && turnIdx === 0) {
@@ -1498,15 +1567,38 @@ export function useTurnEngine({
             console.groupEnd()
           } else {
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
+            console.log('[DEBUG] ⚠️ tick - Verificando por que turnData é null...')
+            console.log('[DEBUG] ⚠️ tick - pendingTurnDataRef.current:', pendingTurnDataRef.current)
+            console.log('[DEBUG] ⚠️ tick - Foi limpo prematuramente? Verificando...')
             // Se não há turnData mas há lock ativo, desativa o lock de qualquer forma
-            setTurnLockBroadcast(false)
-            setLockOwner(null)
+            // Mas só se não houver modais abertas (para evitar desbloqueio prematuro)
+            if (currentStackLength === 0 && currentModalLocks === 0) {
+              console.log('[DEBUG] ⚠️ tick - Desativando lock pois não há modais e não há turnData')
+              setTurnLockBroadcast(false)
+              setLockOwner(null)
+            } else {
+              console.log('[DEBUG] ⚠️ tick - Mantendo lock pois ainda há modais abertas (stackLength:', currentStackLength, 'modalLocks:', currentModalLocks, ')')
+            }
           }
         } else {
           console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
           console.log('[DEBUG] ❌ tick - lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+          console.log('[DEBUG] ❌ tick - Isso significa que outro jogador iniciou a ação')
+          console.log('[DEBUG] ❌ tick - Verificando se o lockOwner deveria ser eu...')
+          // ✅ CORREÇÃO: Se não sou o lockOwner mas deveria ser (é minha vez), força atualização
+          if (isMyTurn && String(currentLockOwner || '') !== String(myUid)) {
+            console.log('[DEBUG] ⚠️ tick - É minha vez mas não sou lockOwner - forçando atualização do lockOwner')
+            setLockOwner(String(myUid))
+          }
+          // ✅ CORREÇÃO: Continua verificando mesmo se não for o lockOwner, para garantir que o tick continue
+          // O tick deve continuar executando até que o lockOwner resolva ou timeout
         }
-        return
+        // ✅ CORREÇÃO CRÍTICA: NÃO retorna aqui - continua executando para verificar novamente
+        // O tick deve continuar verificando até que o turno seja mudado ou timeout
+      } else {
+        // ✅ CORREÇÃO: Se ainda há modais abertas, continua verificando
+        console.log('[DEBUG] tick - Ainda há modais abertas, continuando a verificar...')
+        console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'stackLength:', currentStackLength)
       }
       
       if (Date.now() - start > 20000) {
@@ -1532,12 +1624,6 @@ export function useTurnEngine({
   ])
 
   // ========= handlers menores =========
-  const nextTurn = useCallback(() => {
-    if (gameOver || !players.length) return
-    const nextTurnIdx = findNextAliveIdx(players, turnIdx)
-    setTurnIdx(nextTurnIdx)
-    broadcastState(players, nextTurnIdx, round)
-  }, [broadcastState, gameOver, players, round, setTurnIdx, turnIdx])
 
   const onAction = useCallback((act) => {
     if (phase !== 'game') {
@@ -2041,6 +2127,38 @@ export function useTurnEngine({
       }
     }
   }, [isMyTurn, myUid, gameOver, turnLock, modalLocks, setTurnLockBroadcast])
+
+  // ✅ CORREÇÃO CRÍTICA: Desbloqueia automaticamente quando "é minha vez"
+  // Isso garante que o cliente que recebe a vez não fique preso com turnLocked/hasModalOpen residual
+  useEffect(() => {
+    const owner = players[turnIdx]
+    const itsMe = isOwnerMe(owner, myUid, myName)
+    
+    if (itsMe && phase === 'game') {
+      console.log('[DEBUG] ✅ É minha vez - desbloqueando locks locais')
+      console.log('[DEBUG] ✅ Desbloqueando - turnLock antes:', turnLock, 'modalLocks antes:', modalLocks, 'stackLength antes:', stackLength)
+      
+      // Libera o botão removendo locks locais
+      if (turnLock) {
+        console.log('[DEBUG] ✅ Desbloqueando turnLock (era:', turnLock, ')')
+        setTurnLockBroadcast(false)
+      }
+      
+      // Garante que não há modais abertas pendentes
+      if (modalLocks > 0) {
+        console.log('[DEBUG] ✅ Resetando modalLocks (era:', modalLocks, ')')
+        setModalLocks(0)
+      }
+      
+      // Garante que o lockOwner está correto
+      if (String(lockOwner || '') !== String(myUid)) {
+        console.log('[DEBUG] ✅ Atualizando lockOwner (era:', lockOwner, ', agora:', myUid, ')')
+        setLockOwner(String(myUid))
+      }
+      
+      console.log('[DEBUG] ✅ Desbloqueio concluído - turnLock agora:', turnLock, 'modalLocks agora:', modalLocks)
+    }
+  }, [turnIdx, players, myUid, myName, phase, turnLock, modalLocks, stackLength, lockOwner, setTurnLockBroadcast, setModalLocks, setLockOwner, isOwnerMe])
 
   return {
     advanceAndMaybeLap,

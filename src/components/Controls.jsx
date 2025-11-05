@@ -2,14 +2,16 @@
 import React, { useEffect } from 'react'
 import { useModal } from '../modals/ModalContext'
 
-export default function Controls({ onAction, current, isMyTurn = true, turnLocked = false }) {
+export default function Controls({ onAction, current, isMyTurn = true, turnLocked = false, myUid, myName }) {
   // ✅ CORREÇÃO: Verifica diretamente no ModalContext se há modais abertas
   const { stackLength } = useModal()
   const hasModalOpen = stackLength > 0
 
   // AJUSTE: bloqueia tudo se o jogador atual estiver falido
   const isBankrupt = !!current?.bankrupt
-  // ✅ CORREÇÃO: Bloqueia botão se houver modal aberta, turno bloqueado ou não for a vez do jogador
+  
+  // ✅ CORREÇÃO: Simplifica o cálculo do canRoll conforme sugestão
+  // Verifica apenas: é minha vez, não está falido, não há modal aberta, não está turnLocked
   const canRoll = !!isMyTurn && !isBankrupt && !hasModalOpen && !turnLocked
 
   // Listener para detectar mudanças no estado do botão "rolar dados"
@@ -44,10 +46,10 @@ export default function Controls({ onAction, current, isMyTurn = true, turnLocke
   useEffect(() => {
     console.groupCollapsed('[Controls] render')
     console.log('current player:', current)
-    console.log('isMyTurn prop:', isMyTurn)
-    console.log('isBankrupt:', isBankrupt) // AJUSTE: log útil
-    console.log('hasModalOpen:', hasModalOpen) // ✅ CORREÇÃO: log de modal aberta
-    console.log('turnLocked:', turnLocked) // ✅ CORREÇÃO: log de turno bloqueado
+    console.log('isMyTurn:', isMyTurn)
+    console.log('isBankrupt:', isBankrupt)
+    console.log('hasModalOpen:', hasModalOpen)
+    console.log('turnLocked:', turnLocked)
     console.log('canRoll (final):', canRoll)
     console.groupEnd()
   }, [current?.id, current?.name, current?.bankrupt, isMyTurn, hasModalOpen, turnLocked, canRoll])
