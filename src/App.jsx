@@ -347,12 +347,22 @@ export default function App() {
             }
           }
           // ✅ CORREÇÃO: Mesmo se turnIdx não mudou, verifica se é minha vez e desativa turnLock se necessário
+          // ✅ CORREÇÃO CRÍTICA: Também verifica se o myUid precisa ser atualizado
           else {
             const currentTurnPlayerId = syncedPlayers[currentTurnIdx]?.id
             const isMyTurnNow = currentTurnPlayerId && String(currentTurnPlayerId) === String(myUid)
             if (isMyTurnNow && turnLock) {
               console.log('[App] SYNC - É minha vez e turnLock está ativo, desativando turnLock')
               setTurnLock(false)
+            }
+            // ✅ CORREÇÃO: Se o turnIdx indica que é minha vez mas o myUid não corresponde, tenta atualizar
+            else if (!isMyTurnNow && currentTurnPlayerId) {
+              // Tenta encontrar o jogador pelo nome para atualizar myUid
+              const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+                console.log('[App] SYNC - ⚠️ myUid não corresponde ao owner.id - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentTurnPlayerId)
+                setMyUid(String(mineByName.id))
+              }
             }
           }
           
@@ -646,7 +656,37 @@ export default function App() {
   // ✅ CORREÇÃO: Garante que myUid seja atualizado quando players mudar (especialmente no início do jogo)
   useEffect(() => {
     if (players.length > 0 && phase === 'game') {
-      // Tenta encontrar o jogador pelo nome salvo primeiro
+      // ✅ CORREÇÃO CRÍTICA: Se o turnIdx mudou e o myUid não corresponde ao owner.id, tenta atualizar
+      const currentOwner = players[turnIdx]
+      const isMyTurnBasedOnOwner = currentOwner && String(currentOwner.id) === String(myUid)
+      
+      // Se é minha vez mas o myUid não corresponde, tenta encontrar meu ID correto
+      if (currentOwner && !isMyTurnBasedOnOwner) {
+        console.log('[App] useEffect - ⚠️ myUid não corresponde ao owner.id - turnIdx:', turnIdx, 'owner.id:', currentOwner.id, 'myUid:', myUid, 'owner.name:', currentOwner.name)
+        
+        // Tenta encontrar o jogador pelo nome primeiro
+        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+          console.log('[App] useEffect - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
+          setMyUid(String(mineByName.id))
+          return // Para evitar verificações duplicadas
+        }
+        
+        // Se não encontrou pelo nome, tenta pelo window.__MY_UID
+        if (!mineByName) {
+          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+          if (wuid) {
+            const foundPlayer = players.find(p => String(p.id) === String(wuid))
+            if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
+              console.log('[App] useEffect - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'owner.id:', currentOwner.id)
+              setMyUid(String(wuid))
+              return
+            }
+          }
+        }
+      }
+      
+      // Se não é minha vez, ainda verifica se o myUid está correto (para garantir que está sincronizado)
       const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
       if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
         console.log('[App] useEffect - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
@@ -664,7 +704,52 @@ export default function App() {
         }
       }
     }
-  }, [players, phase, myName, myUid])
+  }, [players, phase, myName, myUid, turnIdx])
+  
+  // ✅ CORREÇÃO CRÍTICA: Monitora mudanças no turnIdx e verifica se myUid precisa ser atualizado
+  // Este useEffect é executado SEMPRE que turnIdx muda, garantindo que o myUid seja atualizado imediatamente
+  useEffect(() => {
+    if (players.length > 0 && phase === 'game' && turnIdx >= 0) {
+      const currentOwner = players[turnIdx]
+      if (currentOwner) {
+        const isMyTurnBasedOnOwner = String(currentOwner.id) === String(myUid)
+        
+        // Se o turnIdx indica que é minha vez mas o myUid não corresponde, tenta atualizar IMEDIATAMENTE
+        if (!isMyTurnBasedOnOwner) {
+          console.log('[App] useEffect turnIdx - ⚠️ turnIdx mudou mas myUid não corresponde ao owner.id - turnIdx:', turnIdx, 'owner.id:', currentOwner.id, 'myUid:', myUid, 'owner.name:', currentOwner.name)
+          console.log('[App] useEffect turnIdx - ⚠️ players:', players.map(p => ({ name: p.name, id: p.id })))
+          console.log('[App] useEffect turnIdx - ⚠️ myName:', myName)
+          
+          // ✅ CORREÇÃO CRÍTICA: Tenta encontrar o jogador pelo nome PRIMEIRO
+          const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+            console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
+            setMyUid(String(mineByName.id))
+            return // Para evitar verificações duplicadas
+          }
+          
+          // Se não encontrou pelo nome, tenta pelo window.__MY_UID
+          if (!mineByName) {
+            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+            if (wuid) {
+              const foundPlayer = players.find(p => String(p.id) === String(wuid))
+              if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
+                console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'owner.id:', currentOwner.id)
+                setMyUid(String(wuid))
+                return
+              }
+            }
+          }
+          
+          // ✅ CORREÇÃO CRÍTICA: Se ainda não encontrou, verifica se algum jogador tem o mesmo nome (case-insensitive)
+          // Isso pode acontecer se houver diferenças de capitalização ou espaços
+          const allPlayers = players.map(p => ({ name: p.name, id: p.id }))
+          console.log('[App] useEffect turnIdx - ⚠️ Todos os jogadores:', allPlayers)
+          console.log('[App] useEffect turnIdx - ⚠️ Tentando encontrar pelo nome exato (case-insensitive):', myName)
+        }
+      }
+    }
+  }, [turnIdx, players, phase, myName, myUid])
 
   // ====== "é minha vez?"
   const current = players[turnIdx]
@@ -677,10 +762,21 @@ export default function App() {
     const isMine = owner.id != null && String(owner.id) === String(myUid)
     console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine, 'turnIdx:', turnIdx)
     // ✅ CORREÇÃO: Log adicional para debug
-    if (!isMine && phase === 'game' && turnIdx === 0) {
-      console.log('[App] ⚠️ isMyTurn - Player 1 não reconheceu que é sua vez! Verificando...')
+    if (!isMine && phase === 'game') {
+      if (turnIdx === 0) {
+        console.log('[App] ⚠️ isMyTurn - Player 1 não reconheceu que é sua vez! Verificando...')
+      } else {
+        console.log('[App] ⚠️ isMyTurn - Player', turnIdx + 1, 'não reconheceu que é sua vez! Verificando...')
+      }
       console.log('[App] ⚠️ isMyTurn - players:', players.map(p => ({ name: p.name, id: p.id })))
-      console.log('[App] ⚠️ isMyTurn - myName:', myName, 'myUid:', myUid)
+      console.log('[App] ⚠️ isMyTurn - myName:', myName, 'myUid:', myUid, 'owner.id:', owner.id)
+      
+      // ✅ CORREÇÃO CRÍTICA: Se o turnIdx indica que é minha vez mas o myUid não corresponde, loga detalhes
+      const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+      if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+        console.log('[App] ⚠️ isMyTurn - myUid está incorreto! Deveria ser:', mineByName.id, 'mas é:', myUid)
+        // O useEffect acima deve corrigir isso
+      }
     }
     return isMine
   }, [players, turnIdx, myUid, phase, myName])
