@@ -140,6 +140,8 @@ export default function App() {
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
+          console.log('[App] START recebido - jogadores:', mapped.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0 (forçado)')
+
           // adota UID real se PlayersLobby tiver setado
           try {
             const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
@@ -147,12 +149,15 @@ export default function App() {
           } catch {}
 
           setPlayers(mapped)
+          // ✅ CORREÇÃO: Garante que o turnIdx seja sempre 0 (jogador 1) ao iniciar
+          // Ignora qualquer turnIdx que venha na mensagem START (se houver)
           setTurnIdx(0)
           setRound(1)
           setRoundFlags(new Array(Math.max(1, mapped.length)).fill(false))
           setGameOver(false); setWinner(null)
           setPhase('game')
           setLog(['Jogo iniciado!'])
+          console.log('[App] START aplicado - turnIdx: 0, jogadores:', mapped.length, 'nomes:', mapped.map(p => p.name))
           return
         }
 
@@ -424,10 +429,11 @@ export default function App() {
     // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
     if (nt !== null && nt !== turnIdx) {
       // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
-      if (round === 1 && turnIdx === 0 && nt > 0) {
-        console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', nt, 'local:', turnIdx)
+      // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
+      if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
+        console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
       } else {
-        console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx)
+        console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
         setTurnIdx(nt); 
         changed = true 
       }
@@ -476,6 +482,8 @@ export default function App() {
   }
 
   function broadcastStart(nextPlayers) {
+    console.log('[App] broadcastStart - jogadores:', nextPlayers.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0')
+    // ✅ CORREÇÃO: Garante que o turnIdx seja 0 (jogador 1) ao iniciar o jogo
     // rede
     commitRemoteState(nextPlayers, 0, 1)
     // entre abas
@@ -483,6 +491,8 @@ export default function App() {
       bcRef.current?.postMessage?.({
         type: 'START',
         players: nextPlayers,
+        turnIdx: 0, // ✅ CORREÇÃO: Garante que o turnIdx seja 0 no START
+        round: 1,
         source: meId,
       })
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
