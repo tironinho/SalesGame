@@ -65,7 +65,7 @@ export function useTurnEngine({
 }) {
   // ===== Modais =====
   const modalContext = useModal()
-  const { pushModal, awaitTop, closeTop } = modalContext || {}
+  const { pushModal, awaitTop, resolveTop, closeTop, stackLength } = modalContext || {}
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = useState(0)
@@ -83,8 +83,21 @@ export function useTurnEngine({
         console.log('[DEBUG] modalLocks sync - resetando modalLocks para 0 (não é minha vez)')
         setModalLocks(0)
       }
+      // ✅ CORREÇÃO: Fecha TODAS as modais quando não é mais minha vez
+      // Isso garante que quando o turno muda, o próximo jogador não tenha modais abertas
+      if (stackLength > 0 && resolveTop) {
+        console.log('[DEBUG] modalLocks sync - fechando todas as modais (não é mais minha vez), stackLength:', stackLength)
+        // Fecha todas as modais da stack usando resolveTop
+        // resolveTop fecha uma modal por vez, então precisamos chamar várias vezes
+        // Usa setTimeout para evitar problemas com atualizações de estado durante render
+        setTimeout(() => {
+          for (let i = 0; i < stackLength; i++) {
+            resolveTop({ action: 'SKIP' })
+          }
+        }, 0)
+      }
     }
-  }, [isMyTurn, modalLocks])
+  }, [isMyTurn, modalLocks, stackLength, resolveTop])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   const [lockOwner, setLockOwner] = useState(null)
