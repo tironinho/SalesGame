@@ -65,7 +65,10 @@ export function useTurnEngine({
 }) {
   // ===== Modais =====
   const modalContext = useModal()
-  const { pushModal, awaitTop, resolveTop, closeTop, stackLength } = modalContext || {}
+  const { pushModal, awaitTop, resolveTop, closeTop, closeAllModals, stackLength } = modalContext || {}
+  // ✅ CORREÇÃO: Mantém referência ao modalContext para usar stackLength atualizado
+  const modalContextRef = useRef(modalContext)
+  useEffect(() => { modalContextRef.current = modalContext }, [modalContext])
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = useState(0)
@@ -85,19 +88,32 @@ export function useTurnEngine({
       }
       // ✅ CORREÇÃO: Fecha TODAS as modais quando não é mais minha vez
       // Isso garante que quando o turno muda, o próximo jogador não tenha modais abertas
-      if (stackLength > 0 && resolveTop) {
+      if (stackLength > 0) {
         console.log('[DEBUG] modalLocks sync - fechando todas as modais (não é mais minha vez), stackLength:', stackLength)
-        // Fecha todas as modais da stack usando resolveTop
-        // resolveTop fecha uma modal por vez, então precisamos chamar várias vezes
-        // Usa setTimeout para evitar problemas com atualizações de estado durante render
-        setTimeout(() => {
-          for (let i = 0; i < stackLength; i++) {
-            resolveTop({ action: 'SKIP' })
+        // ✅ CORREÇÃO: Usa closeAllModals para fechar todas as modais de uma vez
+        // Isso é mais eficiente e garante que a stack seja limpa completamente
+        if (closeAllModals) {
+          console.log('[DEBUG] modalLocks sync - usando closeAllModals para fechar todas as modais')
+          closeAllModals()
+        } else if (resolveTop) {
+          // Fallback: fecha modais uma por vez se closeAllModals não estiver disponível
+          console.log('[DEBUG] modalLocks sync - closeAllModals não disponível, usando resolveTop')
+          const currentContext = modalContextRef.current
+          const closeRecursively = () => {
+            const currentStackLength = currentContext?.stackLength || 0
+            if (currentStackLength > 0 && currentContext?.resolveTop) {
+              console.log('[DEBUG] modalLocks sync - fechando modal, stackLength restante:', currentStackLength)
+              currentContext.resolveTop({ action: 'SKIP' })
+              setTimeout(closeRecursively, 50)
+            } else {
+              console.log('[DEBUG] modalLocks sync - todas as modais foram fechadas')
+            }
           }
-        }, 0)
+          setTimeout(closeRecursively, 0)
+        }
       }
     }
-  }, [isMyTurn, modalLocks, stackLength, resolveTop])
+  }, [isMyTurn, modalLocks, stackLength, closeAllModals, resolveTop])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   const [lockOwner, setLockOwner] = useState(null)

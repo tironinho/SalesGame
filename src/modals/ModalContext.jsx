@@ -6,6 +6,7 @@ const ModalCtx = createContext({
   resolveTop: () => {},
   closeModal: () => {},
   popModal: () => {},
+  closeAllModals: () => {}, // ✅ NOVO: função para fechar todas as modais
   stackLength: 0 // ✅ NOVO: expõe o tamanho da stack de modais
 })
 
@@ -46,6 +47,20 @@ export function ModalProvider({ children }) {
   // utilitários para botões
   const closeModal = React.useCallback(() => resolveTop({ action: 'SKIP' }), [resolveTop])
   const popModal   = React.useCallback(() => resolveTop(false), [resolveTop])
+  
+  // ✅ NOVO: Fecha todas as modais de uma vez
+  const closeAllModals = React.useCallback(() => {
+    console.log('[ModalContext] closeAllModals - stackLength:', stack.length)
+    // Resolve todas as promises pendentes
+    if (resolverRef.current) {
+      const res = resolverRef.current
+      resolverRef.current = null
+      res(null) // Resolve com null para indicar que foi fechado forçadamente
+    }
+    // Limpa a stack completamente
+    setStack([])
+    console.log('[ModalContext] closeAllModals - todas as modais foram fechadas, stackLength: 0')
+  }, [])
 
   // abre uma modal (topo). Clonamos o elemento para injetar onResolve.
   const pushModal = React.useCallback((element) => {
@@ -71,9 +86,10 @@ export function ModalProvider({ children }) {
       resolveTop, 
       closeModal, 
       popModal,
+      closeAllModals, // ✅ NOVO: função para fechar todas as modais
       stackLength: stack.length // ✅ NOVO: expõe o tamanho da stack
     }),
-    [pushModal, awaitTop, resolveTop, closeModal, popModal, stack.length]
+    [pushModal, awaitTop, resolveTop, closeModal, popModal, closeAllModals, stack.length]
   )
 
   return (
@@ -96,6 +112,7 @@ export const useModal = () => {
     resolveTop: () => {},
     closeModal: () => {},
     popModal: () => {},
+    closeAllModals: () => {}, // ✅ NOVO: fallback para função vazia
     stackLength: 0 // ✅ NOVO: fallback para 0
   }
 }

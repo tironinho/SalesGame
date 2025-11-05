@@ -306,7 +306,9 @@ export default function App() {
           // ✅ CORREÇÃO: Se o turnIdx mudou e agora é minha vez, desativa o turnLock para permitir que eu jogue
           if (turnIdxChanged && d.turnIdx !== undefined) {
             const newTurnPlayerId = syncedPlayers[d.turnIdx]?.id
-            if (newTurnPlayerId && String(newTurnPlayerId) === String(myUid)) {
+            const isMyTurnNow = newTurnPlayerId && String(newTurnPlayerId) === String(myUid)
+            console.log('[App] SYNC - Turno mudou - novo jogador:', newTurnPlayerId, 'myUid:', myUid, 'é minha vez?', isMyTurnNow)
+            if (isMyTurnNow) {
               console.log('[App] SYNC - Turno mudou para mim, desativando turnLock')
               setTurnLock(false)
             }
