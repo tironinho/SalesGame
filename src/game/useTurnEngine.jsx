@@ -80,17 +80,24 @@ export function useTurnEngine({
   useEffect(() => {
     if (isMyTurn) {
       // Só o jogador da vez pode ter modais abertas
-      console.log('[DEBUG] modalLocks sync - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks)
+      console.log('[DEBUG] modalLocks sync - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks, 'stackLength:', stackLength)
     } else {
       // Outros jogadores devem ter modalLocks = 0
       if (modalLocks > 0) {
         console.log('[DEBUG] modalLocks sync - resetando modalLocks para 0 (não é minha vez)')
         setModalLocks(0)
       }
-      // ✅ CORREÇÃO: Fecha TODAS as modais quando não é mais minha vez
+      // ✅ CORREÇÃO CRÍTICA: Só fecha modais se eu tiver sido o dono do lockOwner anteriormente
+      // Isso previne que modais sejam fechadas prematuramente quando o turno muda
+      // O lockOwner só deve ser limpo quando o jogador anterior terminar sua ação
+      const currentLockOwner = lockOwnerRef.current
+      const wasMyLock = String(currentLockOwner || '') === String(myUid)
+      
+      // ✅ CORREÇÃO: Fecha TODAS as modais quando não é mais minha vez E eu era o dono do lock
       // Isso garante que quando o turno muda, o próximo jogador não tenha modais abertas
-      if (stackLength > 0) {
-        console.log('[DEBUG] modalLocks sync - fechando todas as modais (não é mais minha vez), stackLength:', stackLength)
+      // Mas só fecha se eu era o dono do lock (para não fechar modais de outros jogadores)
+      if (stackLength > 0 && wasMyLock) {
+        console.log('[DEBUG] modalLocks sync - fechando todas as modais (não é mais minha vez e eu era o dono), stackLength:', stackLength, 'lockOwner:', currentLockOwner)
         // ✅ CORREÇÃO: Usa closeAllModals para fechar todas as modais de uma vez
         // Isso é mais eficiente e garante que a stack seja limpa completamente
         if (closeAllModals) {
@@ -112,9 +119,11 @@ export function useTurnEngine({
           }
           setTimeout(closeRecursively, 0)
         }
+      } else if (stackLength > 0 && !wasMyLock) {
+        console.log('[DEBUG] modalLocks sync - ⚠️ Há modais abertas mas não sou o dono do lock - não fechando (stackLength:', stackLength, 'lockOwner:', currentLockOwner, 'myUid:', myUid, ')')
       }
     }
-  }, [isMyTurn, modalLocks, stackLength, closeAllModals, resolveTop])
+  }, [isMyTurn, modalLocks, stackLength, closeAllModals, resolveTop, lockOwner, myUid])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   const [lockOwner, setLockOwner] = useState(null)
@@ -624,6 +633,24 @@ export function useTurnEngine({
 
     // Compra direta (menu)
     const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
+    if (isDirectBuyTile) {
+      console.group(`[🏠 TILE] ${cur.name} - Compra Direta Tile (posição ${landedOneBased})`)
+      console.log('Condições para abrir modal:')
+      console.log('  - isDirectBuyTile:', isDirectBuyTile, '✅')
+      console.log('  - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+      console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
+      console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
+      
+      if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Compra Direta')
+      } else {
+        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+        if (!isMyTurn) console.warn('  - Não é minha vez!')
+        if (!pushModal) console.warn('  - pushModal não está disponível!')
+        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
+      }
+      console.groupEnd()
+    }
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         const cashNow = nextPlayers[curIdx]?.cash ?? myCash
@@ -1200,10 +1227,14 @@ export function useTurnEngine({
       const currentModalLocks = modalLocksRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
+      // ✅ CORREÇÃO CRÍTICA: Verifica também o stackLength do ModalContext
+      // Isso garante que o tick não mude o turno se houver modais abertas
+      const currentStackLength = modalContextRef.current?.stackLength || stackLength || 0
       
-      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
       
-      if (currentModalLocks === 0) {
+      // ✅ CORREÇÃO CRÍTICA: Só muda o turno se não houver modais abertas (nem modalLocks nem stackLength)
+      if (currentModalLocks === 0 && currentStackLength === 0) {
         // libera apenas se EU for o dono do cadeado
         if (isLockOwner) {
           // ✅ CORREÇÃO: Previne mudança de turno imediata após início do jogo
@@ -1214,6 +1245,19 @@ export function useTurnEngine({
             pendingTurnDataRef.current = null
             setTurnLockBroadcast(false)
             setLockOwner(null)
+            return
+          }
+          
+          // ✅ CORREÇÃO CRÍTICA: Verifica novamente o stackLength ANTES de mudar o turno
+          // Isso previne que o turno mude se houver modais abertas
+          // Usa o modalContextRef diretamente para garantir que estamos verificando o estado mais atual
+          const finalStackLength = modalContextRef.current?.stackLength ?? stackLength ?? 0
+          const finalModalLocks = modalLocksRef.current ?? modalLocks ?? 0
+          
+          console.log('[DEBUG] tick - ⚠️ Verificação final antes de mudar turno - stackLength:', finalStackLength, 'modalLocks:', finalModalLocks)
+          
+          if (finalStackLength > 0 || finalModalLocks > 0) {
+            console.log('[DEBUG] tick - ⚠️ Há modais abertas (stackLength:', finalStackLength, 'modalLocks:', finalModalLocks, ') - não mudando turno ainda')
             return
           }
           
