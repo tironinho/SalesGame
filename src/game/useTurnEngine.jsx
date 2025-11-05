@@ -1530,13 +1530,8 @@ export function useTurnEngine({
 
   // ====== efeitos de destrava automática ======
 
-  // Atualiza lockOwner quando é minha vez (para permitir que eu passe o turno)
-  useEffect(() => {
-    if (isMyTurn && !gameOver) {
-      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
-      setLockOwner(String(myUid))
-    }
-  }, [isMyTurn, myUid, gameOver])
+  // ✅ REMOVIDO: Este useEffect foi movido para depois do useEffect que desativa o lock
+  // para garantir a ordem correta de execução
 
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
   useEffect(() => {
@@ -1550,11 +1545,28 @@ export function useTurnEngine({
   // b) quando virar "minha vez" e não houver modal, garanto unlock local
   useEffect(() => {
     if (isMyTurn && modalLocks === 0 && turnLock) {
-      if (String(lockOwner || '') === String(myUid)) {
+      // ✅ CORREÇÃO: Quando é minha vez, sempre desativa o lock (não precisa verificar lockOwner)
+      // Isso garante que quando o turno muda via sincronização, o novo jogador pode jogar
+      console.log('[DEBUG] É minha vez e há lock ativo - desativando lock para permitir jogo')
+      setTurnLockBroadcast(false)
+      // Atualiza o lockOwner para o jogador atual
+      setLockOwner(String(myUid))
+    }
+  }, [isMyTurn, modalLocks, turnLock, myUid, setTurnLockBroadcast])
+  
+  // c) quando virar "minha vez", sempre atualiza lockOwner e desativa turnLock se necessário
+  useEffect(() => {
+    if (isMyTurn && !gameOver) {
+      console.log('[DEBUG] É minha vez - garantindo que lockOwner seja atualizado para:', myUid, 'turnLock:', turnLock)
+      setLockOwner(String(myUid))
+      // ✅ CORREÇÃO: Se é minha vez e não há modais abertas, sempre desativa o turnLock
+      // Isso garante que quando o turno muda via sincronização, o novo jogador pode jogar imediatamente
+      if (turnLock && modalLocks === 0) {
+        console.log('[DEBUG] É minha vez e há lock ativo - desativando lock imediatamente')
         setTurnLockBroadcast(false)
       }
     }
-  }, [isMyTurn, modalLocks, turnLock, lockOwner, myUid, setTurnLockBroadcast])
+  }, [isMyTurn, myUid, gameOver, turnLock, modalLocks, setTurnLockBroadcast])
 
   return {
     advanceAndMaybeLap,

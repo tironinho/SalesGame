@@ -169,6 +169,7 @@ export default function App() {
           
           // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
           // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
+          const turnIdxChanged = round === 1 && turnIdx === 0 && d.turnIdx > 0 ? false : (d.turnIdx !== turnIdx)
           if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
             console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
           } else {
@@ -249,6 +250,15 @@ export default function App() {
           console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           setPlayers(syncedPlayers)
+          
+          // ✅ CORREÇÃO: Se o turnIdx mudou e agora é minha vez, desativa o turnLock para permitir que eu jogue
+          if (turnIdxChanged && d.turnIdx !== undefined) {
+            const newTurnPlayerId = syncedPlayers[d.turnIdx]?.id
+            if (newTurnPlayerId && String(newTurnPlayerId) === String(myUid)) {
+              console.log('[App] SYNC - Turno mudou para mim, desativando turnLock')
+              setTurnLock(false)
+            }
+          }
           
           // Sincroniza estado do jogo (gameOver e winner)
           if (d.gameOver !== undefined) {
