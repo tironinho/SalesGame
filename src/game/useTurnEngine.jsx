@@ -62,6 +62,7 @@ export function useTurnEngine({
   winner, setWinner,
   setShowBankruptOverlay,
   phase, // Adicionado para controle condicional dentro do hook
+  gameJustStarted, // ✅ CORREÇÃO: Flag para prevenir mudança de turno imediata após início
 }) {
   // ===== Modais =====
   const modalContext = useModal()
@@ -130,10 +131,18 @@ export function useTurnEngine({
       setModalLocks(0);
       setTurnLockBroadcast(false); // Resetar lock interno
       pendingTurnDataRef.current = null; // Limpar dados de turno pendentes
+      setLockOwner(null); // ✅ CORREÇÃO: Limpa lockOwner quando sai da fase de jogo
     } else {
       console.log('[USE_TURN_ENGINE] Ativando motor de turnos (fase: game)');
+      // ✅ CORREÇÃO: Garante que pendingTurnDataRef seja limpo quando a fase muda para 'game'
+      // Isso previne que dados de turno pendentes de uma partida anterior causem mudança de turno imediata
+      if (gameJustStarted) {
+        console.log('[USE_TURN_ENGINE] Jogo acabou de começar - limpando pendingTurnDataRef')
+        pendingTurnDataRef.current = null
+        setLockOwner(null)
+      }
     }
-  }, [phase, setTurnLockBroadcast]); // Depende da fase para ativar/desativar
+  }, [phase, gameJustStarted, setTurnLockBroadcast]); // ✅ CORREÇÃO: Adiciona gameJustStarted como dependência
 
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
@@ -1082,6 +1091,17 @@ export function useTurnEngine({
       if (currentModalLocks === 0) {
         // libera apenas se EU for o dono do cadeado
         if (isLockOwner) {
+          // ✅ CORREÇÃO: Previne mudança de turno imediata após início do jogo
+          // Se o jogo acabou de começar e o turnIdx é 0, não muda o turno mesmo que haja pendingTurnData
+          if (gameJustStarted && turnIdx === 0) {
+            console.log('[DEBUG] ⚠️ tick - Jogo acabou de começar (turnIdx=0) - ignorando pendingTurnData para prevenir mudança de turno imediata')
+            // Limpa pendingTurnData para evitar que seja usado depois
+            pendingTurnDataRef.current = null
+            setTurnLockBroadcast(false)
+            setLockOwner(null)
+            return
+          }
+          
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
           console.log('[DEBUG] tick - turnData:', turnData ? `nextTurnIdx=${turnData.nextTurnIdx}, nextRound=${turnData.nextRound}` : 'null')

@@ -277,13 +277,25 @@ export default function App() {
           
           // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
           // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
-          const turnIdxChanged = round === 1 && turnIdx === 0 && d.turnIdx > 0 ? false : (d.turnIdx !== turnIdx)
-          
-          // ✅ CORREÇÃO: Se gameJustStarted está ativo, ignora sincronização de turnIdx remoto
-          if (gameJustStarted && d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
-            console.log('[App] SYNC - gameJustStarted ativo - ignorando sincronização de turnIdx remoto - remoto:', d.turnIdx, 'local:', turnIdx)
-          } else if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
-            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
+          // ✅ CORREÇÃO CRÍTICA: Se gameJustStarted está ativo, NUNCA sincroniza turnIdx remoto
+          if (gameJustStarted) {
+            if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+              console.log('[App] SYNC - ⚠️ gameJustStarted ativo - IGNORANDO sincronização de turnIdx remoto - remoto:', d.turnIdx, 'local:', turnIdx, 'round:', round)
+            }
+            // Força turnIdx = 0 se o round é 1 (jogo acabou de começar)
+            if (round === 1 && turnIdx !== 0) {
+              console.log('[App] SYNC - ⚠️ gameJustStarted ativo - FORÇANDO turnIdx = 0 (jogo deve começar no jogador 1)')
+              setTurnIdx(0)
+            }
+          }
+          // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
+          else if (round === 1 && turnIdx === 0 && d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+            if (d.turnIdx > 0) {
+              console.log('[App] SYNC - ⚠️ Ignorando sincronização de turnIdx remoto (jogo acabou de começar - deve ser 0) - remoto:', d.turnIdx, 'local:', turnIdx)
+            } else {
+              // Se o remoto também é 0, está ok
+              console.log('[App] SYNC - ✅ Sincronizando turnIdx (BroadcastChannel) - ambos são 0 - remoto:', d.turnIdx, 'local:', turnIdx)
+            }
           }
           // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo do BroadcastChannel)
           else if (d.round !== undefined && d.round < round) {
@@ -295,13 +307,18 @@ export default function App() {
             setTurnIdx(d.turnIdx)
           }
           
+          // ✅ CORREÇÃO: Calcula turnIdxChanged DEPOIS de todas as verificações acima
+          const turnIdxChanged = (d.turnIdx !== undefined && d.turnIdx !== turnIdx) && !gameJustStarted && !(round === 1 && turnIdx === 0 && d.turnIdx > 0)
+          
           // ✅ CORREÇÃO: Sincroniza round também
           if (d.round !== undefined && d.round !== round) {
             setRound(d.round)
           }
           
-          console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
-          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
+          // ✅ CORREÇÃO: Usa o turnIdx local (que pode ter sido atualizado ou não) para verificar o jogador da vez
+          const currentTurnIdx = turnIdx // Usa o turnIdx local atual, não o remoto
+          console.log('[App] SYNC - jogador da vez (turnIdx local):', syncedPlayers[currentTurnIdx]?.name, 'id:', syncedPlayers[currentTurnIdx]?.id, 'turnIdx:', currentTurnIdx)
+          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[currentTurnIdx]?.id) === String(myUid), 'myUid:', myUid)
           
           // ✅ CORREÇÃO: Se o turnIdx mudou e agora é minha vez, desativa o turnLock para permitir que eu jogue
           if (turnIdxChanged && d.turnIdx !== undefined) {
@@ -310,6 +327,15 @@ export default function App() {
             console.log('[App] SYNC - Turno mudou - novo jogador:', newTurnPlayerId, 'myUid:', myUid, 'é minha vez?', isMyTurnNow)
             if (isMyTurnNow) {
               console.log('[App] SYNC - Turno mudou para mim, desativando turnLock')
+              setTurnLock(false)
+            }
+          }
+          // ✅ CORREÇÃO: Mesmo se turnIdx não mudou, verifica se é minha vez e desativa turnLock se necessário
+          else {
+            const currentTurnPlayerId = syncedPlayers[currentTurnIdx]?.id
+            const isMyTurnNow = currentTurnPlayerId && String(currentTurnPlayerId) === String(myUid)
+            if (isMyTurnNow && turnLock) {
+              console.log('[App] SYNC - É minha vez e turnLock está ativo, desativando turnLock')
               setTurnLock(false)
             }
           }
@@ -504,33 +530,39 @@ export default function App() {
       changed = true 
     }
     
-    // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
-    // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
-    if (nt !== null && nt !== turnIdx) {
-      // Se o jogo acabou de começar (gameJustStarted = true), NUNCA sobrescreve turnIdx = 0
-      if (gameJustStarted && turnIdx === 0) {
-        console.log('[NET] Jogo acabou de começar - ignorando sincronização de turnIdx remoto (deve ser 0) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+      // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
+      // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
+      if (nt !== null && nt !== turnIdx) {
+        // ✅ CORREÇÃO CRÍTICA: Se gameJustStarted está ativo, NUNCA sobrescreve turnIdx
+        if (gameJustStarted) {
+          console.log('[NET] ⚠️ gameJustStarted ativo - IGNORANDO sincronização de turnIdx remoto - remoto:', nt, 'local:', turnIdx, 'round:', round)
+          // Força turnIdx = 0 se o round é 1 (jogo acabou de começar)
+          if (round === 1 && turnIdx !== 0) {
+            console.log('[NET] ⚠️ gameJustStarted ativo - FORÇANDO turnIdx = 0 (jogo deve começar no jogador 1)')
+            setTurnIdx(0)
+            changed = true
+          }
+        }
+        // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
+        // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
+        else if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
+          console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+        }
+        // ✅ CORREÇÃO: Se o turnIdx local é maior que o remoto E estamos no mesmo round, pode ser que o local esteja mais atualizado
+        // Não sobrescreve se o turnIdx local é maior que o remoto (prioriza estado local mais recente)
+        else if (turnIdx > nt && nr === round) {
+          console.log('[NET] Ignorando sincronização de turnIdx remoto (local é mais recente) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+        }
+        // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo)
+        else if (nr !== null && nr < round) {
+          console.log('[NET] Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', nr, 'local round:', round, 'turnIdx remoto:', nt, 'turnIdx local:', turnIdx)
+        }
+        else {
+          console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
+          setTurnIdx(nt); 
+          changed = true 
+        }
       }
-      // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
-      // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
-      else if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
-        console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-      }
-      // ✅ CORREÇÃO: Se o turnIdx local é maior que o remoto E estamos no mesmo round, pode ser que o local esteja mais atualizado
-      // Não sobrescreve se o turnIdx local é maior que o remoto (prioriza estado local mais recente)
-      else if (turnIdx > nt && nr === round) {
-        console.log('[NET] Ignorando sincronização de turnIdx remoto (local é mais recente) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-      }
-      // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo)
-      else if (nr !== null && nr < round) {
-        console.log('[NET] Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', nr, 'local round:', round, 'turnIdx remoto:', nt, 'turnIdx local:', turnIdx)
-      }
-      else {
-        console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
-        setTurnIdx(nt); 
-        changed = true 
-      }
-    }
     
     if (nr !== null && nr !== round) { 
       console.log('[NET] Sincronizando round - remoto:', nr, 'local:', round)
@@ -687,6 +719,7 @@ export default function App() {
     winner, setWinner,
     setShowBankruptOverlay,
     phase, // Passar a fase como prop
+    gameJustStarted, // ✅ CORREÇÃO: Passa gameJustStarted para prevenir mudança de turno imediata
   })
 
   // ====== fases ======
