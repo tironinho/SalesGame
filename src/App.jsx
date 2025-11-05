@@ -250,6 +250,29 @@ export default function App() {
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
           console.log('[App] SYNC - jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
           
+          // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
+          // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
+          try {
+            // Tenta encontrar o jogador pelo nome salvo primeiro
+            const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+            if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+              console.log('[App] SYNC - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
+              setMyUid(String(mineByName.id))
+            }
+            // Se não encontrou pelo nome, tenta pelo window.__MY_UID
+            else if (!mineByName) {
+              const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+              if (wuid && syncedPlayers.find(p => String(p.id) === String(wuid))) {
+                if (String(wuid) !== String(myUid)) {
+                  console.log('[App] SYNC - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
+                  setMyUid(String(wuid))
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('[App] SYNC - Erro ao atualizar myUid:', e)
+          }
+          
           setPlayers(syncedPlayers)
           
           // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
@@ -451,6 +474,30 @@ export default function App() {
       })
       
       console.log('[NET] Jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
+      
+      // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
+      // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
+      try {
+        // Tenta encontrar o jogador pelo nome salvo primeiro
+        const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+          console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
+          setMyUid(String(mineByName.id))
+        }
+        // Se não encontrou pelo nome, tenta pelo window.__MY_UID
+        else if (!mineByName) {
+          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+          if (wuid && syncedPlayers.find(p => String(p.id) === String(wuid))) {
+            if (String(wuid) !== String(myUid)) {
+              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
+              setMyUid(String(wuid))
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[NET] Sincronizando jogadores - Erro ao atualizar myUid:', e)
+      }
+      
       setPlayers(syncedPlayers); 
       changed = true 
     }

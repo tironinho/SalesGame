@@ -1148,7 +1148,10 @@ export function useTurnEngine({
     console.log(`[🎲 AÇÃO] ${playerName} - Executando ação:`, act.type)
 
     if (act.type === 'ROLL'){
-      if (!isMyTurn) return
+      if (!isMyTurn) {
+        console.log(`[🎲 DADO] ❌ ${playerName} tentou rolar dado mas não é sua vez - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
+        return
+      }
       console.log(`[🎲 DADO] ${playerName} - Rolou ${act.steps} passos`)
       advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
       return
