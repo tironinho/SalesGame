@@ -1060,13 +1060,27 @@ export function useTurnEngine({
             const nextPlayerName = turnData.nextPlayers[turnData.nextTurnIdx]?.name || 'Jogador'
             console.log(`[🎲 TURNO] ✅ MUDANDO TURNO - ${currentPlayerName} terminou → ${nextPlayerName} pode jogar`)
             console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+            
+            // ✅ CORREÇÃO: Atualiza o estado local PRIMEIRO antes de fazer broadcast
+            // Isso garante que o turnIdx seja atualizado antes da sincronização
             setTurnIdx(turnData.nextTurnIdx)
+            setPlayers(turnData.nextPlayers)
+            setRound(turnData.nextRound)
+            
+            // ✅ CORREÇÃO: Limpa pendingTurnData ANTES do broadcast para evitar condições de corrida
+            pendingTurnDataRef.current = null
+            
+            // ✅ CORREÇÃO: Faz broadcast DEPOIS de atualizar o estado local
+            // Isso garante que a sincronização receba o estado correto
             broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
-            pendingTurnDataRef.current = null // Limpa os dados após usar
+            
+            // ✅ CORREÇÃO: Desativa o lock DEPOIS de mudar o turno
+            setTurnLockBroadcast(false)
           } else {
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
+            // Se não há turnData mas há lock ativo, desativa o lock de qualquer forma
+            setTurnLockBroadcast(false)
           }
-          setTurnLockBroadcast(false)
         } else {
           console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
         }

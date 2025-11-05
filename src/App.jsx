@@ -167,15 +167,9 @@ export default function App() {
           console.log('[App] SYNC - jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
           console.log('[App] SYNC - jogadores remotos:', d.players?.map(p => ({ id: p.id, name: p.name })))
           
-          // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
-          // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
-          const turnIdxChanged = round === 1 && turnIdx === 0 && d.turnIdx > 0 ? false : (d.turnIdx !== turnIdx)
-          if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
-            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
-          } else {
-            setTurnIdx(d.turnIdx)
-          }
-          setRound(d.round)
+          // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de processar jogadores
+          // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
+          // Não sincroniza turnIdx aqui ainda - será feito depois de processar os jogadores
           
           // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
           // ✅ CORREÇÃO: Garante que TODOS os jogadores sejam mantidos (mescla local + remoto)
@@ -246,10 +240,26 @@ export default function App() {
           
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
           console.log('[App] SYNC - jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
-          console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
-          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           setPlayers(syncedPlayers)
+          
+          // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
+          // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
+          const turnIdxChanged = round === 1 && turnIdx === 0 && d.turnIdx > 0 ? false : (d.turnIdx !== turnIdx)
+          if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
+            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
+          } else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+            console.log('[App] SYNC - Sincronizando turnIdx - remoto:', d.turnIdx, 'local:', turnIdx)
+            setTurnIdx(d.turnIdx)
+          }
+          
+          // ✅ CORREÇÃO: Sincroniza round também
+          if (d.round !== undefined && d.round !== round) {
+            setRound(d.round)
+          }
+          
+          console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
+          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           // ✅ CORREÇÃO: Se o turnIdx mudou e agora é minha vez, desativa o turnLock para permitir que eu jogue
           if (turnIdxChanged && d.turnIdx !== undefined) {
