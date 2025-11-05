@@ -53,16 +53,32 @@ export default function Controls({ onAction, current, isMyTurn = true, turnLocke
   }, [current?.id, current?.name, current?.bankrupt, isMyTurn, hasModalOpen, turnLocked, canRoll])
 
   const roll = () => {
-    console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
-    if (!canRoll) return
+    const playerName = current?.name || 'Jogador'
+    console.group(`[🎲 CLIQUE BOTÃO] ${playerName} - Rolar Dado & Andar`)
+    console.log('canRoll:', canRoll)
+    console.log('isMyTurn:', isMyTurn)
+    console.log('isBankrupt:', isBankrupt)
+    console.log('hasModalOpen:', hasModalOpen)
+    console.log('turnLocked:', turnLocked)
+    console.log('onAction disponível:', typeof onAction === 'function')
+    
+    if (!canRoll) {
+      console.warn('❌ BLOQUEADO - Botão não pode ser usado!')
+      console.groupEnd()
+      return
+    }
 
     const steps = Math.floor(Math.random() * 6) + 1
-
-    // 🔒 Nada de bônus/penalidade aqui.
     const cashDelta = 0
     const note = `Dado: ${steps}`
 
-    console.log('[Controls] onAction ROLL => steps=%d cashDelta=%d note=%s', steps, cashDelta, note)
+    console.log('✅ ENVIANDO AÇÃO ROLL')
+    console.log('  - steps:', steps)
+    console.log('  - cashDelta:', cashDelta)
+    console.log('  - note:', note)
+    console.log('  - action:', { type: 'ROLL', steps, cashDelta, note })
+    console.groupEnd()
+    
     onAction?.({ type: 'ROLL', steps, cashDelta, note })
   }
 

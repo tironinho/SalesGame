@@ -229,14 +229,37 @@ export function useTurnEngine({
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = useCallback((steps, deltaCash, note) => {
+    const playerName = players[turnIdx]?.name || 'Jogador'
+    console.group(`[🎯 MOVIMENTO] ${playerName} - advanceAndMaybeLap INICIADO`)
+    console.log('Parâmetros:')
+    console.log('  - steps:', steps)
+    console.log('  - deltaCash:', deltaCash)
+    console.log('  - note:', note)
+    console.log('Estado atual:')
+    console.log('  - phase:', phase)
+    console.log('  - gameOver:', gameOver)
+    console.log('  - players.length:', players.length)
+    console.log('  - turnIdx:', turnIdx)
+    console.log('  - isMyTurn:', isMyTurn)
+    console.log('  - myUid:', myUid)
+    console.log('  - lockOwner ANTES:', lockOwner)
+    console.log('  - turnLock ANTES:', turnLock)
+    
     if (phase !== 'game') {
-      console.warn('[advanceAndMaybeLap] Tentativa de ação fora da fase de jogo.');
+      console.warn('❌ BLOQUEADO - Tentativa de ação fora da fase de jogo')
+      console.groupEnd()
       return;
     }
-    console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
-    if (gameOver || !players.length) return
+    if (gameOver || !players.length) {
+      console.warn('❌ BLOQUEADO - Jogo terminou ou sem jogadores')
+      console.groupEnd()
+      return
+    }
 
     // Bloqueia os próximos jogadores até esta ação (e todas as modais) terminar
+    console.log('🔒 ATIVANDO LOCK - Bloqueando turno para outros jogadores')
+    console.log('  - setTurnLockBroadcast(true)')
+    console.log('  - setLockOwner(String(myUid)) =', String(myUid))
     setTurnLockBroadcast(true)
     setLockOwner(String(myUid))
 
@@ -513,12 +536,38 @@ export function useTurnEngine({
     const crossedStart1 = crossedTile(oldPos, newPos, 0)
     const crossedExpenses23 = crossedTile(oldPos, newPos, 22)
 
+    console.log('🏠 TILES DETECTADOS APÓS MOVIMENTO:')
+    console.log('  - landedOneBased (posição 1-based):', landedOneBased)
+    console.log('  - Cruzou Start (pos 0):', crossedStart1)
+    console.log('  - Cruzou Despesas (pos 22):', crossedExpenses23)
+    console.log('  - Condições para modais:')
+    console.log('    - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+    console.log('    - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
+    console.log('    - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
+    console.log('    - turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
+    console.log('    - lockOwner:', lockOwner, 'turnLock:', turnLock)
+
     // ================== Regras por casas (modais) ==================
 
     // ERP
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
     if (isErpTile) {
-      console.log('[DEBUG] ERP Tile detectado - isMyTurn:', isMyTurn, 'pushModal:', typeof pushModal, 'awaitTop:', typeof awaitTop)
+      console.group(`[🏠 TILE] ${cur.name} - ERP Tile (posição ${landedOneBased})`)
+      console.log('Condições para abrir modal:')
+      console.log('  - isErpTile:', isErpTile, '✅')
+      console.log('  - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+      console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
+      console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
+      
+      if (isErpTile && isMyTurn && pushModal && awaitTop) {
+        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal ERP')
+      } else {
+        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+        if (!isMyTurn) console.warn('  - Não é minha vez!')
+        if (!pushModal) console.warn('  - pushModal não está disponível!')
+        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
+      }
+      console.groupEnd()
     }
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
@@ -829,6 +878,24 @@ export function useTurnEngine({
 
     // Clientes
     const isClientsTile = [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
+    if (isClientsTile) {
+      console.group(`[🏠 TILE] ${cur.name} - Clientes Tile (posição ${landedOneBased})`)
+      console.log('Condições para abrir modal:')
+      console.log('  - isClientsTile:', isClientsTile, '✅')
+      console.log('  - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+      console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
+      console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
+      
+      if (isClientsTile && isMyTurn && pushModal && awaitTop) {
+        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Clientes')
+      } else {
+        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+        if (!isMyTurn) console.warn('  - Não é minha vez!')
+        if (!pushModal) console.warn('  - pushModal não está disponível!')
+        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
+      }
+      console.groupEnd()
+    }
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
@@ -966,8 +1033,29 @@ export function useTurnEngine({
 
     // Sorte & Revés
     const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
+    if (isLuckMisfortuneTile) {
+      console.group(`[🏠 TILE] ${cur.name} - Sorte & Revés Tile (posição ${landedOneBased})`)
+      console.log('Condições para abrir modal:')
+      console.log('  - isLuckMisfortuneTile:', isLuckMisfortuneTile, '✅')
+      console.log('  - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+      console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
+      console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
+      console.log('  - turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
+      
+      if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
+        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Sorte & Revés')
+      } else {
+        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+        if (!isLuckMisfortuneTile) console.warn('  - Não é um tile de Sorte & Revés!')
+        if (!isMyTurn) console.warn('  - Não é minha vez! isMyTurn:', isMyTurn)
+        if (!pushModal) console.warn('  - pushModal não está disponível!')
+        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
+      }
+      console.groupEnd()
+    }
     if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        console.log(`[🎲 MODAL] ${cur.name} - Tentando abrir modal Sorte & Revés`)
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
@@ -1139,24 +1227,42 @@ export function useTurnEngine({
             console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
             console.log('[DEBUG] ✅ Jogadores antes:', players.map(p => p.name), 'depois:', turnData.nextPlayers.map(p => p.name))
             
+            // ✅ CORREÇÃO CRÍTICA: Limpa pendingTurnData ANTES de atualizar o estado para evitar condições de corrida
+            console.log('🧹 LIMPANDO pendingTurnDataRef')
+            pendingTurnDataRef.current = null
+            
             // ✅ CORREÇÃO: Atualiza o estado local PRIMEIRO antes de fazer broadcast
             // Isso garante que o turnIdx seja atualizado antes da sincronização
+            console.log('📝 ATUALIZANDO ESTADO LOCAL:')
+            console.log('  - setTurnIdx(', turnData.nextTurnIdx, ') - ANTES:', turnIdx)
+            console.log('  - setPlayers(', turnData.nextPlayers.length, 'jogadores)')
+            console.log('  - setRound(', turnData.nextRound, ') - ANTES:', round)
+            
+            // ✅ CORREÇÃO CRÍTICA: Atualiza o estado local ANTES do broadcast
+            // O broadcastState já atualiza o estado local, mas é melhor fazer explicitamente aqui também
             setTurnIdx(turnData.nextTurnIdx)
             setPlayers(turnData.nextPlayers)
             setRound(turnData.nextRound)
             
-            // ✅ CORREÇÃO: Limpa pendingTurnData ANTES do broadcast para evitar condições de corrida
-            pendingTurnDataRef.current = null
-            
-            // ✅ CORREÇÃO: Faz broadcast DEPOIS de atualizar o estado local
-            // Isso garante que a sincronização receba o estado correto
-            console.log('[DEBUG] ✅ Fazendo broadcast - turnIdx:', turnData.nextTurnIdx, 'round:', turnData.nextRound)
-            broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
-            
-            // ✅ CORREÇÃO: Desativa o lock DEPOIS de mudar o turno
+            // ✅ CORREÇÃO: Desativa o lock DEPOIS de atualizar o estado mas ANTES do broadcast
+            // Isso garante que o próximo jogador pode receber o estado correto
+            console.log('🔓 DESATIVANDO LOCK:')
+            console.log('  - setTurnLockBroadcast(false)')
+            console.log('  - setLockOwner(null)')
             setTurnLockBroadcast(false)
             // ✅ CORREÇÃO: Limpa o lockOwner para permitir que o próximo jogador defina seu próprio lockOwner
             setLockOwner(null)
+            
+            // ✅ CORREÇÃO: Faz broadcast DEPOIS de atualizar o estado local
+            // Isso garante que a sincronização receba o estado correto
+            console.log('📡 BROADCAST - Enviando mudança de turno:')
+            console.log('  - turnIdx:', turnData.nextTurnIdx)
+            console.log('  - round:', turnData.nextRound)
+            console.log('  - players:', turnData.nextPlayers.length)
+            broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
+            
+            console.log('✅ TURNO MUDADO COM SUCESSO')
+            console.groupEnd()
           } else {
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
             // Se não há turnData mas há lock ativo, desativa o lock de qualquer forma
@@ -1632,10 +1738,26 @@ export function useTurnEngine({
       setTurnIdx(nextIdx)
       setTurnLockBroadcast(false)
       broadcastState(updatedPlayers, nextIdx, round)
-      console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
+      const finalPlayer = updatedPlayers[nextIdx]
+      console.log('🏁 advanceAndMaybeLap FINALIZADA (FALÊNCIA)')
+      console.log('  - Jogador:', finalPlayer?.name)
+      console.log('  - Posição final:', finalPlayer?.pos)
+      console.log('  - Saldo final:', finalPlayer?.cash)
+      console.log('  - Próximo jogador:', updatedPlayers[nextIdx]?.name)
+      console.groupEnd()
       return
     }
-    console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
+    const finalPlayer = nextPlayers[curIdx]
+    console.log('🏁 advanceAndMaybeLap FINALIZADA NORMALMENTE')
+    console.log('  - Jogador:', finalPlayer?.name)
+    console.log('  - Posição final:', finalPlayer?.pos)
+    console.log('  - Saldo final:', finalPlayer?.cash)
+    console.log('  - modalLocks:', modalLocks)
+    console.log('  - turnLock:', turnLock)
+    console.log('  - lockOwner:', lockOwner)
+    console.log('  - pendingTurnData:', pendingTurnDataRef.current ? 'existe' : 'null')
+    console.log('  - Aguardando fechamento de modais para mudar turno...')
+    console.groupEnd()
   }, [
     phase, players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,

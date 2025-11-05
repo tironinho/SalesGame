@@ -187,10 +187,17 @@ export default function App() {
         }
 
         if (d.type === 'SYNC' && phase === 'game') {
-          console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
-          console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
+          console.group(`[App] SYNC recebido - turnIdx: ${d.turnIdx}, round: ${d.round}, source: ${d.source}`)
+          console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid, 'meId:', meId)
           console.log('[App] SYNC - jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
           console.log('[App] SYNC - jogadores remotos:', d.players?.map(p => ({ id: p.id, name: p.name })))
+          
+          // ✅ CORREÇÃO CRÍTICA: Se o SYNC é do próprio cliente, ignora (evita loop de sincronização)
+          if (String(d.source) === String(meId)) {
+            console.log('[App] SYNC - ⚠️ Ignorando SYNC do próprio cliente (source:', d.source, 'meId:', meId, ')')
+            console.groupEnd()
+            return
+          }
           
           // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de processar jogadores
           // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
@@ -314,11 +321,17 @@ export default function App() {
             }
           }
           // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo do BroadcastChannel)
+          // ✅ CORREÇÃO CRÍTICA: Mas só ignora se o turnIdx remoto também for menor ou igual (para não bloquear avanços válidos)
           else if (d.round !== undefined && d.round < round) {
             console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', d.round, 'local round:', round, 'turnIdx remoto:', d.turnIdx, 'turnIdx local:', turnIdx)
           }
-          // ✅ CORREÇÃO: BroadcastChannel tem prioridade sobre Supabase - sempre sincroniza se o turnIdx é diferente
-          else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+          // ✅ CORREÇÃO CRÍTICA: Se o round remoto é igual ao local mas o turnIdx remoto é maior, significa que outro jogador avançou - DEVE sincronizar
+          else if (d.round !== undefined && d.round === round && d.turnIdx !== undefined && d.turnIdx > turnIdx) {
+            console.log('[App] SYNC - ✅ Sincronizando turnIdx (outro jogador avançou) - remoto:', d.turnIdx, 'local:', turnIdx, 'round:', round)
+            setTurnIdx(d.turnIdx)
+          }
+          // ✅ CORREÇÃO: BroadcastChannel tem prioridade sobre Supabase - sempre sincroniza se o turnIdx é diferente e o round é igual ou maior
+          else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx && (d.round === undefined || d.round >= round)) {
             console.log('[App] SYNC - Sincronizando turnIdx (BroadcastChannel) - remoto:', d.turnIdx, 'local:', turnIdx, 'round remoto:', d.round, 'round local:', round)
             setTurnIdx(d.turnIdx)
           }
@@ -373,6 +386,8 @@ export default function App() {
           if (d.winner !== undefined) {
             setWinner(d.winner)
           }
+          
+          console.groupEnd()
         }
       }
       bcRef.current = bc
@@ -639,8 +654,33 @@ export default function App() {
   }
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
+    console.group(`[📡 BROADCAST] Enviando estado - turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
+    console.log('  - players:', nextPlayers.length)
+    console.log('  - turnIdx:', nextTurnIdx, '(local atual:', turnIdx, ')')
+    console.log('  - round:', nextRound, '(local atual:', round, ')')
+    console.log('  - source (meId):', meId)
+    
+    // ✅ CORREÇÃO CRÍTICA: Atualiza o estado LOCAL ANTES de fazer broadcast
+    // Isso garante que o cliente que faz o broadcast também atualiza seu próprio estado
+    // Isso previne que o cliente ignore seu próprio broadcast por pensar que o estado remoto é antigo
+    if (nextTurnIdx !== turnIdx) {
+      console.log('  - ⚠️ turnIdx mudou - atualizando estado local ANTES do broadcast')
+      console.log('  - turnIdx atual:', turnIdx, '→ novo:', nextTurnIdx)
+      setTurnIdx(nextTurnIdx)
+    }
+    if (nextRound !== round) {
+      console.log('  - ⚠️ round mudou - atualizando estado local ANTES do broadcast')
+      console.log('  - round atual:', round, '→ novo:', nextRound)
+      setRound(nextRound)
+    }
+    if (JSON.stringify(nextPlayers) !== JSON.stringify(players)) {
+      console.log('  - ⚠️ players mudaram - atualizando estado local ANTES do broadcast')
+      setPlayers(nextPlayers)
+    }
+    
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    
     // 2) entre abas
     try {
       bcRef.current?.postMessage?.({
@@ -652,7 +692,12 @@ export default function App() {
         winner: winnerState,
         source: meId,
       })
-    } catch (e) { console.warn('[App] broadcastState failed:', e) }
+      console.log('  - ✅ Broadcast enviado via BroadcastChannel')
+    } catch (e) { 
+      console.warn('[App] broadcastState failed:', e) 
+    }
+    
+    console.groupEnd()
   }
 
   function broadcastStart(nextPlayers) {
@@ -787,16 +832,23 @@ export default function App() {
       } else {
         console.log('[App] ⚠️ isMyTurn - Player', turnIdx + 1, 'não reconheceu que é sua vez! Verificando...')
       }
-      console.log('[App] ⚠️ isMyTurn - players:', players.map(p => ({ name: p.name, id: p.id })))
+      console.log('[App] ⚠️ isMyTurn - players:', players.map(p => ({ name: p.name, id: p.id, index: players.indexOf(p) })))
       console.log('[App] ⚠️ isMyTurn - myName:', myName, 'myUid:', myUid, 'owner.id:', owner.id)
+      console.log('[App] ⚠️ isMyTurn - window.__MY_UID:', window.__MY_UID || window.__myUid || window.__playerId || 'undefined')
       
       // ✅ CORREÇÃO CRÍTICA: Se o turnIdx indica que é minha vez mas o myUid não corresponde, loga detalhes
       const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
       if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
         console.log('[App] ⚠️ isMyTurn - myUid está incorreto! Deveria ser:', mineByName.id, 'mas é:', myUid)
+        console.log('[App] ⚠️ isMyTurn - jogador encontrado pelo nome:', mineByName)
         // O useEffect acima deve corrigir isso
+      } else if (!mineByName) {
+        console.log('[App] ⚠️ isMyTurn - Nenhum jogador encontrado pelo nome:', myName)
       }
+    } else if (isMine) {
+      console.log('[App] ✅ isMyTurn - É minha vez!', owner.name, 'pode jogar')
     }
+    console.groupEnd()
     return isMine
   }, [players, turnIdx, myUid, phase, myName])
 

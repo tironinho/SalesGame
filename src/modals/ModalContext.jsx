@@ -16,33 +16,51 @@ export function ModalProvider({ children }) {
 
   // fecha a modal do topo e resolve a promise (se houver)
   const resolveTop = React.useCallback((payload) => {
+    console.group(`[🎲 MODAL] FECHANDO MODAL`)
+    console.log('Stack ANTES:', stack.length, 'modais')
+    console.log('Payload recebido:', payload)
+    console.log('Resolver disponível:', resolverRef.current !== null)
+    
     const res = resolverRef.current
     resolverRef.current = null
-    setStack((s) => s.slice(0, -1)) // pop
     
     // Logs para rastrear ações do jogador nas modais
     if (payload) {
       if (payload.action === 'SKIP') {
-        console.log('[🎲 MODAL] Jogador clicou em "Não comprar" ou fechou modal')
+        console.log('✅ Ação: Jogador clicou em "Não comprar" ou fechou modal')
       } else if (payload.action === 'ACK') {
-        console.log('[🎲 MODAL] Jogador clicou em "OK" ou confirmou')
+        console.log('✅ Ação: Jogador clicou em "OK" ou confirmou')
       } else if (payload.action === 'RECOVERY') {
-        console.log('[🎲 MODAL] Jogador escolheu "Recuperação Financeira"')
+        console.log('✅ Ação: Jogador escolheu "Recuperação Financeira"')
       } else if (payload.action === 'BANKRUPT') {
-        console.log('[🎲 MODAL] Jogador escolheu "Declarar Falência"')
+        console.log('✅ Ação: Jogador escolheu "Declarar Falência"')
       } else if (payload.type === 'LOAN' || payload.type === 'FIRE' || payload.type === 'REDUCE') {
-        console.log(`[🎲 MODAL] Jogador executou ação de recuperação: ${payload.type}`)
+        console.log(`✅ Ação: Jogador executou ação de recuperação: ${payload.type}`)
       } else if (payload.bought || payload.purchased) {
-        console.log('[🎲 MODAL] Jogador comprou algo na modal')
+        console.log('✅ Ação: Jogador comprou algo na modal')
+        console.log('  - Detalhes da compra:', payload)
       } else {
-        console.log('[🎲 MODAL] Jogador executou ação na modal:', payload)
+        console.log('✅ Ação: Jogador executou ação na modal:', payload)
       }
     } else {
-      console.log('[🎲 MODAL] Jogador fechou modal (sem payload)')
+      console.log('⚠️ Modal fechada sem payload')
     }
     
-    if (res) res(payload)
-  }, [])
+    setStack((s) => {
+      const newStack = s.slice(0, -1) // pop
+      console.log('Stack DEPOIS:', newStack.length, 'modais')
+      console.log('IDs das modais restantes:', newStack.map(m => m.id))
+      console.groupEnd()
+      return newStack
+    })
+    
+    if (res) {
+      console.log('[🎲 MODAL] Resolvendo promise com payload:', payload)
+      res(payload)
+    } else {
+      console.warn('[🎲 MODAL] ⚠️ Nenhum resolver encontrado!')
+    }
+  }, [stack])
 
   // utilitários para botões
   const closeModal = React.useCallback(() => resolveTop({ action: 'SKIP' }), [resolveTop])
@@ -68,14 +86,28 @@ export function ModalProvider({ children }) {
     const elWithResolve = React.cloneElement(element, {
       onResolve: (payload) => resolveTop(payload),
     })
-    setStack((s) => [...s, { id, el: elWithResolve }])
-  }, [resolveTop])
+    console.group(`[🎲 MODAL] ABRINDO MODAL - ID: ${id}`)
+    console.log('Stack ANTES:', stack.length, 'modais')
+    console.log('Tipo do elemento:', element?.type?.name || element?.type || typeof element)
+    console.log('Props do elemento:', element?.props || {})
+    setStack((s) => {
+      const newStack = [...s, { id, el: elWithResolve }]
+      console.log('Stack DEPOIS:', newStack.length, 'modais')
+      console.log('IDs das modais:', newStack.map(m => m.id))
+      console.groupEnd()
+      return newStack
+    })
+  }, [resolveTop, stack])
 
   // retorna uma promise que será resolvida quando a modal do topo chamar onResolve
-  const awaitTop = React.useCallback(() =>
-    new Promise((resolve) => {
+  const awaitTop = React.useCallback(() => {
+    console.log('[🎲 MODAL] awaitTop chamado - Criando promise para aguardar fechamento da modal')
+    console.log('  - Stack atual:', stack.length, 'modais')
+    return new Promise((resolve) => {
       resolverRef.current = resolve
-    }), [])
+      console.log('[🎲 MODAL] Promise criada - Aguardando resolução da modal')
+    })
+  }, [stack])
 
   // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
