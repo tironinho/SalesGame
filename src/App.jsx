@@ -142,11 +142,27 @@ export default function App() {
 
           console.log('[App] START recebido - jogadores:', mapped.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0 (forçado)')
 
-          // adota UID real se PlayersLobby tiver setado
+          // ✅ CORREÇÃO: Adota UID real se PlayersLobby tiver setado
+          // Tenta primeiro pelo window.__MY_UID, depois pelo nome
           try {
             const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-            if (wuid) setMyUid(String(wuid))
-          } catch {}
+            if (wuid) {
+              const foundPlayer = mapped.find(p => String(p.id) === String(wuid))
+              if (foundPlayer) {
+                console.log('[App] START - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
+                setMyUid(String(wuid))
+              }
+            } else {
+              // Se não encontrou pelo window.__MY_UID, tenta pelo nome
+              const mineByName = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+                console.log('[App] START - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id)
+                setMyUid(String(mineByName.id))
+              }
+            }
+          } catch (e) {
+            console.warn('[App] START - Erro ao atualizar myUid:', e)
+          }
 
           setPlayers(mapped)
           // ✅ CORREÇÃO: Garante que o turnIdx seja sempre 0 (jogador 1) ao iniciar
@@ -627,6 +643,29 @@ export default function App() {
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
   }
 
+  // ✅ CORREÇÃO: Garante que myUid seja atualizado quando players mudar (especialmente no início do jogo)
+  useEffect(() => {
+    if (players.length > 0 && phase === 'game') {
+      // Tenta encontrar o jogador pelo nome salvo primeiro
+      const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+      if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
+        console.log('[App] useEffect - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
+        setMyUid(String(mineByName.id))
+      }
+      // Se não encontrou pelo nome, tenta pelo window.__MY_UID
+      else if (!mineByName) {
+        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+        if (wuid) {
+          const foundPlayer = players.find(p => String(p.id) === String(wuid))
+          if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
+            console.log('[App] useEffect - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name)
+            setMyUid(String(wuid))
+          }
+        }
+      }
+    }
+  }, [players, phase, myName, myUid])
+
   // ====== "é minha vez?"
   const current = players[turnIdx]
   const isMyTurn = useMemo(() => {
@@ -636,9 +675,15 @@ export default function App() {
       return false
     }
     const isMine = owner.id != null && String(owner.id) === String(myUid)
-    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
+    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine, 'turnIdx:', turnIdx)
+    // ✅ CORREÇÃO: Log adicional para debug
+    if (!isMine && phase === 'game' && turnIdx === 0) {
+      console.log('[App] ⚠️ isMyTurn - Player 1 não reconheceu que é sua vez! Verificando...')
+      console.log('[App] ⚠️ isMyTurn - players:', players.map(p => ({ name: p.name, id: p.id })))
+      console.log('[App] ⚠️ isMyTurn - myName:', myName, 'myUid:', myUid)
+    }
     return isMine
-  }, [players, turnIdx, myUid])
+  }, [players, turnIdx, myUid, phase, myName])
 
   // ====== Validação do estado do jogo (modo debug)
   useEffect(() => {
@@ -803,11 +848,27 @@ export default function App() {
           )
           if (mapped.length === 0) return
 
-          // alinha meu UID com o id real (comparando pelo nome salvo)
+          // ✅ CORREÇÃO: Alinha meu UID com o id real (comparando pelo nome salvo)
+          // Tenta primeiro pelo window.__MY_UID, depois pelo nome
           try {
-            const mine = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-            if (mine?.id) setMyUid(String(mine.id))
-          } catch {}
+            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
+            if (wuid) {
+              const foundPlayer = mapped.find(p => String(p.id) === String(wuid))
+              if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
+                console.log('[App] onStartGame - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
+                setMyUid(String(wuid))
+              }
+            } else {
+              // Se não encontrou pelo window.__MY_UID, tenta pelo nome
+              const mine = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+              if (mine?.id && String(mine.id) !== String(myUid)) {
+                console.log('[App] onStartGame - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mine.id)
+                setMyUid(String(mine.id))
+              }
+            }
+          } catch (e) {
+            console.warn('[App] onStartGame - Erro ao atualizar myUid:', e)
+          }
 
           setPlayers(mapped)
           setTurnIdx(0)
