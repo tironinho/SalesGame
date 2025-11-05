@@ -169,15 +169,29 @@ export default function App() {
           setTurnIdx(d.turnIdx)
           setRound(d.round)
           
-          // Preserva apenas certificados e treinamentos locais (dados de progresso)
+          // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
           const currentPlayers = players
           const syncedPlayers = d.players.map(syncedPlayer => {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
+            // Se é o próprio jogador, preserva TODOS os dados locais
+            if (String(syncedPlayer.id) === String(myUid)) {
+              return {
+                ...localPlayer,
+                // Aplica apenas certificados e treinamentos sincronizados (se houver)
+                az: syncedPlayer.az || localPlayer.az || 0,
+                am: syncedPlayer.am || localPlayer.am || 0,
+                rox: syncedPlayer.rox || localPlayer.rox || 0,
+                trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
+                onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+              }
+            }
+            
+            // Para outros jogadores, aplica dados sincronizados
             return {
               ...syncedPlayer,
-              // Preserva apenas dados de progresso local (certificados e treinamentos)
+              // Preserva certificados e treinamentos locais (dados de progresso)
               az: localPlayer.az || syncedPlayer.az || 0,
               am: localPlayer.am || syncedPlayer.am || 0,
               rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -273,15 +287,29 @@ export default function App() {
 
     let changed = false
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
-      // Preserva apenas certificados e treinamentos locais (dados de progresso)
+      // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
       const currentPlayers = players
       const syncedPlayers = np.map(syncedPlayer => {
         const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
         if (!localPlayer) return syncedPlayer
         
+        // Se é o próprio jogador, preserva TODOS os dados locais
+        if (String(syncedPlayer.id) === String(myUid)) {
+          return {
+            ...localPlayer,
+            // Aplica apenas certificados e treinamentos sincronizados (se houver)
+            az: syncedPlayer.az || localPlayer.az || 0,
+            am: syncedPlayer.am || localPlayer.am || 0,
+            rox: syncedPlayer.rox || localPlayer.rox || 0,
+            trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
+            onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
+          }
+        }
+        
+        // Para outros jogadores, aplica dados sincronizados
         return {
           ...syncedPlayer,
-          // Preserva apenas dados de progresso local (certificados e treinamentos)
+          // Preserva certificados e treinamentos locais (dados de progresso)
           az: localPlayer.az || syncedPlayer.az || 0,
           am: localPlayer.am || syncedPlayer.am || 0,
           rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -550,8 +578,6 @@ export default function App() {
 
   // 4) Jogo
   if (phase === 'game') {
-    const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
-
     return (
     <div className="page">
       <header className="topbar">
@@ -601,7 +627,9 @@ export default function App() {
                 onAction(act)
               }}
               current={current}
-              isMyTurn={controlsCanRoll}
+              isMyTurn={isMyTurn}
+              hasModalOpen={modalLocks > 0}
+              turnLocked={turnLock}
             />
             <div style={{ marginTop: 10 }}>
               <button

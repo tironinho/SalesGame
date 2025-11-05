@@ -1,11 +1,12 @@
 // src/components/Controls.jsx
 import React, { useEffect } from 'react'
 
-export default function Controls({ onAction, current, isMyTurn = true }) {
+export default function Controls({ onAction, current, isMyTurn = true, hasModalOpen = false, turnLocked = false }) {
 
   // AJUSTE: bloqueia tudo se o jogador atual estiver falido
   const isBankrupt = !!current?.bankrupt
-  const canRoll = !!isMyTurn && !isBankrupt
+  // ✅ CORREÇÃO: Bloqueia botão se houver modal aberta, turno bloqueado ou não for a vez do jogador
+  const canRoll = !!isMyTurn && !isBankrupt && !hasModalOpen && !turnLocked
 
   // Listener para detectar mudanças no estado do botão "rolar dados"
   useEffect(() => {
@@ -17,18 +18,20 @@ export default function Controls({ onAction, current, isMyTurn = true }) {
     if (canRoll) {
       console.log(`[🎲 BOTÃO ROLAR DADOS] ✅ HABILITADO para ${playerName} - Pode jogar!`)
     } else {
-      console.log(`[🎲 BOTÃO ROLAR DADOS] ❌ DESABILITADO para ${playerName} - Motivos: isMyTurn=${isMyTurn}, isBankrupt=${isBankrupt}`)
+      console.log(`[🎲 BOTÃO ROLAR DADOS] ❌ DESABILITADO para ${playerName} - Motivos: isMyTurn=${isMyTurn}, isBankrupt=${isBankrupt}, hasModalOpen=${hasModalOpen}, turnLocked=${turnLocked}`)
     }
-  }, [canRoll, current?.name, current?.id, isMyTurn, isBankrupt])
+  }, [canRoll, current?.name, current?.id, isMyTurn, isBankrupt, hasModalOpen, turnLocked])
 
   useEffect(() => {
     console.groupCollapsed('[Controls] render')
     console.log('current player:', current)
     console.log('isMyTurn prop:', isMyTurn)
     console.log('isBankrupt:', isBankrupt) // AJUSTE: log útil
+    console.log('hasModalOpen:', hasModalOpen) // ✅ CORREÇÃO: log de modal aberta
+    console.log('turnLocked:', turnLocked) // ✅ CORREÇÃO: log de turno bloqueado
     console.log('canRoll (final):', canRoll)
     console.groupEnd()
-  }, [current?.id, current?.name, current?.bankrupt, isMyTurn, canRoll])
+  }, [current?.id, current?.name, current?.bankrupt, isMyTurn, hasModalOpen, turnLocked, canRoll])
 
   const roll = () => {
     console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
