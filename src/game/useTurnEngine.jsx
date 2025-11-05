@@ -506,11 +506,34 @@ export function useTurnEngine({
     setPlayers(nextPlayers)
     setRound(nextRound)
     
-    // Armazena os dados do próximo turno para uso na função tick
-    pendingTurnDataRef.current = {
-      nextPlayers,
-      nextTurnIdx,
-      nextRound
+    // ✅ CORREÇÃO CRÍTICA: Verifica se há tiles de modal antes de definir pendingTurnDataRef
+    // Isso previne que o tick mude o turno antes das modais serem abertas
+    const landedOneBased = newPos + 1
+    const crossedStart1 = crossedTile(oldPos, newPos, 0)
+    const crossedExpenses23 = crossedTile(oldPos, newPos, 22)
+    const hasModalTile = 
+      (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49) || // ERP
+      (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47) || // Training
+      (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43) || // DirectBuy
+      (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53) || // InsideSales
+      [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased) || // Clientes
+      [3,14,22,26,35,41,48,54].includes(landedOneBased) || // Sorte & Revés
+      crossedStart1 || // Start
+      crossedExpenses23 // Despesas
+    
+    // ✅ CORREÇÃO CRÍTICA: Só define pendingTurnDataRef se NÃO houver tiles de modal
+    // Se houver tiles de modal, o pendingTurnDataRef será definido DEPOIS que todas as modais forem fechadas
+    // Isso garante que o tick não mude o turno antes das modais serem abertas
+    if (!hasModalTile || !isMyTurn || !pushModal || !awaitTop) {
+      // Armazena os dados do próximo turno para uso na função tick
+      pendingTurnDataRef.current = {
+        nextPlayers,
+        nextTurnIdx,
+        nextRound
+      }
+      console.log('[DEBUG] ✅ pendingTurnDataRef definido (sem tiles de modal ou condições não atendidas)')
+    } else {
+      console.log('[DEBUG] ⚠️ pendingTurnDataRef NÃO definido ainda (há tiles de modal que serão abertos)')
     }
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
@@ -541,9 +564,7 @@ export function useTurnEngine({
       return
     }
 
-    const landedOneBased = newPos + 1
-    const crossedStart1 = crossedTile(oldPos, newPos, 0)
-    const crossedExpenses23 = crossedTile(oldPos, newPos, 22)
+    // ✅ CORREÇÃO: landedOneBased, crossedStart1 e crossedExpenses23 já foram definidos acima (para verificar hasModalTile)
 
     console.log('🏠 TILES DETECTADOS APÓS MOVIMENTO:')
     console.log('  - landedOneBased (posição 1-based):', landedOneBased)
@@ -580,6 +601,16 @@ export function useTurnEngine({
     }
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal ERP)')
+        }
         const currentErpLevel = players[curIdx]?.erpLevel || null
         console.log('[DEBUG] ERP Modal - currentErpLevel:', currentErpLevel, 'player:', players[curIdx]?.name, 'erpLevel:', players[curIdx]?.erpLevel)
         const res = await openModalAndWait(<ERPSystemsModal 
@@ -603,6 +634,16 @@ export function useTurnEngine({
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
     if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Treinamento)')
+        }
         const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
         const res = await openModalAndWait(<TrainingModal
           canTrain={{
@@ -653,6 +694,16 @@ export function useTurnEngine({
     }
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Compra Direta)')
+        }
         const cashNow = nextPlayers[curIdx]?.cash ?? myCash
 
         const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
@@ -888,6 +939,16 @@ export function useTurnEngine({
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Inside Sales)')
+        }
         const res = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
         const cost = Number(res.cost ?? res.total ?? 0)
@@ -925,6 +986,16 @@ export function useTurnEngine({
     }
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Clientes)')
+        }
         const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const cost  = Number(res.totalCost || 0)
@@ -1083,6 +1154,16 @@ export function useTurnEngine({
     if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         console.log(`[🎲 MODAL] ${cur.name} - Tentando abrir modal Sorte & Revés`)
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Sorte & Revés)')
+        }
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
@@ -1153,6 +1234,16 @@ export function useTurnEngine({
       const meNow = nextPlayers[curIdx] || {}
       const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Faturamento)')
+        }
         await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
@@ -1182,6 +1273,16 @@ export function useTurnEngine({
       })
 
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
+        // Isso garante que o tick não mude o turno antes da modal ser fechada
+        if (!pendingTurnDataRef.current) {
+          pendingTurnDataRef.current = {
+            nextPlayers,
+            nextTurnIdx,
+            nextRound
+          }
+          console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Despesas Operacionais)')
+        }
         await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
         
