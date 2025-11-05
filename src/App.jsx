@@ -26,7 +26,7 @@ import { validateGameState as validateGameStateRealTime } from './game/__tests__
 import './game/__tests__/index.js'
 
 // Identidade por aba
-import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
+import { getOrCreateTabPlayerId, getOrSetTabPlayerName, setTabPlayerName } from './auth'
 
 // Net (opcional)
 import { useGameNet } from './net/GameNetProvider.jsx'
@@ -449,6 +449,11 @@ export default function App() {
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
+    // ✅ CORREÇÃO: Log detalhado para debug quando WebSocket falha
+    if (nt !== null && nt !== turnIdx) {
+      console.log('[NET] ⚠️ turnIdx divergente detectado - remoto:', nt, 'local:', turnIdx, 'round remoto:', nr, 'round local:', round, 'gameJustStarted:', gameJustStarted)
+    }
+
     let changed = false
     
     // ✅ CORREÇÃO: Se o jogo acabou de começar (gameJustStarted = true), força turnIdx = 0
@@ -569,10 +574,24 @@ export default function App() {
             changed = true
           }
         }
-        // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
-        // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
-        else if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
-          console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+        // ✅ CORREÇÃO CRÍTICA: Se o turnIdx remoto é maior que o local E estamos no mesmo round, 
+        // significa que outro jogador avançou o turno - DEVE sincronizar (importante para quando WebSocket falha)
+        else if (nt > turnIdx && nr === round && nr === 1) {
+          // Se o round é 1 e o turnIdx remoto é maior, significa que o jogo já começou e outro jogador já jogou
+          // Isso é especialmente importante quando o WebSocket falha e o Player 2 precisa receber a atualização via polling
+          console.log('[NET] ✅ Sincronizando turnIdx (remoto maior que local - outro jogador avançou) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+          setTurnIdx(nt)
+          changed = true
+        }
+        // Se o jogo acabou de começar (round === 1 e turnIdx === 0) E o remoto é 0 também, está ok
+        // Mas se o remoto é > 0 e o local ainda é 0 no round 1, pode ser que o jogo já começou e outro jogador já jogou
+        // Mas só sincroniza se não for gameJustStarted (já tratado acima)
+        else if ((round === 1 && turnIdx === 0 && nt > 0) && !gameJustStarted) {
+          // ✅ CORREÇÃO: Se o jogo já começou (não está em gameJustStarted) e o remoto tem turnIdx > 0,
+          // significa que outro jogador já jogou - DEVE sincronizar (importante para quando WebSocket falha)
+          console.log('[NET] ✅ Sincronizando turnIdx (jogo em andamento - outro jogador já jogou) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+          setTurnIdx(nt)
+          changed = true
         }
         // ✅ CORREÇÃO: Se o turnIdx local é maior que o remoto E estamos no mesmo round, pode ser que o local esteja mais atualizado
         // Não sobrescreve se o turnIdx local é maior que o remoto (prioriza estado local mais recente)
@@ -943,6 +962,25 @@ export default function App() {
             })
           )
           if (mapped.length === 0) return
+
+          // ✅ NOVO: Se PlayersLobby informou quem sou eu, fixa myUid e meu nome para esta aba
+          try {
+            const meFromPayload = payload?.me || payload?.current || null
+            if (meFromPayload?.id) {
+              window.__MY_UID = String(meFromPayload.id)
+              if (String(myUid) !== String(meFromPayload.id)) {
+                console.log('[App] onStartGame - Fixando myUid pelo payload.me - antigo:', myUid, 'novo:', meFromPayload.id)
+                setMyUid(String(meFromPayload.id))
+              }
+            }
+            if (meFromPayload?.name) {
+              try {
+                setTabPlayerName(String(meFromPayload.name))
+              } catch {}
+            }
+          } catch (e) {
+            console.warn('[App] onStartGame - erro ao aplicar payload.me:', e)
+          }
 
           // ✅ CORREÇÃO: Alinha meu UID com o id real (comparando pelo nome salvo)
           // Tenta primeiro pelo window.__MY_UID, depois pelo nome
