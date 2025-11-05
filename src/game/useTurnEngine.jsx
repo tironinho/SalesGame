@@ -601,20 +601,26 @@ export function useTurnEngine({
     }
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        // Isso previne erros de "Cannot access before initialization"
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal ERP)')
         }
         const currentErpLevel = players[curIdx]?.erpLevel || null
         console.log('[DEBUG] ERP Modal - currentErpLevel:', currentErpLevel, 'player:', players[curIdx]?.name, 'erpLevel:', players[curIdx]?.erpLevel)
         const res = await openModalAndWait(<ERPSystemsModal 
-          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
         />)
         if (!res || res.action !== 'BUY') return
@@ -624,7 +630,7 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -634,17 +640,22 @@ export function useTurnEngine({
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
     if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Treinamento)')
         }
-        const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
+        const ownerForTraining = players.find(isMine) || capturedNextPlayers[curIdx]
         const res = await openModalAndWait(<TrainingModal
           canTrain={{
             comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -666,7 +677,7 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyTrainingPurchase(p, res)
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -694,17 +705,22 @@ export function useTurnEngine({
     }
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Compra Direta)')
         }
-        const cashNow = nextPlayers[curIdx]?.cash ?? myCash
+        const cashNow = capturedNextPlayers[curIdx]?.cash ?? myCash
 
         const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
         if (!res) return
@@ -715,7 +731,7 @@ export function useTurnEngine({
           if (open === 'MIX') {
             const currentMixLevel = players[curIdx]?.mixProdutos || null
             const r2 = await openModalAndWait(<MixProductsModal 
-              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentMixLevel}
             />)
             if (r2 && r2.action === 'BUY') {
@@ -733,14 +749,14 @@ export function useTurnEngine({
                     }
                   })
                 )
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'MANAGER') {
-            const r2 = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
               const cashDelta = Number(
@@ -757,28 +773,28 @@ export function useTurnEngine({
                   gestoresDelta: qty,
                   manutencaoDelta: mexp
                 }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'INSIDE') {
-            const r2 = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
               const cost = Number(r2.cost ?? r2.total ?? 0)
               if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
               const qty  = Number(r2.headcount ?? r2.qty ?? 1)
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'FIELD') {
-            const r2 = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
               const qty = Number(r2.headcount ?? r2.qty ?? 1)
               const deltas = {
@@ -791,14 +807,14 @@ export function useTurnEngine({
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'COMMON') {
-            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const qty  = Number(r2.headcount ?? r2.qty ?? 0)
               const deltas = {
@@ -811,7 +827,7 @@ export function useTurnEngine({
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
@@ -820,7 +836,7 @@ export function useTurnEngine({
           if (open === 'ERP') {
             const currentErpLevel = players[curIdx]?.erpLevel || null
             const r2 = await openModalAndWait(<ERPSystemsModal 
-              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentErpLevel}
             />)
             if (r2 && r2.action === 'BUY') {
@@ -828,14 +844,14 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'CLIENTS') {
-            const r2 = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const r2 = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
             if (r2 && r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
               if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
@@ -849,14 +865,14 @@ export function useTurnEngine({
                   manutencaoDelta: mAdd,
                   bensDelta: bensD
                 }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
           }
 
           if (open === 'TRAINING') {
-            const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
+            const ownerForTraining = players.find(isMine) || capturedNextPlayers[curIdx]
             const r2 = await openModalAndWait(<TrainingModal
               canTrain={{
                 comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
@@ -876,7 +892,7 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
               })
             }
             return
@@ -911,7 +927,7 @@ export function useTurnEngine({
                       bensDelta: bensD
                     })
               )
-              broadcastState(upd, nextTurnIdx, nextRound)
+              broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
               return upd
             })
             return
@@ -928,7 +944,7 @@ export function useTurnEngine({
                     directBuysPush: [ (res.item || { total }) ]
                   })
             )
-            broadcastState(upd, nextTurnIdx, nextRound)
+            broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
             return upd
           })
         }
@@ -939,17 +955,22 @@ export function useTurnEngine({
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Inside Sales)')
         }
-        const res = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
         const cost = Number(res.cost ?? res.total ?? 0)
         if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
@@ -958,7 +979,7 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -986,17 +1007,22 @@ export function useTurnEngine({
     }
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Clientes)')
         }
-        const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        const res = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const cost  = Number(res.totalCost || 0)
         if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
@@ -1014,7 +1040,7 @@ export function useTurnEngine({
                   bensDelta: bensD
                 })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -1024,7 +1050,12 @@ export function useTurnEngine({
     const isManagerTile = [18,24,29,51].includes(landedOneBased)
     if (isManagerTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
+        const res = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
         const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
         const cashDelta = Number(
@@ -1039,7 +1070,7 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -1049,7 +1080,12 @@ export function useTurnEngine({
     const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
     if (isFieldTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
+        const res = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
           const qty = Number(res.headcount ?? res.qty ?? 1)
           const deltas = {
@@ -1064,7 +1100,7 @@ export function useTurnEngine({
             const upd = ps.map((p, i) =>
               i !== curIdx ? p : applyDeltas(p, deltas)
             )
-            broadcastState(upd, nextTurnIdx, nextRound)
+            broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
             return upd
           })
         }
@@ -1075,7 +1111,12 @@ export function useTurnEngine({
     const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
-        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
+        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
         const qty  = Number(res.headcount ?? res.qty ?? 0)
         const deltas = {
@@ -1090,7 +1131,7 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, deltas)
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -1100,10 +1141,15 @@ export function useTurnEngine({
     const isMixTile = [7,31,44].includes(landedOneBased)
     if (isMixTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         const currentMixLevel = players[curIdx]?.mixProdutos || null
         console.log('[DEBUG] MIX Modal - currentMixLevel:', currentMixLevel, 'player:', players[curIdx]?.name, 'mixProdutos:', players[curIdx]?.mixProdutos)
         const res = await openModalAndWait(<MixProductsModal 
-          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
         />)
         if (!res || res.action !== 'BUY') return
@@ -1123,7 +1169,7 @@ export function useTurnEngine({
                   },
                 })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
       })()
@@ -1154,20 +1200,25 @@ export function useTurnEngine({
     if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
       ;(async () => {
         console.log(`[🎲 MODAL] ${cur.name} - Tentando abrir modal Sorte & Revés`)
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Sorte & Revés)')
         }
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
 
-        const meNow = nextPlayers[curIdx] || players.find(isMine) || {}
+        const meNow = capturedNextPlayers[curIdx] || players.find(isMine) || {}
 
         let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
         let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
@@ -1177,7 +1228,7 @@ export function useTurnEngine({
 
         if (cashDelta < 0) {
           const need = -cashDelta
-          await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', nextPlayers)
+          await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', capturedNextPlayers)
         }
 
         setPlayers(ps => {
@@ -1205,13 +1256,13 @@ export function useTurnEngine({
             }
             return next
           })
-          broadcastState(upd, nextTurnIdx, nextRound)
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
           return upd
         })
 
         const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
         if (anyDerived) {
-          const me2 = nextPlayers[curIdx] || players.find(isMine) || {}
+          const me2 = capturedNextPlayers[curIdx] || players.find(isMine) || {}
           let extra = 0
           if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
           if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
@@ -1222,7 +1273,7 @@ export function useTurnEngine({
           if (extra) {
             setPlayers(ps => {
               const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
-              broadcastState(upd, nextTurnIdx, nextRound); return upd
+              broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
             })
           }
         }
@@ -1234,22 +1285,28 @@ export function useTurnEngine({
       const meNow = nextPlayers[curIdx] || {}
       const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        const capturedMeNow = capturedNextPlayers[curIdx] || {}
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Faturamento)')
         }
         await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
-          broadcastState(upd, nextTurnIdx, nextRound); return upd
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
         })
-        appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
+        appendLog(`${capturedMeNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
     }
@@ -1273,21 +1330,27 @@ export function useTurnEngine({
       })
 
       ;(async () => {
+        // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
+        const capturedNextPlayers = nextPlayers
+        const capturedNextTurnIdx = nextTurnIdx
+        const capturedNextRound = nextRound
+        const capturedMeNow = capturedNextPlayers[curIdx] || {}
+        
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
         if (!pendingTurnDataRef.current) {
           pendingTurnDataRef.current = {
-            nextPlayers,
-            nextTurnIdx,
-            nextRound
+            nextPlayers: capturedNextPlayers,
+            nextTurnIdx: capturedNextTurnIdx,
+            nextRound: capturedNextRound
           }
           console.log('[DEBUG] ✅ pendingTurnDataRef definido (após abrir modal Despesas Operacionais)')
         }
         await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
         
-        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge)
-        const canPayExpenses = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', nextPlayers)
+        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', capturedNextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge)
+        const canPayExpenses = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', capturedNextPlayers)
         console.log('[DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses:', canPayExpenses)
         if (!canPayExpenses) {
           setTurnLockBroadcast(false)
@@ -1301,14 +1364,14 @@ export function useTurnEngine({
             const upd = ps.map((p,i)=>{
               if (i!==curIdx) return p
               const next = { ...p }
-              next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
+              next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: capturedNextRound }
               return next
             })
-            broadcastState(upd, turnIdx, round); return upd
+            broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
           })
         }
-        appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
-        if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+        appendLog(`${capturedMeNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
+        if (loanCharge > 0) appendLog(`${capturedMeNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
         // Log do saldo final após o processamento
         setPlayers(ps => {
           console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', ps[curIdx]?.name, 'Posição final:', ps[curIdx]?.pos, 'Saldo final:', ps[curIdx]?.cash)
