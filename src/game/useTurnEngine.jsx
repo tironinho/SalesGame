@@ -279,17 +279,21 @@ export function useTurnEngine({
     console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
 
     // ========= função recursiva para lidar com saldo insuficiente =========
+    // ✅ CORREÇÃO CRÍTICA: Captura variáveis do escopo para evitar TDZ
+    const capturedCurIdx = curIdx
+    const capturedTurnIdx = turnIdx
+    const capturedRound = round
     const handleInsufficientFunds = async (requiredAmount, context, action, currentPlayers = players) => {
-      const currentCash = Number(currentPlayers[curIdx]?.cash || 0)
+      const currentCash = Number(currentPlayers[capturedCurIdx]?.cash || 0)
       
       if (currentCash >= requiredAmount) {
         // Processa o pagamento já que tem saldo suficiente
         console.log('[DEBUG] ✅ Saldo suficiente! Processando pagamento de:', requiredAmount)
         const updatedPlayers = currentPlayers.map((p, i) => 
-          i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+          i !== capturedCurIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
         )
         setPlayers(updatedPlayers)
-        broadcastState(updatedPlayers, turnIdx, round)
+        broadcastState(updatedPlayers, capturedTurnIdx, capturedRound)
         return true // Tem saldo suficiente e pagou
       }
 
@@ -311,8 +315,8 @@ export function useTurnEngine({
       
       if (recoveryRes.action === 'RECOVERY') {
         // Abre modal de recuperação financeira (não pode ser fechada)
-        console.log('[DEBUG] Abrindo RecoveryModal para jogador:', currentPlayers[curIdx])
-        const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={currentPlayers[curIdx]} canClose={false} />)
+        console.log('[DEBUG] Abrindo RecoveryModal para jogador:', currentPlayers[capturedCurIdx])
+        const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={currentPlayers[capturedCurIdx]} canClose={false} />)
         console.log('[DEBUG] RecoveryModal retornou:', recoveryModalRes)
         if (recoveryModalRes) {
           // Processa a ação de recuperação
@@ -329,22 +333,22 @@ export function useTurnEngine({
               gestoresDelta: -Number(recoveryModalRes.items?.gestor || 0),
             }
             console.log('[DEBUG] Deltas de demissão:', deltas)
-            updatedPlayers = currentPlayers.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)))
-            console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[curIdx]?.cash)
+            updatedPlayers = currentPlayers.map((p, i) => (i !== capturedCurIdx ? p : applyDeltas(p, deltas)))
+            console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[capturedCurIdx]?.cash)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, capturedTurnIdx, capturedRound)
           } else if (recoveryModalRes.type === 'LOAN') {
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
             
             // Verifica se o jogador já tem um empréstimo pendente
-            const currentLoan = currentPlayers[curIdx]?.loanPending
+            const currentLoan = currentPlayers[capturedCurIdx]?.loanPending
             if (currentLoan && Number(currentLoan.amount) > 0) {
               console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
               // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
               const loanModalRes = await openModalAndWait(
                 <InsufficientFundsModal
                   requiredAmount={requiredAmount}
-                  currentCash={currentPlayers[curIdx]?.cash || 0}
+                  currentCash={currentPlayers[capturedCurIdx]?.cash || 0}
                   title="Empréstimo já realizado"
                   message={`Você já possui um empréstimo pendente de R$ ${Number(currentLoan.amount).toLocaleString()}. Cada jogador só pode ter um empréstimo por vez.`}
                   showRecoveryOptions={false}
@@ -357,7 +361,7 @@ export function useTurnEngine({
                 return false
               }
               // Processa falência
-              const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+              const updatedPlayers = currentPlayers.map((p, i) => (i === capturedCurIdx ? { ...p, bankrupt: true } : p))
               const alive = countAlivePlayers(updatedPlayers)
               if (alive <= 1) {
                 const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
@@ -365,38 +369,38 @@ export function useTurnEngine({
                 setPlayers(updatedPlayers)
                 setGameOver(true)
                 setTurnLockBroadcast(false)
-                broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+                broadcastState(updatedPlayers, capturedTurnIdx, capturedRound, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
                 return false
               }
-              const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+              const nextIdx = findNextAliveIdx(updatedPlayers, capturedCurIdx)
               setPlayers(updatedPlayers)
               setTurnIdx(nextIdx)
               setTurnLockBroadcast(false)
-              broadcastState(updatedPlayers, nextIdx, round)
+              broadcastState(updatedPlayers, nextIdx, capturedRound)
               return false
             }
             
             const amt = Number(recoveryModalRes.amount || 0)
             console.log('[DEBUG] Valor do empréstimo:', amt)
-            console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[capturedCurIdx]?.cash)
             updatedPlayers = currentPlayers.map((p, i) =>
-              i !== curIdx ? p : {
+              i !== capturedCurIdx ? p : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: { amount: amt, dueRound: round + 1, charged: false },
+                loanPending: { amount: amt, dueRound: capturedRound + 1, charged: false },
               }
             )
-            console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[curIdx]?.cash)
-            console.log('[DEBUG] Novo loanPending:', updatedPlayers[curIdx]?.loanPending)
+            console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[capturedCurIdx]?.cash)
+            console.log('[DEBUG] Novo loanPending:', updatedPlayers[capturedCurIdx]?.loanPending)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, capturedTurnIdx, capturedRound)
           } else if (recoveryModalRes.type === 'REDUCE') {
             console.log('[DEBUG] ✅ Condição REDUCE atendida! Processando redução:', recoveryModalRes)
             const selections = recoveryModalRes.items || []
             let totalCredit = 0
             console.log('[DEBUG] Seleções para reduzir:', selections)
             updatedPlayers = currentPlayers.map((p, i) => {
-              if (i !== curIdx) return p
+              if (i !== capturedCurIdx) return p
               let next = { ...p }
               for (const sel of selections) {
                 if (sel.selected) {
@@ -412,26 +416,26 @@ export function useTurnEngine({
               return next
             })
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
-            console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[capturedCurIdx]?.cash)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, capturedTurnIdx, capturedRound)
           } else {
             console.log('[DEBUG] ❌ Nenhuma condição foi atendida! Tipo:', recoveryModalRes.type, 'Action:', recoveryModalRes.action)
           }
           
           // Verifica se agora tem saldo suficiente após a recuperação
-          const newCash = Number(updatedPlayers[curIdx]?.cash || 0)
+          const newCash = Number(updatedPlayers[capturedCurIdx]?.cash || 0)
           console.log('[DEBUG] Verificando saldo após recuperação - Novo saldo:', newCash, 'Necessário:', requiredAmount)
           
           if (newCash >= requiredAmount) {
             console.log('[DEBUG] ✅ Saldo suficiente após recuperação! Processando pagamento de:', requiredAmount)
             // Processa o pagamento já que tem saldo suficiente
             const finalPlayers = updatedPlayers.map((p, i) => 
-              i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+              i !== capturedCurIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
             )
-            console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[curIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[curIdx]?.cash)
+            console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[capturedCurIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[capturedCurIdx]?.cash)
             setPlayers(finalPlayers)
-            broadcastState(finalPlayers, turnIdx, round)
+            broadcastState(finalPlayers, capturedTurnIdx, capturedRound)
             return true
           } else {
             console.log('[DEBUG] ❌ Saldo ainda insuficiente após recuperação. Continuando recursão...')
@@ -444,7 +448,7 @@ export function useTurnEngine({
         }
       } else if (recoveryRes.action === 'BANKRUPT') {
         // Processa falência
-        const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+        const updatedPlayers = currentPlayers.map((p, i) => (i === capturedCurIdx ? { ...p, bankrupt: true } : p))
         const alive = countAlivePlayers(updatedPlayers)
         if (alive <= 1) {
           const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
@@ -452,14 +456,14 @@ export function useTurnEngine({
           setPlayers(updatedPlayers)
           setGameOver(true)
           setTurnLockBroadcast(false)
-          broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+          broadcastState(updatedPlayers, capturedTurnIdx, capturedRound, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
           return false
         }
-        const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+        const nextIdx = findNextAliveIdx(updatedPlayers, capturedCurIdx)
         setPlayers(updatedPlayers)
         setTurnIdx(nextIdx)
         setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, nextIdx, round)
+        broadcastState(updatedPlayers, nextIdx, capturedRound)
         return false
       } else {
         setTurnLockBroadcast(false)
@@ -1322,12 +1326,13 @@ export function useTurnEngine({
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
         const capturedNextRound = finalNextRound
+        const capturedRound = round  // ✅ CORREÇÃO: Captura round para evitar TDZ
         const capturedMeNow = capturedNextPlayers[curIdx] || {}
         
         // ✅ CORREÇÃO CRÍTICA: Calcula todas as variáveis dentro da função assíncrona para evitar problemas de TDZ
         const expense = Math.max(0, Math.floor(computeDespesasFor(capturedMeNow)))
         const lp = capturedMeNow.loanPending || {}
-        const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (round >= Math.max(1, Number(lp.dueRound || 0)))
+        const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (capturedRound >= Math.max(1, Number(lp.dueRound || 0)))
         const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
         
         console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', capturedMeNow.name, 'Posição atual:', capturedMeNow.pos)
@@ -1336,7 +1341,7 @@ export function useTurnEngine({
           amount: Number(lp.amount),
           charged: lp.charged,
           dueRound: Number(lp.dueRound || 0),
-          currentRound: round,
+          currentRound: capturedRound,
           shouldCharge: shouldChargeLoan
         })
         
