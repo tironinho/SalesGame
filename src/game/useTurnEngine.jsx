@@ -1055,11 +1055,13 @@ export function useTurnEngine({
         if (isLockOwner) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
+          console.log('[DEBUG] tick - turnData:', turnData ? `nextTurnIdx=${turnData.nextTurnIdx}, nextRound=${turnData.nextRound}` : 'null')
           if (turnData) {
             const currentPlayerName = players[turnIdx]?.name || 'Jogador'
             const nextPlayerName = turnData.nextPlayers[turnData.nextTurnIdx]?.name || 'Jogador'
             console.log(`[🎲 TURNO] ✅ MUDANDO TURNO - ${currentPlayerName} terminou → ${nextPlayerName} pode jogar`)
             console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+            console.log('[DEBUG] ✅ Jogadores antes:', players.map(p => p.name), 'depois:', turnData.nextPlayers.map(p => p.name))
             
             // ✅ CORREÇÃO: Atualiza o estado local PRIMEIRO antes de fazer broadcast
             // Isso garante que o turnIdx seja atualizado antes da sincronização
@@ -1072,17 +1074,22 @@ export function useTurnEngine({
             
             // ✅ CORREÇÃO: Faz broadcast DEPOIS de atualizar o estado local
             // Isso garante que a sincronização receba o estado correto
+            console.log('[DEBUG] ✅ Fazendo broadcast - turnIdx:', turnData.nextTurnIdx, 'round:', turnData.nextRound)
             broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
             
             // ✅ CORREÇÃO: Desativa o lock DEPOIS de mudar o turno
             setTurnLockBroadcast(false)
+            // ✅ CORREÇÃO: Limpa o lockOwner para permitir que o próximo jogador defina seu próprio lockOwner
+            setLockOwner(null)
           } else {
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
             // Se não há turnData mas há lock ativo, desativa o lock de qualquer forma
             setTurnLockBroadcast(false)
+            setLockOwner(null)
           }
         } else {
           console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
+          console.log('[DEBUG] ❌ tick - lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
         }
         return
       }

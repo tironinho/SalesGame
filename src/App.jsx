@@ -155,6 +155,10 @@ export default function App() {
           setRound(1)
           setRoundFlags(new Array(Math.max(1, mapped.length)).fill(false))
           setGameOver(false); setWinner(null)
+          // ✅ CORREÇÃO: Marca que o jogo acabou de começar para proteger o turnIdx inicial
+          setGameJustStarted(true)
+          // ✅ CORREÇÃO: Reseta o flag após um pequeno delay para permitir sincronização normal depois
+          setTimeout(() => setGameJustStarted(false), 3000)
           setPhase('game')
           setLog(['Jogo iniciado!'])
           console.log('[App] START aplicado - turnIdx: 0, jogadores:', mapped.length, 'nomes:', mapped.map(p => p.name))
@@ -251,7 +255,11 @@ export default function App() {
           // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
           // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
           const turnIdxChanged = round === 1 && turnIdx === 0 && d.turnIdx > 0 ? false : (d.turnIdx !== turnIdx)
-          if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
+          
+          // ✅ CORREÇÃO: Se gameJustStarted está ativo, ignora sincronização de turnIdx remoto
+          if (gameJustStarted && d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
+            console.log('[App] SYNC - gameJustStarted ativo - ignorando sincronização de turnIdx remoto - remoto:', d.turnIdx, 'local:', turnIdx)
+          } else if (round === 1 && turnIdx === 0 && d.turnIdx > 0) {
             console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (jogo acabou de começar) - remoto:', d.turnIdx, 'local:', turnIdx)
           } else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
             console.log('[App] SYNC - Sincronizando turnIdx - remoto:', d.turnIdx, 'local:', turnIdx)
@@ -349,6 +357,9 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
 
+  // ✅ CORREÇÃO: Flag para rastrear se o jogo acabou de começar
+  const [gameJustStarted, setGameJustStarted] = useState(false)
+  
   useEffect(() => {
     if (!netState) return
     const np = Array.isArray(netState.players) ? netState.players : null
@@ -356,6 +367,19 @@ export default function App() {
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
     let changed = false
+    
+    // ✅ CORREÇÃO: Se o jogo acabou de começar (gameJustStarted = true), força turnIdx = 0
+    // Se o estado remoto tem turnIdx > 0 e round === 1, pode ser um estado antigo - corrige
+    if (gameJustStarted && nt !== null && nt !== 0 && nr === 1) {
+      console.log('[NET] Jogo acabou de começar - estado remoto tem turnIdx incorreto:', nt, '- corrigindo para 0')
+      // Força turnIdx = 0 no commit remoto também
+      if (typeof netCommit === 'function') {
+        commitRemoteState(np || players, 0, 1).catch(err => console.warn('[NET] Erro ao corrigir turnIdx:', err))
+      }
+      // Não atualiza o turnIdx local - mantém 0
+      return
+    }
+    
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
       console.log('[NET] Sincronizando jogadores - local:', players.length, 'remoto:', np.length)
       console.log('[NET] Jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
@@ -428,9 +452,13 @@ export default function App() {
     // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
     // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
     if (nt !== null && nt !== turnIdx) {
+      // Se o jogo acabou de começar (gameJustStarted = true), NUNCA sobrescreve turnIdx = 0
+      if (gameJustStarted && turnIdx === 0) {
+        console.log('[NET] Jogo acabou de começar - ignorando sincronização de turnIdx remoto (deve ser 0) - remoto:', nt, 'local:', turnIdx, 'round:', round)
+      }
       // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
       // Também não sobrescreve se o turnIdx local é 0 e o remoto é > 0 (jogo deve começar no jogador 1)
-      if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
+      else if ((round === 1 && turnIdx === 0 && nt > 0) || (turnIdx === 0 && nt > 0 && players.length > 0)) {
         console.log('[NET] Ignorando sincronização de turnIdx remoto (jogo deve começar no jogador 1) - remoto:', nt, 'local:', turnIdx, 'round:', round)
       } else {
         console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
@@ -447,15 +475,19 @@ export default function App() {
 
     if (changed) console.log('[NET] applied remote v=%d', netVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [netVersion])
+  }, [netVersion, gameJustStarted])
 
   async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
     if (typeof netCommit === 'function') {
       try {
+        // ✅ CORREÇÃO: Garante que o turnIdx seja sempre 0 ao iniciar o jogo (broadcastStart)
+        // Se o round é 1 e o turnIdx é 0, força turnIdx = 0 no commit
+        const finalTurnIdx = (nextRound === 1 && nextTurnIdx === 0) ? 0 : nextTurnIdx
+        console.log('[NET] commitRemoteState - turnIdx:', finalTurnIdx, 'round:', nextRound, 'players:', nextPlayers.length)
         await netCommit(prev => ({
           ...(prev || {}),
           players: nextPlayers,
-          turnIdx: nextTurnIdx,
+          turnIdx: finalTurnIdx,
           round: nextRound,
         }))
       } catch (e) {
@@ -695,6 +727,10 @@ export default function App() {
             }
           })
           setLog(['Jogo iniciado!'])
+          // ✅ CORREÇÃO: Marca que o jogo acabou de começar para proteger o turnIdx inicial
+          setGameJustStarted(true)
+          // ✅ CORREÇÃO: Reseta o flag após um pequeno delay para permitir sincronização normal depois
+          setTimeout(() => setGameJustStarted(false), 3000)
           broadcastStart(mapped)
           setPhase('game')
         }}
