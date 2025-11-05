@@ -483,8 +483,8 @@ export function useTurnEngine({
     console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash)
 
     // >>> controle de rodada: só vira quando TODOS cruzarem a casa 1
-    let nextRound = round
     let nextFlags = roundFlags
+    let nextRound = round
     if (lap) {
       nextFlags = [...roundFlags]
       nextFlags[curIdx] = true
@@ -496,6 +496,10 @@ export function useTurnEngine({
       }
     }
     setRoundFlags(nextFlags)
+    
+    // ✅ CORREÇÃO CRÍTICA: Garante que nextRound seja uma constante após todas as reatribuições
+    // Isso previne problemas de TDZ (Temporal Dead Zone) em funções assíncronas
+    const finalNextRound = nextRound
 
     // >>> pular jogadores falidos ao decidir o próximo turno
     const nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
@@ -504,7 +508,7 @@ export function useTurnEngine({
     if (note) appendLog(note)
 
     setPlayers(nextPlayers)
-    setRound(nextRound)
+    setRound(finalNextRound)
     
     // ✅ CORREÇÃO CRÍTICA: Verifica se há tiles de modal antes de definir pendingTurnDataRef
     // Isso previne que o tick mude o turno antes das modais serem abertas
@@ -529,7 +533,7 @@ export function useTurnEngine({
       pendingTurnDataRef.current = {
         nextPlayers,
         nextTurnIdx,
-        nextRound
+        nextRound: finalNextRound
       }
       console.log('[DEBUG] ✅ pendingTurnDataRef definido (sem tiles de modal ou condições não atendidas)')
     } else {
@@ -550,7 +554,7 @@ export function useTurnEngine({
     
     if (allCompleted5Rounds) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - Todos os jogadores completaram 5 rodadas')
-      maybeFinishGame(nextPlayers, nextRound)
+      maybeFinishGame(nextPlayers, finalNextRound)
       setTurnLockBroadcast(false)
       return
     }
@@ -605,7 +609,7 @@ export function useTurnEngine({
         // Isso previne erros de "Cannot access before initialization"
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
