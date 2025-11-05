@@ -1286,14 +1286,15 @@ export function useTurnEngine({
 
     // === AUTO-MODAIS (Faturamento / Despesas) ===
     if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
-      const meNow = nextPlayers[curIdx] || {}
-      const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         const capturedMeNow = capturedNextPlayers[curIdx] || {}
+        
+        // ✅ CORREÇÃO CRÍTICA: Calcula fat dentro da função assíncrona para evitar problemas de TDZ
+        const fat = Math.max(0, Math.floor(computeFaturamentoFor(capturedMeNow)))
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
@@ -1316,29 +1317,28 @@ export function useTurnEngine({
     }
 
     if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
-      console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
-      const meNow = nextPlayers[curIdx] || {}
-      const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
-
-      const lp = meNow.loanPending || {}
-      const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (round >= Math.max(1, Number(lp.dueRound || 0)))
-      const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
-
-      console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
-      console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
-        amount: Number(lp.amount),
-        charged: lp.charged,
-        dueRound: Number(lp.dueRound || 0),
-        currentRound: round,
-        shouldCharge: shouldChargeLoan
-      })
-
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
         const capturedNextTurnIdx = nextTurnIdx
-        const capturedNextRound = nextRound
+        const capturedNextRound = finalNextRound
         const capturedMeNow = capturedNextPlayers[curIdx] || {}
+        
+        // ✅ CORREÇÃO CRÍTICA: Calcula todas as variáveis dentro da função assíncrona para evitar problemas de TDZ
+        const expense = Math.max(0, Math.floor(computeDespesasFor(capturedMeNow)))
+        const lp = capturedMeNow.loanPending || {}
+        const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (round >= Math.max(1, Number(lp.dueRound || 0)))
+        const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+        
+        console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', capturedMeNow.name, 'Posição atual:', capturedMeNow.pos)
+        console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
+        console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
+          amount: Number(lp.amount),
+          charged: lp.charged,
+          dueRound: Number(lp.dueRound || 0),
+          currentRound: round,
+          shouldCharge: shouldChargeLoan
+        })
         
         // ✅ CORREÇÃO CRÍTICA: Define pendingTurnDataRef DEPOIS de abrir a modal
         // Isso garante que o tick não mude o turno antes da modal ser fechada
