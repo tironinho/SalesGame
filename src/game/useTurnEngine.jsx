@@ -600,15 +600,23 @@ export function useTurnEngine({
       crossedStart1 || // Start
       crossedExpenses23 // Despesas
     
-    // ✅ CORREÇÃO CRÍTICA: Se NÃO houver tiles de modal, avança o turno imediatamente
-    // Se houver tiles de modal, o turno será avançado após todas as modais serem fechadas
+    // ✅ CORREÇÃO CRÍTICA: Só define pendingTurnDataRef se NÃO houver tiles de modal
+    // Se houver tiles de modal, o pendingTurnDataRef será definido DEPOIS que todas as modais forem fechadas
+    // Isso garante que o tick não mude o turno antes das modais serem abertas
     if (!hasModalTile || !isMyTurn || !pushModal || !awaitTop) {
-      console.log('[DEBUG] ✅ Sem tiles de modal - avançando turno imediatamente')
-      // ✅ CORREÇÃO: Avança o turno diretamente usando advanceTurn
-      advanceTurn(nextPlayers)
+      // Armazena os dados do próximo turno para uso na função tick
+      pendingTurnDataRef.current = {
+        nextPlayers,
+        nextTurnIdx,
+        nextRound: finalNextRound
+      }
+      console.log('[DEBUG] ✅ pendingTurnDataRef definido (sem tiles de modal ou condições não atendidas)')
     } else {
-      console.log('[DEBUG] ⚠️ Há tiles de modal - turno será avançado após fechar modais')
+      console.log('[DEBUG] ⚠️ pendingTurnDataRef NÃO definido ainda (há tiles de modal que serão abertos)')
     }
+    
+    // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
+    // O turno será mudado na função tick() quando modalLocks === 0
 
     // ✅ CORREÇÃO: landedOneBased, crossedStart1 e crossedExpenses23 já foram definidos acima (para verificar hasModalTile)
 
@@ -704,7 +712,7 @@ export function useTurnEngine({
         const ownerForTraining = players.find(isMine) || capturedNextPlayers[curIdx]
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: TrainingModal } = await import('../modals/TrainingModal.jsx')
-        const res = await openModalWithTurnLock(<TrainingModal
+        const res = await openModalAndWait(<TrainingModal
           canTrain={{
             comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
             field:  Number(ownerForTraining?.fieldSales) || 0,
@@ -718,26 +726,16 @@ export function useTurnEngine({
             gestor: ownerForTraining?.trainingsByVendor?.gestor || []
           }}
         />)
-        
-        // ✅ CORREÇÃO: Processa compra se houver
-        let updatedPlayers = null
-        if (res?.action === 'BUY') {
-          const trainCost = Number(res.grandTotal || 0)
-          if (requireFunds(curIdx, trainCost, 'comprar Treinamento')) {
-            console.log('[Training] Processando compra, cost:', trainCost)
-            updatedPlayers = players.map((p, i) =>
-              i !== curIdx ? p : applyTrainingPurchase(p, res)
-            )
-            // ✅ CORREÇÃO: Atualiza players localmente e faz broadcast apenas dos players (mantém turno)
-            setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, undefined, undefined) // mantém turno; só sincroniza players
-          } else {
-            console.log('[Training] Saldo insuficiente, cancelando')
-          }
-        }
-        
-        // ✅ CORREÇÃO: SEMPRE avança o turno no final (independente de compra ou não)
-        advanceTurn(updatedPlayers)
+        if (!res || res.action !== 'BUY') return
+        const trainCost = Number(res.grandTotal || 0)
+        if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
+        setPlayers(ps => {
+          const upd = ps.map((p, i) =>
+            i !== curIdx ? p : applyTrainingPurchase(p, res)
+          )
+          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
+          return upd
+        })
       })()
     }
 
@@ -1622,7 +1620,7 @@ export function useTurnEngine({
     appendLog, broadcastState,
     setPlayers, setRound, setTurnIdx, setRoundFlags,
     setTurnLockBroadcast, requireFunds, maybeFinishGame,
-    pushModal, awaitTop, closeTop, advanceTurn
+    pushModal, awaitTop, closeTop
   ])
 
   // ========= handlers menores =========
