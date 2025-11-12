@@ -250,6 +250,41 @@ export function useTurnEngine({
   // Mantém compatibilidade com código existente
   const nextTurn = advanceTurn
 
+  // ✅ CORREÇÃO: Avança turno calculando próximo índice/rodada e emite broadcast com o array de players fornecido.
+  const endTurnWith = useCallback((updPlayers) => {
+    const total = updPlayers?.length ?? players.length
+    const nextIdx = findNextAliveIdx(updPlayers ?? players, turnIdx)
+    const nextRnd = nextIdx === 0 ? (round + 1) : round
+    
+    console.log('[endTurnWith] ✅ Avançando turno - atual:', turnIdx, 'próximo:', nextIdx, 'round:', round, 'próximo round:', nextRnd)
+    
+    // Atualiza players se fornecido
+    if (updPlayers && JSON.stringify(updPlayers) !== JSON.stringify(players)) {
+      setPlayers(updPlayers)
+    }
+    
+    // Atualiza turno e rodada
+    setTurnIdx(nextIdx)
+    if (nextRnd !== round) {
+      setRound(nextRnd)
+    }
+    
+    // Faz broadcast
+    broadcastState(updPlayers ?? null, nextIdx, nextRnd)
+    
+    console.log('[endTurnWith] ✅ Turno avançado - próximo jogador:', (updPlayers ?? players)[nextIdx]?.name, 'turnIdx:', nextIdx)
+  }, [players, turnIdx, round, setPlayers, setTurnIdx, setRound, broadcastState, findNextAliveIdx])
+
+  // ✅ CORREÇÃO: Finaliza turno quando a modal foi fechada sem compra, ou quando faltou saldo.
+  const finishTurnNoBuy = useCallback(() => {
+    try {
+      // nada a atualizar em players; só avança o turno
+      endTurnWith(players)
+    } finally {
+      setTurnLockBroadcast(false)
+    }
+  }, [players, endTurnWith, setTurnLockBroadcast])
+
   // ========= regras auxiliares de saldo =========
   const canPay = useCallback((idx, amount) => {
     const p = players[idx]
@@ -667,26 +702,22 @@ export function useTurnEngine({
           currentLevel={currentErpLevel}
         />)
         
-        // ✅ CORREÇÃO: Processa compra se houver
-        let updatedPlayers = null
-        if (res?.action === 'BUY') {
-          const price = Number(res.values?.compra || 0)
-          if (requireFunds(curIdx, price, 'comprar ERP')) {
-            console.log('[ERP] Processando compra, price:', price, 'level:', res.level)
-            updatedPlayers = players.map((p, i) =>
-              i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
-            )
-            // ✅ CORREÇÃO: Atualiza players localmente e faz broadcast apenas dos players (mantém turno)
-            setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, undefined, undefined) // mantém turno; só sincroniza players
-          } else {
-            console.log('[ERP] Saldo insuficiente, cancelando')
-          }
-        }
+        // ✅ CORREÇÃO: Se não comprou, finaliza turno sem compra
+        if (!res || res.action !== 'BUY') return finishTurnNoBuy()
         
-        // ✅ CORREÇÃO: SEMPRE avança o turno no final (independente de compra ou não)
-        // Se houver players atualizados, passa para advanceTurn; caso contrário, usa players atual
-        advanceTurn(updatedPlayers)
+        // ✅ CORREÇÃO: Processa compra se houver
+        const price = Number(res.values?.compra || 0)
+        if (!requireFunds(curIdx, price, 'comprar ERP')) return finishTurnNoBuy()
+        
+        console.log('[ERP] Processando compra, price:', price, 'level:', res.level)
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
+        )
+        
+        // ✅ CORREÇÃO: Atualiza players e avança turno
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -726,16 +757,16 @@ export function useTurnEngine({
             gestor: ownerForTraining?.trainingsByVendor?.gestor || []
           }}
         />)
-        if (!res || res.action !== 'BUY') return
+        if (!res || res.action !== 'BUY') return finishTurnNoBuy()
         const trainCost = Number(res.grandTotal || 0)
-        if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyTrainingPurchase(p, res)
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) return finishTurnNoBuy()
+        
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyTrainingPurchase(p, res)
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -780,7 +811,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: DirectBuyModal } = await import('../modals/DirectBuyModal.jsx')
         const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
-        if (!res) return
+        if (!res) return finishTurnNoBuy()
 
         if (res.action === 'OPEN') {
           const open = String(res.open || '').toUpperCase()
@@ -793,24 +824,25 @@ export function useTurnEngine({
               currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentMixLevel}
             />)
-            if (r2 && r2.action === 'BUY') {
-              const price = Number(r2.compra || 0)
-              const level = String(r2.level || 'D')
-              if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=>
-                  i!==curIdx ? p : applyDeltas(p, {
-                    cashDelta: -price,
-                    mixProdutosSet: level,
-                    mixBaseSet: {
-                      despesaPorCliente: Number(r2.despesa || 0),
-                      faturamentoPorCliente: Number(r2.faturamento || 0),
-                    }
-                  })
-                )
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
+            if (!r2 || r2.action !== 'BUY') return finishTurnNoBuy()
+            
+            const price = Number(r2.compra || 0)
+            const level = String(r2.level || 'D')
+            if (!requireFunds(curIdx, price, 'comprar MIX')) return finishTurnNoBuy()
+            
+            const updatedPlayers = players.map((p,i)=>
+              i!==curIdx ? p : applyDeltas(p, {
+                cashDelta: -price,
+                mixProdutosSet: level,
+                mixBaseSet: {
+                  despesaPorCliente: Number(r2.despesa || 0),
+                  faturamentoPorCliente: Number(r2.faturamento || 0),
+                }
               })
-            }
+            )
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -818,25 +850,26 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
             const { default: ManagerModal } = await import('../modals/BuyManagerModal.jsx')
             const r2 = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
-              const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
-              const cashDelta = Number(
-                (typeof r2.cashDelta !== 'undefined'
-                  ? r2.cashDelta
-                  : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
-              )
-              const payAbs = cashDelta < 0 ? -cashDelta : 0
-              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
-              const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0)
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
-                  cashDelta,
-                  gestoresDelta: qty,
-                  manutencaoDelta: mexp
-                }))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
-            }
+            if (!r2 || (r2.action !== 'BUY' && r2.action !== 'HIRE')) return finishTurnNoBuy()
+            
+            const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
+            const cashDelta = Number(
+              (typeof r2.cashDelta !== 'undefined'
+                ? r2.cashDelta
+                : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
+            )
+            const payAbs = cashDelta < 0 ? -cashDelta : 0
+            if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) return finishTurnNoBuy()
+            
+            const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0)
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
+              cashDelta,
+              gestoresDelta: qty,
+              manutencaoDelta: mexp
+            }))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -844,15 +877,16 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
             const { default: InsideSalesModal } = await import('../modals/InsideSalesModal.jsx')
             const r2 = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
-              const cost = Number(r2.cost ?? r2.total ?? 0)
-              if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
-              const qty  = Number(r2.headcount ?? r2.qty ?? 1)
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
-            }
+            if (!r2 || (r2.action !== 'BUY' && r2.action !== 'HIRE')) return finishTurnNoBuy()
+            
+            const cost = Number(r2.cost ?? r2.total ?? 0)
+            if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) return finishTurnNoBuy()
+            
+            const qty  = Number(r2.headcount ?? r2.qty ?? 1)
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -860,21 +894,22 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
             const { default: FieldSalesModal } = await import('../modals/BuyFieldSalesModal.jsx')
             const r2 = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
-              const qty = Number(r2.headcount ?? r2.qty ?? 1)
-              const deltas = {
-                cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
-                manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
-                revenueDelta: Number(r2.revenueDelta ?? 0),
-                fieldSalesDelta: qty,
-              }
-              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
-              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
+            if (!r2 || (r2.action !== 'HIRE' && r2.action !== 'BUY')) return finishTurnNoBuy()
+            
+            const qty = Number(r2.headcount ?? r2.qty ?? 1)
+            const deltas = {
+              cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
+              manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
+              revenueDelta: Number(r2.revenueDelta ?? 0),
+              fieldSalesDelta: qty,
             }
+            const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+            if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) return finishTurnNoBuy()
+            
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -882,21 +917,22 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
             const { default: BuyCommonSellersModal } = await import('../modals/BuyCommonSellersModal.jsx')
             const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && r2.action === 'BUY') {
-              const qty  = Number(r2.headcount ?? r2.qty ?? 0)
-              const deltas = {
-                cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
-                vendedoresComunsDelta: qty,
-                manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
-                revenueDelta: Number(r2.revenueDelta ?? 0),
-              }
-              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
-              if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
+            if (!r2 || r2.action !== 'BUY') return finishTurnNoBuy()
+            
+            const qty  = Number(r2.headcount ?? r2.qty ?? 0)
+            const deltas = {
+              cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
+              vendedoresComunsDelta: qty,
+              manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
+              revenueDelta: Number(r2.revenueDelta ?? 0),
             }
+            const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+            if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) return finishTurnNoBuy()
+            
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -908,14 +944,15 @@ export function useTurnEngine({
               currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentErpLevel}
             />)
-            if (r2 && r2.action === 'BUY') {
-              const price = Number(r2.values?.compra || 0)
-              if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
-            }
+            if (!r2 || r2.action !== 'BUY') return finishTurnNoBuy()
+            
+            const price = Number(r2.values?.compra || 0)
+            if (!requireFunds(curIdx, price, 'comprar ERP')) return finishTurnNoBuy()
+            
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -923,22 +960,23 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
             const { default: ClientsModal } = await import('../modals/BuyClientsModal.jsx')
             const r2 = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && r2.action === 'BUY') {
-              const cost  = Number(r2.totalCost || 0)
-              if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
-              const qty   = Number(r2.qty || 0)
-              const mAdd  = Number(r2.maintenanceDelta || 0)
-              const bensD = Number(r2.bensDelta || cost)
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
-                  cashDelta: -cost,
-                  clientsDelta: qty,
-                  manutencaoDelta: mAdd,
-                  bensDelta: bensD
-                }))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
-            }
+            if (!r2 || r2.action !== 'BUY') return finishTurnNoBuy()
+            
+            const cost  = Number(r2.totalCost || 0)
+            if (!requireFunds(curIdx, cost, 'comprar Clientes')) return finishTurnNoBuy()
+            
+            const qty   = Number(r2.qty || 0)
+            const mAdd  = Number(r2.maintenanceDelta || 0)
+            const bensD = Number(r2.bensDelta || cost)
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
+              cashDelta: -cost,
+              clientsDelta: qty,
+              manutencaoDelta: mAdd,
+              bensDelta: bensD
+            }))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
@@ -960,14 +998,15 @@ export function useTurnEngine({
                 gestor: ownerForTraining?.trainingsByVendor?.gestor || []
               }}
             />)
-            if (r2 && r2.action === 'BUY') {
-              const trainCost = Number(r2.grandTotal || 0)
-              if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
-              setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
-                broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-              })
-            }
+            if (!r2 || r2.action !== 'BUY') return finishTurnNoBuy()
+            
+            const trainCost = Number(r2.grandTotal || 0)
+            if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) return finishTurnNoBuy()
+            
+            const updatedPlayers = players.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
         }
@@ -984,43 +1023,46 @@ export function useTurnEngine({
 
           if (isClientsBuy) {
             const cost  = Number(res.totalCost ?? res.total ?? res.amount ?? 0)
-            if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+            if (!requireFunds(curIdx, cost, 'comprar Clientes')) return finishTurnNoBuy()
+            
             const qty   = Number(res.clientsQty ?? res.numClients ?? res.qty ?? 0)
             const mAdd  = Number(res.maintenanceDelta ?? res.maintenance ?? res.mexp ?? 0)
             const bensD = Number(res.bensDelta ?? cost)
 
-            setPlayers(ps => {
-              const upd = ps.map((p, i) =>
-                i !== curIdx
-                  ? p
-                  : applyDeltas(p, {
-                      cashDelta: -cost,
-                      clientsDelta: qty,
-                      manutencaoDelta: mAdd,
-                      bensDelta: bensD
-                    })
-              )
-              broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-              return upd
-            })
+            const updatedPlayers = players.map((p, i) =>
+              i !== curIdx
+                ? p
+                : applyDeltas(p, {
+                    cashDelta: -cost,
+                    clientsDelta: qty,
+                    manutencaoDelta: mAdd,
+                    bensDelta: bensD
+                  })
+            )
+            setPlayers(updatedPlayers)
+            endTurnWith(updatedPlayers)
+            setTurnLockBroadcast(false)
             return
           }
 
           const total = Number(res.total ?? res.amount ?? 0)
-          if (!requireFunds(curIdx, total, 'esta compra')) { setTurnLockBroadcast(false); return }
-          setPlayers(ps => {
-            const upd = ps.map((p, i) =>
-              i !== curIdx
-                ? p
-                : applyDeltas(p, {
-                    cashDelta: -total,
-                    directBuysPush: [ (res.item || { total }) ]
-                  })
-            )
-            broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-            return upd
-          })
+          if (!requireFunds(curIdx, total, 'esta compra')) return finishTurnNoBuy()
+          
+          const updatedPlayers = players.map((p, i) =>
+            i !== curIdx
+              ? p
+              : applyDeltas(p, {
+                  cashDelta: -total,
+                  directBuysPush: [ (res.item || { total }) ]
+                })
+          )
+          setPlayers(updatedPlayers)
+          endTurnWith(updatedPlayers)
+          setTurnLockBroadcast(false)
+          return
         }
+        
+        return finishTurnNoBuy()
       })()
     }
 
@@ -1046,17 +1088,18 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: InsideSalesModal } = await import('../modals/InsideSalesModal.jsx')
         const res = await openModalAndWait(<InsideSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-        if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
+        if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return finishTurnNoBuy()
+        
         const cost = Number(res.cost ?? res.total ?? 0)
-        if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
+        if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) return finishTurnNoBuy()
+        
         const qty  = Number(res.headcount ?? res.qty ?? 1)
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1100,26 +1143,27 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: ClientsModal } = await import('../modals/BuyClientsModal.jsx')
         const res = await openModalAndWait(<ClientsModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-        if (!res || res.action !== 'BUY') return
+        if (!res || res.action !== 'BUY') return finishTurnNoBuy()
+        
         const cost  = Number(res.totalCost || 0)
-        if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+        if (!requireFunds(curIdx, cost, 'comprar Clientes')) return finishTurnNoBuy()
+        
         const qty   = Number(res.qty || 0)
         const mAdd  = Number(res.maintenanceDelta || 0)
         const bensD = Number(res.bensDelta || cost)
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx
-              ? p
-              : applyDeltas(p, {
-                  cashDelta: -cost,
-                  clientsDelta: qty,
-                  manutencaoDelta: mAdd,
-                  bensDelta: bensD
-                })
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx
+            ? p
+            : applyDeltas(p, {
+                cashDelta: -cost,
+                clientsDelta: qty,
+                manutencaoDelta: mAdd,
+                bensDelta: bensD
+              })
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1135,7 +1179,8 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: ManagerModal } = await import('../modals/BuyManagerModal.jsx')
         const res = await openModalAndWait(<ManagerModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-        if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
+        if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return finishTurnNoBuy()
+        
         const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
         const cashDelta = Number(
           (typeof res.cashDelta !== 'undefined'
@@ -1143,15 +1188,15 @@ export function useTurnEngine({
             : -(Number(res.cost ?? res.total ?? res.totalHire ?? 0)))
         )
         const payAbs = cashDelta < 0 ? -cashDelta : 0
-        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
+        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) return finishTurnNoBuy()
+        
         const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1167,24 +1212,24 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: FieldSalesModal } = await import('../modals/BuyFieldSalesModal.jsx')
         const res = await openModalAndWait(<FieldSalesModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-        if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
-          const qty = Number(res.headcount ?? res.qty ?? 1)
-          const deltas = {
-            cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
-            manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
-            revenueDelta: Number(res.revenueDelta ?? 0),
-            fieldSalesDelta: qty,
-          }
-          const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
-          if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
-          setPlayers(ps => {
-            const upd = ps.map((p, i) =>
-              i !== curIdx ? p : applyDeltas(p, deltas)
-            )
-            broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-            return upd
-          })
+        if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return finishTurnNoBuy()
+        
+        const qty = Number(res.headcount ?? res.qty ?? 1)
+        const deltas = {
+          cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
+          manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
+          revenueDelta: Number(res.revenueDelta ?? 0),
+          fieldSalesDelta: qty,
         }
+        const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) return finishTurnNoBuy()
+        
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyDeltas(p, deltas)
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1200,7 +1245,8 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: BuyCommonSellersModal } = await import('../modals/BuyCommonSellersModal.jsx')
         const res = await openModalAndWait(<BuyCommonSellersModal currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash} />)
-        if (!res || res.action !== 'BUY') return
+        if (!res || res.action !== 'BUY') return finishTurnNoBuy()
+        
         const qty  = Number(res.headcount ?? res.qty ?? 0)
         const deltas = {
           cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
@@ -1209,14 +1255,14 @@ export function useTurnEngine({
           revenueDelta: Number(res.revenueDelta ?? 0),
         }
         const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
-        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, deltas)
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) return finishTurnNoBuy()
+        
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx ? p : applyDeltas(p, deltas)
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1237,26 +1283,27 @@ export function useTurnEngine({
           currentCash={capturedNextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
         />)
-        if (!res || res.action !== 'BUY') return
+        if (!res || res.action !== 'BUY') return finishTurnNoBuy()
+        
         const price = Number(res.compra || 0)
-        if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
+        if (!requireFunds(curIdx, price, 'comprar MIX')) return finishTurnNoBuy()
+        
         const level = String(res.level || 'D')
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx
-              ? p
-              : applyDeltas(p, {
-                  cashDelta: -price,
-                  mixProdutosSet: level,
-                  mixBaseSet: {
-                    despesaPorCliente: Number(res.despesa || 0),
-                    faturamentoPorCliente: Number(res.faturamento || 0),
-                  },
-                })
-          )
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
-          return upd
-        })
+        const updatedPlayers = players.map((p, i) =>
+          i !== curIdx
+            ? p
+            : applyDeltas(p, {
+                cashDelta: -price,
+                mixProdutosSet: level,
+                mixBaseSet: {
+                  despesaPorCliente: Number(res.despesa || 0),
+                  faturamentoPorCliente: Number(res.faturamento || 0),
+                },
+              })
+        )
+        setPlayers(updatedPlayers)
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1303,9 +1350,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: SorteRevesModal } = await import('../modals/SorteRevesModal.jsx')
         const res = await openModalAndWait(<SorteRevesModal />)
-        if (!res || res.action !== 'APPLY_CARD') return
-
-        const meNow = capturedNextPlayers[curIdx] || players.find(isMine) || {}
+        if (!res || res.action !== 'APPLY_CARD') return finishTurnNoBuy()
 
         let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
         let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
@@ -1318,6 +1363,7 @@ export function useTurnEngine({
           await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', capturedNextPlayers)
         }
 
+        let updatedPlayers = players
         setPlayers(ps => {
           const upd = ps.map((p,i) => {
             if (i !== curIdx) return p
@@ -1343,27 +1389,31 @@ export function useTurnEngine({
             }
             return next
           })
-          broadcastState(upd, capturedNextTurnIdx, capturedNextRound)
+
+          const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
+          if (anyDerived) {
+            const me2 = upd[curIdx] || {}
+            let extra = 0
+            if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
+            if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
+            if (res.mixLevelBonusABOnly) {
+              const level = String(me2.mixProdutos || me2.mixProdutosSet || '').toUpperCase()
+              if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
+            }
+            if (extra) {
+              upd[curIdx] = {
+                ...me2,
+                cash: (Number(me2.cash) || 0) + extra
+              }
+            }
+          }
+
+          updatedPlayers = upd
           return upd
         })
 
-        const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
-        if (anyDerived) {
-          const me2 = capturedNextPlayers[curIdx] || players.find(isMine) || {}
-          let extra = 0
-          if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
-          if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
-          if (res.mixLevelBonusABOnly) {
-            const level = String(me2.mixProdutos || '').toUpperCase()
-            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
-          }
-          if (extra) {
-            setPlayers(ps => {
-              const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
-              broadcastState(upd, capturedNextTurnIdx, capturedNextRound); return upd
-            })
-          }
-        }
+        endTurnWith(updatedPlayers)
+        setTurnLockBroadcast(false)
       })()
     }
 
@@ -1690,7 +1740,7 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: RecoveryModal } = await import('../modals/RecoveryModal.jsx')
         const res = await openModalAndWait(<RecoveryModal playerName={current?.name || 'Jogador'} currentPlayer={current} />)
-        if (!res) return
+        if (!res) return finishTurnNoBuy()
 
         switch (res.type) {
           case 'FIRE':
@@ -1798,7 +1848,8 @@ export function useTurnEngine({
         // ✅ CORREÇÃO: Import dinâmico para quebrar ciclo de importação
         const { default: BankruptcyModal } = await import('../modals/BankruptcyModal.jsx')
         const ok = await openModalAndWait(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
-        if (ok) onAction?.({ type: 'BANKRUPT' })
+        if (!ok) return finishTurnNoBuy()
+        onAction?.({ type: 'BANKRUPT' })
       })()
       return
     }
