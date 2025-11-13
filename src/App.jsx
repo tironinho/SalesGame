@@ -598,16 +598,20 @@ export default function App() {
     if (!netState) return
     
     // ✅ CORREÇÃO 2: Verifica rev antes de processar (aceita apenas rev maior)
+    // ✅ CORREÇÃO 1: Verifica seq também (se disponível) para evitar estados stale
     const incomingRev = typeof netState.rev === 'number' ? netState.rev : 0
     const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+    const incomingSeq = typeof netState.lastEvent?.seq === 'number' ? netState.lastEvent.seq : incomingRev
+    const localSeq = typeof stateRef.current.lastEvent?.seq === 'number' ? stateRef.current.lastEvent.seq : localRev
     
-    if (incomingRev < localRev) {
-      console.log(`[NET] ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+    // ✅ CORREÇÃO 1: Ignora estados stale baseado em rev e seq
+    if (incomingRev < localRev || (incomingRev === localRev && incomingSeq < localSeq)) {
+      console.log(`[NET] ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev} ou seq remoto: ${incomingSeq} < local: ${localSeq})`)
       return
     }
     
-    if (incomingRev > localRev) {
-      console.log(`[NET] ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+    if (incomingRev > localRev || (incomingRev === localRev && incomingSeq > localSeq)) {
+      console.log(`[NET] ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev}, seq: ${localSeq} → ${incomingSeq})`)
       stateRef.current = netState
     }
     
@@ -837,25 +841,36 @@ export default function App() {
 
   // ✅ CORREÇÃO 1: commitRemoteState agora persiste movimentos também (não só turnos)
   // ✅ CORREÇÃO 2: Usa rev no estado JSON com trava otimista (via netCommit)
+  // ✅ CORREÇÃO 3: MOVE não deve sobrescrever turnIdx/round (anti-regressão)
   async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound, eventType = 'TURN', eventBy = myUid) {
     if (typeof netCommit === 'function') {
       try {
-        const finalTurnIdx = (nextRound === 1 && nextTurnIdx === 0) ? 0 : nextTurnIdx
+        // ✅ CORREÇÃO 3: Para MOVE, preserva turnIdx/round atual do estado (não permite regressão)
+        const isMove = eventType === 'MOVE'
         const currentRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
         
-        console.log(`[NET] commitRemoteState - ${eventType} - rev atual: ${currentRev}, turnIdx: ${finalTurnIdx}, round: ${nextRound}, players: ${nextPlayers.length}`)
+        console.log(`[NET] commitRemoteState - ${eventType} - rev atual: ${currentRev}, turnIdx: ${nextTurnIdx}, round: ${nextRound}, players: ${nextPlayers.length}`)
         
         // ✅ CORREÇÃO: Sempre persiste (movimentos e turnos)
         // O netCommit já usa rev com trava otimista e incrementa automaticamente
         await netCommit(prev => {
           const prevState = prev || {}
           const prevRev = typeof prevState.rev === 'number' ? prevState.rev : 0
-          const nextRev = prevRev + 1 // ✅ CORREÇÃO: Calcula nextRev baseado no estado atual
+          const nextRev = prevRev + 1
+          
+          // ✅ CORREÇÃO 3: Se é MOVE, preserva turnIdx/round atual (não permite regressão)
+          const finalTurnIdx = isMove ? (prevState.turnIdx ?? turnIdx) : ((nextRound === 1 && nextTurnIdx === 0) ? 0 : nextTurnIdx)
+          const finalRound = isMove ? (prevState.round ?? round) : nextRound
+          
+          if (isMove) {
+            console.log(`[NET] commitRemoteState - 🔁 MOVE preservando turnIdx/round - turnIdx: ${finalTurnIdx} (não ${nextTurnIdx}), round: ${finalRound} (não ${nextRound})`)
+          }
+          
           return {
             ...prevState,
             players: nextPlayers,
             turnIdx: finalTurnIdx,
-            round: nextRound,
+            round: finalRound,
             gameOver: gameOver,
             winner: winner,
             lastEvent: {
@@ -863,7 +878,8 @@ export default function App() {
               by: eventBy || myUid,
               seq: nextRev, // ✅ CORREÇÃO: seq = rev (sempre igual ao rev final)
               ts: Date.now()
-            }
+            },
+            lastKind: eventType // ✅ CORREÇÃO: Adiciona lastKind para rastreamento
             // ✅ CORREÇÃO: Não define rev aqui - o netCommit vai incrementar automaticamente
           }
         })
@@ -1137,37 +1153,53 @@ export default function App() {
   useEffect(() => {
     const mine = players.find(isMine)
     if (!mine) return
-    const { cap, inAtt } = capacityAndAttendance(mine)
+    // ✅ CORREÇÃO 3: Garante defaults seguros antes de passar para capacityAndAttendance
+    const safeMine = {
+      ...mine,
+      vendedoresComuns: mine.vendedoresComuns ?? 0,
+      insideSales: typeof mine.insideSales === 'number' ? mine.insideSales : (Array.isArray(mine.insideSales) ? mine.insideSales.length : 0),
+      fieldSales: typeof mine.fieldSales === 'number' ? mine.fieldSales : (Array.isArray(mine.fieldSales) ? mine.fieldSales.length : 0),
+      clients: typeof mine.clients === 'number' ? mine.clients : (Array.isArray(mine.clients) ? mine.clients.length : 0)
+    }
+    const { cap, inAtt } = capacityAndAttendance(safeMine)
     setMeHud(h => ({ ...h, cash: mine.cash, possibAt: cap, clientsAt: inAtt, name: mine.name, color: mine.color }))
   }, [players, isMine])
 
   // ====== Totais do HUD (faturamento/ despesas / etc.)
   const totals = useMemo(() => {
     const me = players.find(isMine) || players[0] || {}
-    const fat = computeFaturamentoFor(me)
-    const desp = computeDespesasFor(me)
-    const { cap, inAtt } = capacityAndAttendance(me)
-    const lvl = String(me.erpLevel || 'D').toUpperCase()
-    const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
+    // ✅ CORREÇÃO 3: Garante defaults seguros para arrays e objetos antes de passar para gameMath
+    const safeMe = {
+      ...me,
+      clients: Array.isArray(me.clients) ? me.clients : (typeof me.clients === 'number' ? me.clients : 0),
+      fieldSales: Array.isArray(me.fieldSales) ? me.fieldSales : (typeof me.fieldSales === 'number' ? me.fieldSales : 0),
+      insideSales: Array.isArray(me.insideSales) ? me.insideSales : (typeof me.insideSales === 'number' ? me.insideSales : 0),
+      trainingsByVendor: me.trainingsByVendor && typeof me.trainingsByVendor === 'object' ? me.trainingsByVendor : {}
+    }
+    const fat = computeFaturamentoFor(safeMe)
+    const desp = computeDespesasFor(safeMe)
+    const { cap, inAtt } = capacityAndAttendance(safeMe)
+    const lvl = String(safeMe.erpLevel || 'D').toUpperCase()
+    const managerQty = Number(safeMe.gestores ?? safeMe.gestoresComerciais ?? safeMe.managers ?? 0)
     
-    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
+    console.log('[App] Totals recalculado - me:', safeMe.name, 'clients:', safeMe.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', safeMe.vendedoresComuns, 'fieldSales:', safeMe.fieldSales, 'insideSales:', safeMe.insideSales)
     
     // Validação de cálculos em modo debug
-    validateCalculations(me, 'HUD Totals')
+    validateCalculations(safeMe, 'HUD Totals')
     
     return {
       faturamento: fat,
       manutencao: desp,
-      emprestimos: (me.loanPending && !me.loanPending.charged) ? Number(me.loanPending.amount || 0) : 0,
-      vendedoresComuns: me.vendedoresComuns || 0,
-      fieldSales: me.fieldSales || 0,
-      insideSales: me.insideSales || 0,
-      mixProdutos: me.mixProdutos || 'D',
-      bens: me.bens ?? 0,
+      emprestimos: (safeMe.loanPending && !safeMe.loanPending.charged) ? Number(safeMe.loanPending.amount || 0) : 0,
+      vendedoresComuns: safeMe.vendedoresComuns || 0,
+      fieldSales: safeMe.fieldSales || 0,
+      insideSales: safeMe.insideSales || 0,
+      mixProdutos: safeMe.mixProdutos || 'D',
+      bens: safeMe.bens ?? 0,
       erpSistemas: lvl,
-      clientes: me.clients || 0,
-      onboarding: !!me.onboarding,
-      az: me.az || 0, am: me.am || 0, rox: me.rox || 0,
+      clientes: typeof safeMe.clients === 'number' ? safeMe.clients : (Array.isArray(safeMe.clients) ? safeMe.clients.length : 0),
+      onboarding: !!safeMe.onboarding,
+      az: safeMe.az || 0, am: safeMe.am || 0, rox: safeMe.rox || 0,
       gestores: managerQty,
       gestoresComerciais: managerQty,
       possibAt: cap,

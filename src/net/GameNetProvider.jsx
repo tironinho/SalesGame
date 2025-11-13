@@ -89,14 +89,18 @@ function GameNetProvider({ roomCode, hostId, children }) {
             const incomingRev = typeof incomingState.rev === 'number' ? incomingState.rev : 0
             const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
             
-            if (incomingRev > localRev) {
-              console.log(`[NET] realtime - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+            // ✅ CORREÇÃO: Verifica seq também (se disponível) para evitar estados stale
+            const incomingSeq = typeof incomingState.lastEvent?.seq === 'number' ? incomingState.lastEvent.seq : incomingRev
+            const localSeq = typeof stateRef.current.lastEvent?.seq === 'number' ? stateRef.current.lastEvent.seq : localRev
+            
+            if (incomingRev > localRev || (incomingRev === localRev && incomingSeq > localSeq)) {
+              console.log(`[NET] realtime - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev}, seq: ${localSeq} → ${incomingSeq})`)
               setState(incomingState)
               lastEvtRef.current = Date.now()
-            } else if (incomingRev < localRev) {
-              console.log(`[NET] realtime - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+            } else if (incomingRev < localRev || (incomingRev === localRev && incomingSeq < localSeq)) {
+              console.log(`[NET] realtime - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev} ou seq remoto: ${incomingSeq} < local: ${localSeq})`)
             } else {
-              // rev igual: atualiza apenas se o conteúdo for diferente
+              // rev e seq iguais: atualiza apenas se o conteúdo for diferente
               if (JSON.stringify(incomingState) !== JSON.stringify(stateRef.current)) {
                 setState(incomingState)
                 lastEvtRef.current = Date.now()
@@ -127,13 +131,17 @@ function GameNetProvider({ roomCode, hostId, children }) {
           const incomingRev = typeof incomingState.rev === 'number' ? incomingState.rev : 0
           const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
           
-          if (incomingRev > localRev) {
-            console.log(`[NET] polling - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+          // ✅ CORREÇÃO: Verifica seq também (se disponível) para evitar estados stale
+          const incomingSeq = typeof incomingState.lastEvent?.seq === 'number' ? incomingState.lastEvent.seq : incomingRev
+          const localSeq = typeof stateRef.current.lastEvent?.seq === 'number' ? stateRef.current.lastEvent.seq : localRev
+          
+          if (incomingRev > localRev || (incomingRev === localRev && incomingSeq > localSeq)) {
+            console.log(`[NET] polling - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev}, seq: ${localSeq} → ${incomingSeq})`)
             setState(incomingState)
-          } else if (incomingRev < localRev) {
-            console.log(`[NET] polling - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+          } else if (incomingRev < localRev || (incomingRev === localRev && incomingSeq < localSeq)) {
+            console.log(`[NET] polling - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev} ou seq remoto: ${incomingSeq} < local: ${localSeq})`)
           } else {
-            // rev igual: atualiza apenas se o conteúdo for diferente
+            // rev e seq iguais: atualiza apenas se o conteúdo for diferente
             if (JSON.stringify(incomingState) !== JSON.stringify(stateRef.current)) {
               setState(incomingState)
             }

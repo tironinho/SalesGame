@@ -70,7 +70,23 @@ export function useTurnEngine(deps) {
   useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
   useEffect(() => { roundRef.current = round }, [round])
   
-  // ✅ CORREÇÃO 4: Helper functions com hoisting - DEFINIDAS ANTES de serem usadas
+  // ===== Modais =====
+  const modalContext = useModal()
+  const { pushModal, awaitTop, resolveTop, closeTop, closeAllModals, stackLength } = modalContext || {}
+  // ✅ CORREÇÃO: Mantém referência ao modalContext para usar stackLength atualizado
+  const modalContextRef = useRef(modalContext)
+  useEffect(() => { modalContextRef.current = modalContext }, [modalContext])
+
+  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
+  // ✅ CORREÇÃO 2: Usa lockOwnerRef de engineState, mas mantém estado local para React
+  // ✅ CORREÇÃO 4: Definido ANTES de commitTurn para garantir acesso
+  const [lockOwner, setLockOwner] = useState(null)
+  
+  // ✅ CORREÇÃO 2: Trava de dupla rolagem (evita 2x roll no mesmo turno) - DEFINIDA ANTES de commitTurn
+  const rolledThisTurnRef = useRef(false)
+  const lastTurnIdxRef = useRef(turnIdx)
+  
+  // ✅ CORREÇÃO 4: Helper functions com hoisting - DEFINIDAS DEPOIS de setLockOwner e rolledThisTurnRef
   // ✅ CORREÇÃO: Simplificado conforme instruções do usuário
   
   // ✅ Helper para calcular próximo turno
@@ -81,6 +97,7 @@ export function useTurnEngine(deps) {
   }
   
   // ✅ Helper para commitar turno (atômico)
+  // ✅ CORREÇÃO 4: Agora tem acesso a setLockOwner e rolledThisTurnRef (definidos acima)
   function commitTurn(nextTurnIdx, nextRound, updatedPlayers = playersRef.current) {
     console.log('[commitTurn] ✅ Commitando turno - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound)
     // Atualiza estado local primeiro
@@ -96,6 +113,11 @@ export function useTurnEngine(deps) {
       lockOwner: null,
       atomic: true
     })
+    // ✅ CORREÇÃO 2: Libera rolagem para o próximo jogador
+    rolledThisTurnRef.current = false
+    // ✅ CORREÇÃO 4: Desbloqueio garantido no commitTurn
+    setTurnLockBroadcast(false)
+    setLockOwner(null)
     // Limpa pendingTurnDataRef após commit
     pendingTurnDataRef.current = null
   }
@@ -142,17 +164,6 @@ export function useTurnEngine(deps) {
     }
     return isMatch
   }, [players, turnIdx, myPlayerId, isMyTurn])
-
-  // ===== Modais =====
-  const modalContext = useModal()
-  const { pushModal, awaitTop, resolveTop, closeTop, closeAllModals, stackLength } = modalContext || {}
-  // ✅ CORREÇÃO: Mantém referência ao modalContext para usar stackLength atualizado
-  const modalContextRef = useRef(modalContext)
-  useEffect(() => { modalContextRef.current = modalContext }, [modalContext])
-
-  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
-  // ✅ CORREÇÃO 2: Usa lockOwnerRef de engineState, mas mantém estado local para React
-  const [lockOwner, setLockOwner] = useState(null)
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = useState(0)
@@ -220,6 +231,24 @@ export function useTurnEngine(deps) {
   
   // ✅ CORREÇÃO 2: Atualiza lockOwnerRef compartilhado
   useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
+  
+  // ✅ CORREÇÃO 2: Reseta rolledThisTurnRef quando o turno muda
+  useEffect(() => {
+    if (turnIdx !== lastTurnIdxRef.current) {
+      console.log(`[useTurnEngine] ✅ Turno mudou de ${lastTurnIdxRef.current} para ${turnIdx} - resetando rolledThisTurnRef`)
+      rolledThisTurnRef.current = false
+      lastTurnIdxRef.current = turnIdx
+    }
+  }, [turnIdx])
+
+  // ✅ CORREÇÃO 4: Desbloqueio garantido no início da vez
+  useEffect(() => {
+    if (isMyTurn) {
+      console.log('[useTurnEngine] ✅ É minha vez - garantindo desbloqueio de turno')
+      setLockOwner(myUid)
+      setTurnLockBroadcast(false) // ✅ CORREÇÃO 4: Garante que o botão não fique travado por lixo de estado
+    }
+  }, [isMyTurn, myUid, setLockOwner, setTurnLockBroadcast])
 
   // ✅ CORREÇÃO: Auto-reconciliação - se não é minha vez mas há lock ativo, desativa lock
   useEffect(() => {
@@ -1851,6 +1880,12 @@ export function useTurnEngine(deps) {
     console.log(`[🎲 AÇÃO] ${playerName} - Executando ação:`, act.type)
 
     if (act.type === 'ROLL'){
+      // ✅ CORREÇÃO 2: Trava de dupla rolagem
+      if (rolledThisTurnRef.current) {
+        console.warn(`[🎲 DADO] ❌ ${playerName} - Ignorado - já rolou neste turno`)
+        return
+      }
+      
       // ✅ CORREÇÃO: Logs detalhados para diagnosticar problemas
       console.log(`[🎲 DADO] ${playerName} - Tentando rolar dado`)
       console.log(`[🎲 DADO] ${playerName} - isMyTurn:`, isMyTurn, 'turnIdx:', turnIdx, 'myUid:', myUid)
@@ -1870,7 +1905,10 @@ export function useTurnEngine(deps) {
         console.error(`[🎲 DADO] ❌ ${playerName} - turnLock está ativo mas não sou o dono! lockOwner:`, lockOwner, 'myUid:', myUid)
         return
       }
-      console.log(`[🎲 DADO] ${playerName} - Rolou ${act.steps} passos`)
+      
+      // ✅ CORREÇÃO 2: Marca que rolou neste turno
+      rolledThisTurnRef.current = true
+      console.log(`[🎲 DADO] ${playerName} - Rolou ${act.steps} passos (rolledThisTurnRef marcado)`)
       advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
       return
     }
