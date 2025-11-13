@@ -91,8 +91,11 @@ export function useTurnEngine(deps) {
     if (nextRound !== undefined) {
       setRound(nextRound)
     }
-    // Faz broadcast atômico
-    broadcastState(updatedPlayers, nextTurnIdx, nextRound)
+    // Faz broadcast atômico (passa gameOver e winner para manter estado sincronizado)
+    broadcastState(updatedPlayers, nextTurnIdx, nextRound, gameOver, winner, {
+      lockOwner: null,
+      atomic: true
+    })
     // Limpa pendingTurnDataRef após commit
     pendingTurnDataRef.current = null
   }
