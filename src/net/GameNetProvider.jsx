@@ -40,7 +40,8 @@ function GameNetProvider({ roomCode, hostId, children }) {
       if (error) { console.warn('[NET] rooms/load:', error.message || error); return }
 
       if (!rows || rows.length === 0) {
-        const initial = { code, state: {}, version: 0, host_id: hostId || null }
+        // ✅ CORREÇÃO: Estado inicial com rev = 0
+        const initial = { code, state: { rev: 0 }, version: 0, host_id: hostId || null }
         const { data, error: upErr } = await supabase
           .from('rooms')
           .upsert(initial, { onConflict: 'code', ignoreDuplicates: false })
@@ -48,11 +49,23 @@ function GameNetProvider({ roomCode, hostId, children }) {
           .single()
         if (upErr) { console.warn('[NET] rooms/create:', upErr.message || upErr); return }
         if (cancelled) return
-        setState(data?.state || {}); setVersion(data?.version ?? 0)
+        // ✅ CORREÇÃO: Garante que o estado tenha rev
+        const initialState = data?.state || {}
+        if (typeof initialState.rev !== 'number') {
+          initialState.rev = 0
+        }
+        setState(initialState)
+        setVersion(data?.version ?? 0)
       } else {
         if (cancelled) return
         const row = rows[0]
-        setState(row?.state || {}); setVersion(row?.version ?? 0)
+        // ✅ CORREÇÃO: Garante que o estado tenha rev
+        const rowState = row?.state || {}
+        if (typeof rowState.rev !== 'number') {
+          rowState.rev = 0
+        }
+        setState(rowState)
+        setVersion(row?.version ?? 0)
       }
       setReady(true)
     })()
@@ -70,8 +83,26 @@ function GameNetProvider({ roomCode, hostId, children }) {
         (payload) => {
           const row = payload.new || payload.old || {}
           if (typeof row.version === 'number' && row.version !== versionRef.current) setVersion(row.version)
-          if (row.state && JSON.stringify(row.state) !== JSON.stringify(stateRef.current)) setState(row.state)
-          lastEvtRef.current = Date.now()
+          if (row.state) {
+            // ✅ CORREÇÃO: Verifica rev antes de atualizar (aceita apenas rev maior)
+            const incomingState = row.state || {}
+            const incomingRev = typeof incomingState.rev === 'number' ? incomingState.rev : 0
+            const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+            
+            if (incomingRev > localRev) {
+              console.log(`[NET] realtime - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+              setState(incomingState)
+              lastEvtRef.current = Date.now()
+            } else if (incomingRev < localRev) {
+              console.log(`[NET] realtime - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+            } else {
+              // rev igual: atualiza apenas se o conteúdo for diferente
+              if (JSON.stringify(incomingState) !== JSON.stringify(stateRef.current)) {
+                setState(incomingState)
+                lastEvtRef.current = Date.now()
+              }
+            }
+          }
         }
       )
       .subscribe()
@@ -90,26 +121,105 @@ function GameNetProvider({ roomCode, hostId, children }) {
         .single()
       if (!error && data) {
         if (data.version !== versionRef.current) setVersion(data.version)
-        if (JSON.stringify(data.state || {}) !== JSON.stringify(stateRef.current)) setState(data.state || {})
+        if (data.state) {
+          // ✅ CORREÇÃO: Verifica rev antes de atualizar (aceita apenas rev maior)
+          const incomingState = data.state || {}
+          const incomingRev = typeof incomingState.rev === 'number' ? incomingState.rev : 0
+          const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+          
+          if (incomingRev > localRev) {
+            console.log(`[NET] polling - ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+            setState(incomingState)
+          } else if (incomingRev < localRev) {
+            console.log(`[NET] polling - ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+          } else {
+            // rev igual: atualiza apenas se o conteúdo for diferente
+            if (JSON.stringify(incomingState) !== JSON.stringify(stateRef.current)) {
+              setState(incomingState)
+            }
+          }
+        }
       }
     }, 700)
     return () => clearInterval(id)
   }, [enabled, code])
 
-  // commit
+  // commit com trava otimista por rev (revisão no estado JSON)
   const commit = async (updater) => {
     if (!enabled || !ready) return
-    const prev = stateRef.current || {}
-    const next = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
-    const newVersion = (versionRef.current || 0) + 1
+    
+    // ⭐ Trava otimista: carrega estado atual do servidor primeiro para verificar rev
+    const { data: current, error: fetchError } = await supabase
+      .from('rooms')
+      .select('state, version')
+      .eq('code', code)
+      .single()
+    
+    if (fetchError) {
+      console.warn('[NET] commit - erro ao buscar estado atual:', fetchError.message || fetchError)
+      return
+    }
+    
+    const currentState = current?.state || {}
+    const currentRev = typeof currentState.rev === 'number' ? currentState.rev : 0
+    const prevRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+    
+    // Se o rev remoto é maior que o local, alguém gravou antes → recarrega e retorna
+    if (currentRev > prevRev) {
+      console.log(`[NET] commit - ⚠️ rev remoto (${currentRev}) > local (${prevRev}) - recarregando estado remoto`)
+      setState(currentState)
+      setVersion(current?.version ?? versionRef.current)
+      return
+    }
+    
+    // ✅ CORREÇÃO: Usa estado atual do servidor (pode ter sido atualizado por outro cliente)
+    const prev = { ...currentState }
+    const nextState = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
+    
+    // ✅ CORREÇÃO: Incrementa rev baseado no rev atual do servidor
+    const nextRev = currentRev + 1
+    const next = {
+      ...nextState,
+      rev: nextRev
+    }
+    
+    const prevVersion = current?.version ?? versionRef.current ?? 0
+    const newVersion = prevVersion + 1
+    
+    console.log(`[NET] commit - rev: ${currentRev} → ${nextRev}, version: ${prevVersion} → ${newVersion}`)
+    
+    // Tenta atualizar com trava otimista (version na tabela)
     const { data, error } = await supabase
       .from('rooms')
-      .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
+      .update({ 
+        state: next, 
+        version: newVersion, 
+        updated_at: new Date().toISOString() 
+      })
       .eq('code', code)
+      .eq('version', prevVersion) // trava otimista por version na tabela
       .select('state, version')
       .single()
-    if (error) { console.warn('[NET] commit:', error.message || error); return }
-    setState(data?.state || next); setVersion(data?.version ?? newVersion)
+    
+    if (error || !data) {
+      // Conflito: alguém gravou antes → recarrega estado remoto
+      console.warn(`[NET] commit - conflito detectado (alguém gravou antes) - recarregando estado remoto. Erro:`, error?.message || error)
+      const { data: reloaded, error: reloadError } = await supabase
+        .from('rooms')
+        .select('state, version')
+        .eq('code', code)
+        .single()
+      if (!reloadError && reloaded) {
+        setState(reloaded.state || {})
+        setVersion(reloaded.version ?? prevVersion)
+      }
+      return
+    }
+    
+    // Sucesso: atualiza estado local
+    setState(data?.state || next)
+    setVersion(data?.version ?? newVersion)
+    console.log(`[NET] commit - ✅ sucesso - rev: ${data?.state?.rev ?? nextRev}, version: ${data?.version ?? newVersion}`)
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])

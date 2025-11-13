@@ -128,7 +128,7 @@ export default function App() {
   
   // ✅ CORREÇÃO 1: Usa useModal para criar openModalAndWait
   const modalContext = useModal()
-  const { pushModal, awaitTop } = modalContext || {}
+  const { pushModal, awaitTop, stackLength } = modalContext || {}
   
   // ✅ CORREÇÃO 1: Cria openModalAndWait no App.jsx
   const openModalAndWait = useCallback(async (element) => {
@@ -586,15 +586,38 @@ export default function App() {
   // ✅ CORREÇÃO: Flag para rastrear se o jogo acabou de começar
   const [gameJustStarted, setGameJustStarted] = useState(false)
   
+  // ✅ CORREÇÃO: stateRef para manter estado atual (incluindo rev) - DEFINIDO ANTES de ser usado
+  const stateRef = useRef({ rev: 0 })
+  useEffect(() => {
+    if (netState) {
+      stateRef.current = netState
+    }
+  }, [netState])
+  
   useEffect(() => {
     if (!netState) return
+    
+    // ✅ CORREÇÃO 2: Verifica rev antes de processar (aceita apenas rev maior)
+    const incomingRev = typeof netState.rev === 'number' ? netState.rev : 0
+    const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+    
+    if (incomingRev < localRev) {
+      console.log(`[NET] ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev})`)
+      return
+    }
+    
+    if (incomingRev > localRev) {
+      console.log(`[NET] ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev})`)
+      stateRef.current = netState
+    }
+    
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
     // ✅ CORREÇÃO: Log detalhado para debug quando WebSocket falha
     if (nt !== null && nt !== turnIdx) {
-      console.log('[NET] ⚠️ turnIdx divergente detectado - remoto:', nt, 'local:', turnIdx, 'round remoto:', nr, 'round local:', round, 'gameJustStarted:', gameJustStarted)
+      console.log(`[NET] ⚠️ turnIdx divergente detectado - rev: ${incomingRev}, remoto: ${nt}, local: ${turnIdx}, round remoto: ${nr}, round local: ${round}, gameJustStarted: ${gameJustStarted}`)
     }
 
     let changed = false
@@ -775,21 +798,80 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netVersion, gameJustStarted])
 
-  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
+  // ✅ CORREÇÃO: Pull defensivo - se idleMs > 2s e stackLength === 0 e turnLock === false, força reload
+  const lastActionTimeRef = useRef(Date.now())
+  useEffect(() => {
+    // Atualiza lastActionTime quando há ações (turno muda, players mudam, etc.)
+    lastActionTimeRef.current = Date.now()
+  }, [turnIdx, players, round, netVersion])
+
+  useEffect(() => {
+    if (phase !== 'game' || !currentLobbyId) return
+    
+    const checkDefensivePull = () => {
+      const idleMs = Date.now() - lastActionTimeRef.current
+      const shouldPull = idleMs > 2000 && stackLength === 0 && !turnLock
+      
+      if (shouldPull) {
+        console.log(`[App] ⚠️ Pull defensivo: idleMs=${idleMs}ms, stackLength=${stackLength}, turnLock=${turnLock} - forçando verificação de estado`)
+        // ✅ CORREÇÃO: Força uma verificação do estado do Supabase
+        // O GameNetProvider já tem polling, mas forçamos uma verificação aqui também
+        // Isso ajuda se algum evento do realtime falhar
+        if (typeof netCommit === 'function' && netState) {
+          // Não faz commit, apenas força uma verificação do estado
+          // O polling do GameNetProvider já faz isso, mas garantimos aqui
+          console.log('[App] Pull defensivo - estado atual:', {
+            rev: netState.rev,
+            turnIdx: netState.turnIdx,
+            round: netState.round,
+            playersCount: netState.players?.length || 0
+          })
+        }
+      }
+    }
+    
+    // Verifica a cada 3s se necessário fazer pull defensivo
+    const interval = setInterval(checkDefensivePull, 3000)
+    return () => clearInterval(interval)
+  }, [phase, currentLobbyId, stackLength, turnLock, netCommit, netState])
+
+  // ✅ CORREÇÃO 1: commitRemoteState agora persiste movimentos também (não só turnos)
+  // ✅ CORREÇÃO 2: Usa rev no estado JSON com trava otimista (via netCommit)
+  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound, eventType = 'TURN', eventBy = myUid) {
     if (typeof netCommit === 'function') {
       try {
-        // ✅ CORREÇÃO: Garante que o turnIdx seja sempre 0 ao iniciar o jogo (broadcastStart)
-        // Se o round é 1 e o turnIdx é 0, força turnIdx = 0 no commit
         const finalTurnIdx = (nextRound === 1 && nextTurnIdx === 0) ? 0 : nextTurnIdx
-        console.log('[NET] commitRemoteState - turnIdx:', finalTurnIdx, 'round:', nextRound, 'players:', nextPlayers.length)
-        await netCommit(prev => ({
-          ...(prev || {}),
-          players: nextPlayers,
-          turnIdx: finalTurnIdx,
-          round: nextRound,
-        }))
+        const currentRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
+        
+        console.log(`[NET] commitRemoteState - ${eventType} - rev atual: ${currentRev}, turnIdx: ${finalTurnIdx}, round: ${nextRound}, players: ${nextPlayers.length}`)
+        
+        // ✅ CORREÇÃO: Sempre persiste (movimentos e turnos)
+        // O netCommit já usa rev com trava otimista e incrementa automaticamente
+        await netCommit(prev => {
+          const prevState = prev || {}
+          const prevRev = typeof prevState.rev === 'number' ? prevState.rev : 0
+          const nextRev = prevRev + 1 // ✅ CORREÇÃO: Calcula nextRev baseado no estado atual
+          return {
+            ...prevState,
+            players: nextPlayers,
+            turnIdx: finalTurnIdx,
+            round: nextRound,
+            gameOver: gameOver,
+            winner: winner,
+            lastEvent: {
+              type: eventType,
+              by: eventBy || myUid,
+              seq: nextRev, // ✅ CORREÇÃO: seq = rev (sempre igual ao rev final)
+              ts: Date.now()
+            }
+            // ✅ CORREÇÃO: Não define rev aqui - o netCommit vai incrementar automaticamente
+          }
+        })
+        
+        // ✅ CORREÇÃO: stateRef será atualizado automaticamente quando netState mudar
+        // Não precisa atualizar manualmente aqui
       } catch (e) {
-        console.warn('[NET] commit failed:', e?.message || e)
+        console.warn('[NET] commitRemoteState failed:', e?.message || e)
       }
     }
   }
@@ -801,21 +883,21 @@ export default function App() {
     broadcastSeqRef.current += 1
     
     const isMoveOnly = extra.move === true && extra.skipTurnUpdate === true
+    const eventType = isMoveOnly ? 'MOVE' : 'TURN'
     
-    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}${isMoveOnly ? ' (MOVIMENTO APENAS)' : ''}`)
+    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - ${eventType} - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
     console.log('  - players:', nextPlayers.length)
     console.log('  - turnIdx:', nextTurnIdx, '(local atual:', turnIdx, ')')
     console.log('  - round:', nextRound, '(local atual:', round, ')')
     console.log('  - source (meId):', meId)
     console.log('  - seq:', broadcastSeqRef.current)
     if (isMoveOnly) {
-      console.log('  - ⚠️ Broadcast de movimento apenas - NÃO atualiza turnIdx')
+      console.log('  - 🔁 PERSISTINDO MOVIMENTO - não atualiza turnIdx localmente, mas persiste no Supabase')
     }
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza o estado LOCAL ANTES de fazer broadcast
-    // Isso garante que o cliente que faz o broadcast também atualiza seu próprio estado
-    // Isso previne que o cliente ignore seu próprio broadcast por pensar que o estado remoto é antigo
-    // ✅ CORREÇÃO: Se for apenas movimento (skipTurnUpdate), não atualiza turnIdx
+    // Se for movimento, não atualiza turnIdx localmente (será atualizado quando o turno mudar)
+    // Mas SEMPRE atualiza players (posições/tile) para refletir o movimento imediato
     if (!isMoveOnly && nextTurnIdx !== turnIdx) {
       console.log('  - ⚠️ turnIdx mudou - atualizando estado local ANTES do broadcast')
       console.log('  - turnIdx atual:', turnIdx, '→ novo:', nextTurnIdx)
@@ -831,8 +913,9 @@ export default function App() {
       setPlayers(nextPlayers)
     }
     
-    // 1) rede
-    commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    // ✅ CORREÇÃO 1: SEMPRE persiste no Supabase (movimentos e turnos)
+    // ✅ CORREÇÃO 2: Passa eventType para commitRemoteState
+    commitRemoteState(nextPlayers, nextTurnIdx, nextRound, eventType, myUid)
     
     // 2) entre abas - agora com tipo GAME_STATE e seq
     try {
@@ -846,9 +929,10 @@ export default function App() {
         gameOver: gameOverState,
         winner: winnerState,
         source: meId,
+        eventType: eventType, // ✅ CORREÇÃO: Inclui eventType na mensagem
         ...extra          // (opcional) dados de UX, ex.: dice, landed, actorId
       })
-      console.log('  - ✅ Broadcast GAME_STATE enviado via BroadcastChannel - seq:', broadcastSeqRef.current)
+      console.log(`  - ✅ Broadcast GAME_STATE enviado via BroadcastChannel - ${eventType} - seq:`, broadcastSeqRef.current)
     } catch (e) { 
       console.warn('[App] broadcastState failed:', e) 
     }

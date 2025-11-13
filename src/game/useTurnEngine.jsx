@@ -221,6 +221,26 @@ export function useTurnEngine(deps) {
   // ✅ CORREÇÃO 2: Atualiza lockOwnerRef compartilhado
   useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
+  // ✅ CORREÇÃO: Auto-reconciliação - se não é minha vez mas há lock ativo, desativa lock
+  useEffect(() => {
+    if (!isMyTurn && turnLock) {
+      const currentPlayer = players?.[turnIdx]
+      const currentPlayerId = currentPlayer?.id
+      const windowUid = window.__MY_UID || window.__myUid || window.__playerId
+      
+      // Se o jogador atual não sou eu (verificado por ID ou window.__MY_UID), desativa lock
+      if (currentPlayerId && String(currentPlayerId) !== String(myUid)) {
+        console.log('[useTurnEngine] ⚠️ Auto-reconciliação: não é minha vez mas há lock ativo - desativando lock')
+        console.log('[useTurnEngine]   - currentPlayer.id:', currentPlayerId, 'myUid:', myUid, 'window.__MY_UID:', windowUid)
+        setTurnLockBroadcast(false)
+      } else if (windowUid && String(windowUid) !== String(currentPlayerId)) {
+        console.log('[useTurnEngine] ⚠️ Auto-reconciliação: window.__MY_UID não corresponde ao jogador atual - desativando lock')
+        console.log('[useTurnEngine]   - window.__MY_UID:', windowUid, 'currentPlayer.id:', currentPlayerId)
+        setTurnLockBroadcast(false)
+      }
+    }
+  }, [isMyTurn, turnLock, players, turnIdx, myUid, setTurnLockBroadcast])
+
   // ✅ CORREÇÃO: Helper para enfileirar dados de turno de forma centralizada
   const queueTurnData = useCallback((patch) => {
     const calcNextTurnIdx = () => {
