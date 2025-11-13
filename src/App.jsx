@@ -127,6 +127,7 @@ export default function App() {
 
   // ====== BroadcastChannel para sync entre abas (mesmo navegador)
   const syncKey = useMemo(() => `sg-sync:${currentLobbyId || 'local'}`, [currentLobbyId])
+  const lastSeqRef = useRef(0)  // seq monotônico para evitar estados antigos
 
   useEffect(() => {
     try {
@@ -192,15 +193,26 @@ export default function App() {
           return
         }
 
-        if (d.type === 'SYNC' && phase === 'game') {
-          console.group(`[App] SYNC recebido - turnIdx: ${d.turnIdx}, round: ${d.round}, source: ${d.source}`)
+        // ✅ CORREÇÃO: Suporta tanto SYNC (antigo) quanto GAME_STATE (novo com seq)
+        if ((d.type === 'SYNC' || d.type === 'GAME_STATE') && phase === 'game') {
+          // Para GAME_STATE, verifica seq para evitar estados antigos/duplicados
+          if (d.type === 'GAME_STATE' && typeof d.seq === 'number') {
+            if (d.seq <= lastSeqRef.current) {
+              console.log(`[App] GAME_STATE - ⚠️ Ignorando estado antigo (seq: ${d.seq} <= lastSeq: ${lastSeqRef.current})`)
+              return
+            }
+            lastSeqRef.current = d.seq
+            console.log(`[App] GAME_STATE - ✅ Seq válido: ${d.seq}`)
+          }
+          
+          console.group(`[App] ${d.type} recebido - turnIdx: ${d.turnIdx}, round: ${d.round}, source: ${d.source}${d.seq ? `, seq: ${d.seq}` : ''}`)
           console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid, 'meId:', meId)
           console.log('[App] SYNC - jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
           console.log('[App] SYNC - jogadores remotos:', d.players?.map(p => ({ id: p.id, name: p.name })))
           
-          // ✅ CORREÇÃO CRÍTICA: Se o SYNC é do próprio cliente, ignora (evita loop de sincronização)
+          // ✅ CORREÇÃO CRÍTICA: Se o SYNC/GAME_STATE é do próprio cliente, ignora (evita loop de sincronização)
           if (String(d.source) === String(meId)) {
-            console.log('[App] SYNC - ⚠️ Ignorando SYNC do próprio cliente (source:', d.source, 'meId:', meId, ')')
+            console.log(`[App] ${d.type} - ⚠️ Ignorando ${d.type} do próprio cliente (source: ${d.source}, meId: ${meId})`)
             console.groupEnd()
             return
           }
@@ -695,12 +707,18 @@ export default function App() {
     }
   }
 
-  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
-    console.group(`[📡 BROADCAST] Enviando estado - turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
+  // seq monotônico para ordenar mensagens e evitar estados antigos
+  const broadcastSeqRef = useRef(0)
+
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, extra = {}) {
+    broadcastSeqRef.current += 1
+    
+    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
     console.log('  - players:', nextPlayers.length)
     console.log('  - turnIdx:', nextTurnIdx, '(local atual:', turnIdx, ')')
     console.log('  - round:', nextRound, '(local atual:', round, ')')
     console.log('  - source (meId):', meId)
+    console.log('  - seq:', broadcastSeqRef.current)
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza o estado LOCAL ANTES de fazer broadcast
     // Isso garante que o cliente que faz o broadcast também atualiza seu próprio estado
@@ -723,18 +741,21 @@ export default function App() {
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
     
-    // 2) entre abas
+    // 2) entre abas - agora com tipo GAME_STATE e seq
     try {
       bcRef.current?.postMessage?.({
-        type: 'SYNC',
-        players: nextPlayers,
+        type: 'GAME_STATE',
+        players: nextPlayers,          // inclui posições/tile atualizados
         turnIdx: nextTurnIdx,
         round: nextRound,
+        seq: broadcastSeqRef.current,
+        ts: Date.now(),
         gameOver: gameOverState,
         winner: winnerState,
         source: meId,
+        ...extra          // (opcional) dados de UX, ex.: dice, landed, actorId
       })
-      console.log('  - ✅ Broadcast enviado via BroadcastChannel')
+      console.log('  - ✅ Broadcast GAME_STATE enviado via BroadcastChannel - seq:', broadcastSeqRef.current)
     } catch (e) { 
       console.warn('[App] broadcastState failed:', e) 
     }

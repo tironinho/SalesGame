@@ -60,6 +60,21 @@ export function useTurnEngine({
     )
   }, [])
 
+  // ✅ CORREÇÃO: "É minha vez?" usando ID estável do jogador
+  // Garante que comparamos ID estável, não posição no array
+  const myPlayer = useMemo(() => players.find(isMine) || {}, [players, isMine])
+  const myPlayerId = useMemo(() => myPlayer?.id || myPlayer?.pid || myUid || meId, [myPlayer, myUid, meId])
+  const itsMe = useMemo(() => {
+    const currentPlayer = players?.[turnIdx]
+    if (!currentPlayer) return false
+    // Compara por ID estável (id ou pid)
+    const isMatch = currentPlayer?.id === myPlayerId || currentPlayer?.pid === myPlayerId
+    if (isMatch && !isMyTurn) {
+      console.log('[useTurnEngine] ⚠️ itsMe=true mas isMyTurn=false - turnIdx:', turnIdx, 'myPlayerId:', myPlayerId, 'currentPlayer.id:', currentPlayer?.id)
+    }
+    return isMatch
+  }, [players, turnIdx, myPlayerId, isMyTurn])
+
   // ===== Modais =====
   const modalContext = useModal()
   const { pushModal, awaitTop, resolveTop, closeTop, closeAllModals, stackLength } = modalContext || {}
@@ -638,7 +653,7 @@ export function useTurnEngine({
     // ✅ CORREÇÃO CRÍTICA: Só define pendingTurnDataRef se NÃO houver tiles de modal
     // Se houver tiles de modal, o pendingTurnDataRef será definido DEPOIS que todas as modais forem fechadas
     // Isso garante que o tick não mude o turno antes das modais serem abertas
-    if (!hasModalTile || !isMyTurn || !pushModal || !awaitTop) {
+    if (!hasModalTile || !itsMe || !pushModal || !awaitTop) {
       // Armazena os dados do próximo turno para uso na função tick
       pendingTurnDataRef.current = {
         nextPlayers,
@@ -660,7 +675,7 @@ export function useTurnEngine({
     console.log('  - Cruzou Start (pos 0):', crossedStart1)
     console.log('  - Cruzou Despesas (pos 22):', crossedExpenses23)
     console.log('  - Condições para modais:')
-    console.log('    - isMyTurn:', isMyTurn, isMyTurn ? '✅' : '❌')
+    console.log('    - itsMe:', itsMe, itsMe ? '✅' : '❌')
     console.log('    - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
     console.log('    - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
     console.log('    - turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
@@ -678,17 +693,17 @@ export function useTurnEngine({
       console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
       console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
       
-      if (isErpTile && isMyTurn && pushModal && awaitTop) {
-        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal ERP')
-      } else {
-        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
-        if (!isMyTurn) console.warn('  - Não é minha vez!')
-        if (!pushModal) console.warn('  - pushModal não está disponível!')
-        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
-      }
-      console.groupEnd()
+    if (isErpTile && itsMe && pushModal && awaitTop) {
+      console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal ERP')
+    } else {
+      console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+      if (!itsMe) console.warn('  - Não é minha vez! (itsMe:', itsMe, 'myPlayerId:', myPlayerId, 'currentPlayer.id:', players[turnIdx]?.id, ')')
+      if (!pushModal) console.warn('  - pushModal não está disponível!')
+      if (!awaitTop) console.warn('  - awaitTop não está disponível!')
     }
-    if (isErpTile && isMyTurn && pushModal && awaitTop) {
+    console.groupEnd()
+    }
+    if (isErpTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         const currentErpLevel = players[curIdx]?.erpLevel || null
         console.log('[ERP] Abrindo modal ERP para:', cur?.name)
@@ -723,7 +738,7 @@ export function useTurnEngine({
 
     // Treinamento
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
-    if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
+    if (isTrainingTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -780,17 +795,17 @@ export function useTurnEngine({
       console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
       console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
       
-      if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+      if (isDirectBuyTile && itsMe && pushModal && awaitTop) {
         console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Compra Direta')
       } else {
         console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
-        if (!isMyTurn) console.warn('  - Não é minha vez!')
+        if (!itsMe) console.warn('  - Não é minha vez! (itsMe:', itsMe, ')')
         if (!pushModal) console.warn('  - pushModal não está disponível!')
         if (!awaitTop) console.warn('  - awaitTop não está disponível!')
       }
       console.groupEnd()
     }
-    if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+    if (isDirectBuyTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1068,7 +1083,7 @@ export function useTurnEngine({
 
     // Inside Sales (casa específica)
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
-    if (isInsideTile && isMyTurn && pushModal && awaitTop) {
+    if (isInsideTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1113,17 +1128,17 @@ export function useTurnEngine({
       console.log('  - pushModal:', typeof pushModal, pushModal ? '✅' : '❌')
       console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
       
-      if (isClientsTile && isMyTurn && pushModal && awaitTop) {
+      if (isClientsTile && itsMe && pushModal && awaitTop) {
         console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Clientes')
       } else {
         console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
-        if (!isMyTurn) console.warn('  - Não é minha vez!')
+        if (!itsMe) console.warn('  - Não é minha vez! (itsMe:', itsMe, ')')
         if (!pushModal) console.warn('  - pushModal não está disponível!')
         if (!awaitTop) console.warn('  - awaitTop não está disponível!')
       }
       console.groupEnd()
     }
-    if (isClientsTile && isMyTurn && pushModal && awaitTop) {
+    if (isClientsTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1169,7 +1184,7 @@ export function useTurnEngine({
 
     // Gestor
     const isManagerTile = [18,24,29,51].includes(landedOneBased)
-    if (isManagerTile && isMyTurn && pushModal && awaitTop) {
+    if (isManagerTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1202,7 +1217,7 @@ export function useTurnEngine({
 
     // Field Sales
     const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
-    if (isFieldTile && isMyTurn && pushModal && awaitTop) {
+    if (isFieldTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1268,7 +1283,7 @@ export function useTurnEngine({
 
     // Mix de Produtos
     const isMixTile = [7,31,44].includes(landedOneBased)
-    if (isMixTile && isMyTurn && pushModal && awaitTop) {
+    if (isMixTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1318,18 +1333,18 @@ export function useTurnEngine({
       console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
       console.log('  - turnIdx:', turnIdx, 'myUid:', myUid, 'owner.id:', players[turnIdx]?.id)
       
-      if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
+      if (isLuckMisfortuneTile && itsMe && pushModal && awaitTop) {
         console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal Sorte & Revés')
       } else {
         console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
         if (!isLuckMisfortuneTile) console.warn('  - Não é um tile de Sorte & Revés!')
-        if (!isMyTurn) console.warn('  - Não é minha vez! isMyTurn:', isMyTurn)
+        if (!itsMe) console.warn('  - Não é minha vez! (itsMe:', itsMe, ')')
         if (!pushModal) console.warn('  - pushModal não está disponível!')
         if (!awaitTop) console.warn('  - awaitTop não está disponível!')
       }
       console.groupEnd()
     }
-    if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
+    if (isLuckMisfortuneTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
         console.log(`[🎲 MODAL] ${cur.name} - Tentando abrir modal Sorte & Revés`)
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
@@ -1418,7 +1433,7 @@ export function useTurnEngine({
     }
 
     // === AUTO-MODAIS (Faturamento / Despesas) ===
-    if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
+    if (crossedStart1 && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers
@@ -1451,7 +1466,7 @@ export function useTurnEngine({
       })()
     }
 
-    if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
+    if (crossedExpenses23 && itsMe && pushModal && awaitTop) {
       ;(async () => {
         // ✅ CORREÇÃO CRÍTICA: Captura as variáveis do escopo antes de usá-las
         const capturedNextPlayers = nextPlayers

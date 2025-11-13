@@ -17,6 +17,8 @@ export function useGameSync({
 }) {
   const syncKey = useMemo(() => `sg-sync:${roomId || 'local'}`, [roomId])
   const bcRef = useRef(null)
+  const broadcastSeqRef = useRef(0)  // seq monotônico para ordenar mensagens
+  const lastSeqRef = useRef(0)  // seq monotônico para evitar estados antigos
 
   // ===== Realtime provider (opcional) =====
   const net = (() => {
@@ -41,18 +43,22 @@ export function useGameSync({
     }
   }
 
-  function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
-    console.log('[SG][BC] SYNC -> turnIdx=%d round=%d', nextTurnIdx, nextRound)
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound, extra = {}) {
+    broadcastSeqRef.current += 1
+    console.log('[SG][BC] GAME_STATE -> turnIdx=%d round=%d seq=%d', nextTurnIdx, nextRound, broadcastSeqRef.current)
     // 1) rede (outros computadores)
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
-    // 2) entre abas (mesma máquina)
+    // 2) entre abas (mesma máquina) - agora com tipo GAME_STATE e seq
     try {
       bcRef.current?.postMessage?.({
-        type: 'SYNC',
-        players: nextPlayers,
+        type: 'GAME_STATE',
+        players: nextPlayers,          // inclui posições/tile atualizados
         turnIdx: nextTurnIdx,
         round:   nextRound,
+        seq: broadcastSeqRef.current,
+        ts: Date.now(),
         source:  meId,
+        ...extra          // (opcional) dados de UX
       })
     } catch (e) { console.warn('[SG][App] broadcastState failed:', e) }
   }
@@ -110,8 +116,19 @@ export function useGameSync({
           return
         }
 
-        if (d.type === 'SYNC' && phase === 'game') {
-          console.log('[SG][BC] SYNC <- turnIdx=%d round=%d', d.turnIdx, d.round)
+        // ✅ CORREÇÃO: Suporta tanto SYNC (antigo) quanto GAME_STATE (novo com seq)
+        if ((d.type === 'SYNC' || d.type === 'GAME_STATE') && phase === 'game') {
+          // Para GAME_STATE, verifica seq para evitar estados antigos/duplicados
+          if (d.type === 'GAME_STATE' && typeof d.seq === 'number') {
+            if (d.seq <= lastSeqRef.current) {
+              console.log('[SG][BC] GAME_STATE <- ⚠️ Ignorando estado antigo (seq: %d <= lastSeq: %d)', d.seq, lastSeqRef.current)
+              return
+            }
+            lastSeqRef.current = d.seq
+            console.log('[SG][BC] GAME_STATE <- ✅ Seq válido: %d', d.seq)
+          }
+          console.log('[SG][BC] %s <- turnIdx=%d round=%d', d.type, d.turnIdx, d.round)
+          // aplica estado completo — tokens se movem nas duas telas
           setPlayers(d.players)
           setTurnIdx(d.turnIdx)
           setRound(d.round)
