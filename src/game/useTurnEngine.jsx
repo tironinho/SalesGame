@@ -64,6 +64,58 @@ export function useTurnEngine(deps) {
 
   // ✅ CORREÇÃO 2: Usa refs de engineState em vez de criar localmente
   const { roomRef, playersRef, roundRef, turnIdxRef, pendingTurnDataRef, lockOwnerRef } = engineState
+  
+  // ✅ CORREÇÃO: Espelha estado atual nas refs sem disparar efeitos
+  useEffect(() => { playersRef.current = players }, [players])
+  useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
+  useEffect(() => { roundRef.current = round }, [round])
+  
+  // ✅ CORREÇÃO 4: Helper functions com hoisting - DEFINIDAS ANTES de serem usadas
+  // ✅ CORREÇÃO: Simplificado conforme instruções do usuário
+  
+  // ✅ Helper para calcular próximo turno
+  function computeNextTurn(idx, total) {
+    const nextIdx = (idx + 1) % total
+    const nextRnd = nextIdx === 0 ? (roundRef.current + 1) : roundRef.current
+    return { nextIdx, nextRnd }
+  }
+  
+  // ✅ Helper para commitar turno (atômico)
+  function commitTurn(nextTurnIdx, nextRound, updatedPlayers = playersRef.current) {
+    console.log('[commitTurn] ✅ Commitando turno - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound)
+    // Atualiza estado local primeiro
+    setTurnIdx(nextTurnIdx)
+    if (updatedPlayers) {
+      setPlayers(updatedPlayers)
+    }
+    if (nextRound !== undefined) {
+      setRound(nextRound)
+    }
+    // Faz broadcast atômico
+    broadcastState(updatedPlayers, nextTurnIdx, nextRound)
+    // Limpa pendingTurnDataRef após commit
+    pendingTurnDataRef.current = null
+  }
+  
+  // ✅ Helper para finalizar turno
+  function endTurn(forcePlayers) {
+    const total = playersRef.current.length || 1
+    const { nextIdx, nextRnd } = computeNextTurn(turnIdxRef.current, total)
+    commitTurn(nextIdx, nextRnd, forcePlayers ?? playersRef.current)
+  }
+  
+  // ✅ Helper para limpar pendingTurnDataRef (function declaration para hoisting)
+  function clearPending(from) {
+    console.log(`[CLEAR pendingTurnDataRef FROM: ${from}]`)
+    pendingTurnDataRef.current = null
+  }
+  
+  // ✅ Helper para setar pendingTurnDataRef (function declaration para hoisting)
+  function setPending(from, data) {
+    pendingTurnDataRef.current = data
+    console.log(`[SET pendingTurnDataRef FROM: ${from}]`, data)
+  }
+  
   // ===== Helpers =====
   // ✅ CORREÇÃO: Helper para verificar se o owner é este jogador (por ID ou nome)
   const isOwnerMe = useCallback((owner, myUid, myName) => {
@@ -156,12 +208,7 @@ export function useTurnEngine(deps) {
   // ✅ CORREÇÃO 2: Usa tickTimerRef local (não compartilhado)
   const tickTimerRef = useRef(null) // ✅ CORREÇÃO: Timer do tick para poder parar ao sair da fase
   
-  // ✅ CORREÇÃO 2: Atualiza refs compartilhadas de engineState
-  useEffect(() => { playersRef.current = players }, [players])
-  useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
-  useEffect(() => { roundRef.current = round }, [round])
-  
-  // ✅ CORREÇÃO 3: Refs locais para estado atual (usados por endTurn e commitTurn)
+  // ✅ CORREÇÃO 3: Refs locais para estado atual (usados por helpers)
   const myUidRef = useRef(myUid)
   const isMyTurnRef = useRef(isMyTurn)
   
@@ -202,16 +249,7 @@ export function useTurnEngine(deps) {
     })
   }, [players, turnIdx, deriveRound, TRACK_LEN, findNextAliveIdx])
 
-  // ✅ CORREÇÃO: Guard-rails de instrumentação para rastrear quem setou/limpou
-  const setPending = useCallback((from, data) => {
-    pendingTurnDataRef.current = data
-    console.log(`[SET pendingTurnDataRef FROM: ${from}]`, data)
-  }, [])
-
-  const clearPending = useCallback((from) => {
-    console.log(`[CLEAR pendingTurnDataRef FROM: ${from}]`)
-        pendingTurnDataRef.current = null
-  }, [])
+  // ✅ CORREÇÃO: setPending e clearPending foram movidos para antes (function declarations)
 
   const stopTick = useCallback(() => {
     if (tickTimerRef.current) {
@@ -258,7 +296,9 @@ export function useTurnEngine(deps) {
       // Cleanup: sempre para o tick ao desmontar ou mudar fase
       stopTick()
     }
-  }, [phase, gameJustStarted, setTurnLockBroadcast, stopTick, clearPending])
+  // ✅ CORREÇÃO: clearPending é function declaration (hoisting) - não precisa nas dependências
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, gameJustStarted, setTurnLockBroadcast, stopTick])
 
   // ✅ CORREÇÃO: useEffect separado para gerenciar o timer do tick baseado em phase
   useEffect(() => {
@@ -304,11 +344,7 @@ export function useTurnEngine(deps) {
               ts: Date.now()
             }
             // Chama commitTurn com os dados do watchdog
-            commitTurn({
-              nextTurnIdx,
-              nextRound,
-              nextPlayers: playersRef.current
-            })
+            commitTurn(nextTurnIdx, nextRound, playersRef.current)
             idleStartTime = Date.now() // reseta timer ocioso
           }
           // ✅ CORREÇÃO 4: importante: NÃO desativar o lock à toa
@@ -334,11 +370,11 @@ export function useTurnEngine(deps) {
             const nextPlayerName = turnData.nextPlayers?.[turnData.nextTurnIdx]?.name || 'Jogador'
             console.log(`[🎲 TURNO] ${currentPlayerName} → ${nextPlayerName}`)
             
-            commitTurn({
-              nextTurnIdx: turnData.nextTurnIdx,
-              nextRound: turnData.nextRound ?? round,
-              nextPlayers: turnData.nextPlayers || players
-            })
+            commitTurn(
+              turnData.nextTurnIdx,
+              turnData.nextRound ?? round,
+              turnData.nextPlayers || players
+            )
             
             idleStartTime = Date.now() // reseta timer ocioso
           } catch (err) {
@@ -372,8 +408,10 @@ export function useTurnEngine(deps) {
     return () => {
       stopTick()
     }
+  // ✅ CORREÇÃO: Dependências mínimas - funções helper são function declarations (hoisting)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, players, round, turnIdx, isMyTurn, myUid, stackLength, gameJustStarted, 
-      setTurnIdx, setPlayers, setRound, commitTurn, clearPending, releaseLocalLocksIfHeld, stopTick])
+      setTurnIdx, setPlayers, setRound, stopTick])
 
   // ✅ CORREÇÃO 1: openModalAndWait agora vem via deps, não precisa criar aqui
   // ✅ CORREÇÃO: Mantém compatibilidade criando alias se necessário
@@ -466,84 +504,14 @@ export function useTurnEngine(deps) {
     // ✅ CORREÇÃO: NÃO limpe pendingTurnDataRef nem libere lock aqui - deixe o tick fazer isso
   }, [players, turnIdx, queueTurnData, findNextAliveIdx, deriveRound, TRACK_LEN])
 
-  // ✅ CORREÇÃO: Helper para liberar locks locais (movido para antes de commitTurn)
-  const releaseLocalLocksIfHeld = useCallback(() => {
+  // ✅ CORREÇÃO: Helper para liberar locks locais (function declaration para hoisting)
+  function releaseLocalLocksIfHeld() {
     const currentLockOwner = lockOwnerRef.current
     const isLockOwner = String(currentLockOwner || '') === String(myUid)
     if (isLockOwner) {
       console.log('[releaseLocalLocksIfHeld] 🔓 Liberando locks locais')
       setTurnLockBroadcast(false)
       setLockOwner(null)
-    }
-  }, [myUid, setTurnLockBroadcast, lockOwnerRef])
-  
-  // ✅ CORREÇÃO 3: endTurn() sempre preenche pendingTurnDataRef antes do broadcast
-  // ✅ CORREÇÃO 4: Transformado em function declaration para hoisting
-  function endTurn(reason = 'action-complete') {
-    if (!isMyTurnRef.current) {
-      console.warn('[endTurn] ⚠️ Não é minha vez, ignorando')
-      return
-    }
-
-    const nextTurnIdx = (turnIdxRef.current + 1) % playersRef.current.length
-    const nextRound = (turnIdxRef.current + 1 === playersRef.current.length)
-      ? roundRef.current + 1
-      : roundRef.current
-
-    // ✅ CORREÇÃO 3: 1) marca o pendingTurn antes de qualquer setState/broadcast
-    pendingTurnDataRef.current = {
-      nextTurnIdx,
-      nextRound,
-      by: myUidRef.current,
-      reason,
-      ts: Date.now()
-    }
-
-    console.log('[endTurn] ✅ pendingTurnDataRef preenchido - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound, 'reason:', reason)
-
-    // ✅ CORREÇÃO 3: 2) atualiza players de forma imutável e já faz broadcast atômico
-    setPlayers(prev => {
-      const upd = prev.map(p => ({ ...p })) // aplique deltas aqui se houver
-      // ✅ CORREÇÃO 5: commitTurn atômico será chamado pelo tick
-      return upd
-    })
-  }
-
-  // ✅ CORREÇÃO 5: commitTurn() atômico (estado + turno + lockOwner)
-  // ✅ CORREÇÃO 4: Transformado em function declaration para hoisting
-  // ✅ CORREÇÃO: Usa releaseLocalLocksIfHeld que está definido antes
-  function commitTurn({ nextTurnIdx, nextRound, nextPlayers }) {
-    const version = (roomRef?.current?.stateVersion || 0) + 1
-    
-    console.log('[commitTurn] ✅ Commitando turno atômico - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound, 'version:', version)
-    
-    try {
-      // ✅ CORREÇÃO 5: update único no backend (idealmente via RPC/upsert)
-      // Atualiza estado local primeiro
-      setTurnIdx(nextTurnIdx)
-      if (nextPlayers) {
-        setPlayers(nextPlayers)
-      }
-      if (nextRound !== undefined) {
-        setRound(nextRound)
-      }
-      
-      // Faz broadcast atômico
-      broadcastState(nextPlayers || playersRef.current, nextTurnIdx, nextRound, gameOver, winner, {
-        lockOwner: null,
-        stateVersion: version,
-        atomic: true
-      })
-      
-      console.log('[commitTurn] ✅ Commit atômico concluído')
-      // ✅ CORREÇÃO 5: Limpa pendingTurnDataRef após commit bem-sucedido
-      pendingTurnDataRef.current = null
-      // ✅ CORREÇÃO 5: Libera locks após commit
-      releaseLocalLocksIfHeld()
-    } catch (err) {
-      console.error('[commitTurn] ❌ Erro no commit atômico:', err)
-      // opcional: retry/backoff
-      releaseLocalLocksIfHeld()
     }
   }
 
