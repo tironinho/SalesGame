@@ -7,6 +7,9 @@ import { TRACK_LEN } from '../data/track'
 // Modal system
 import { useModal } from '../modals/ModalContext'
 
+// ✅ CORREÇÃO 1: Importa engineState para usar refs compartilhadas
+import { engineState } from './engineState'
+
 // ✅ CORREÇÃO: Removidos imports estáticos de modais para quebrar ciclos de importação
 // Modais serão carregadas dinamicamente quando necessário
 
@@ -30,9 +33,12 @@ import {
 
 /**
  * Hook do motor de turnos.
+ * ✅ CORREÇÃO 1: Recebe tudo via deps para quebrar ciclo de importações
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
  */
-export function useTurnEngine({
+export function useTurnEngine(deps) {
+  // ✅ CORREÇÃO 1: Extrai todas as dependências do objeto deps
+  const {
   players, setPlayers,
   round, setRound,
   turnIdx, setTurnIdx,
@@ -52,7 +58,12 @@ export function useTurnEngine({
   phase, // Adicionado para controle condicional dentro do hook
   gameJustStarted, // ✅ CORREÇÃO: Flag para prevenir mudança de turno imediata após início
   myName, // ✅ CORREÇÃO: Adicionado para verificação de owner por nome
-}) {
+    openModalAndWait, // ✅ CORREÇÃO 1: Recebe via deps em vez de criar localmente
+    requireFunds, // ✅ CORREÇÃO 1: Recebe via deps em vez de criar localmente
+  } = deps
+
+  // ✅ CORREÇÃO 2: Usa refs de engineState em vez de criar localmente
+  const { roomRef, playersRef, roundRef, turnIdxRef, pendingTurnDataRef, lockOwnerRef } = engineState
   // ===== Helpers =====
   // ✅ CORREÇÃO: Helper para verificar se o owner é este jogador (por ID ou nome)
   const isOwnerMe = useCallback((owner, myUid, myName) => {
@@ -85,10 +96,8 @@ export function useTurnEngine({
   useEffect(() => { modalContextRef.current = modalContext }, [modalContext])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
-  // ✅ PATCH 1: Movido para cima para evitar "Cannot access 'lockOwner' before initialization"
+  // ✅ CORREÇÃO 2: Usa lockOwnerRef de engineState, mas mantém estado local para React
   const [lockOwner, setLockOwner] = useState(null)
-  const lockOwnerRef = useRef(null)
-  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = useState(0)
@@ -144,22 +153,23 @@ export function useTurnEngine({
     }
   }, [isMyTurn, modalLocks, stackLength, closeAllModals, resolveTop, lockOwner, myUid])
 
-  // 🔄 dados do próximo turno (para evitar stale closure)
-  const pendingTurnDataRef = useRef(null)
+  // ✅ CORREÇÃO 2: Usa tickTimerRef local (não compartilhado)
   const tickTimerRef = useRef(null) // ✅ CORREÇÃO: Timer do tick para poder parar ao sair da fase
   
-  // ✅ CORREÇÃO 3: Refs para estado atual (usados por endTurn e commitTurn)
-  const playersRef = useRef(players)
-  const turnIdxRef = useRef(turnIdx)
-  const roundRef = useRef(round)
-  const myUidRef = useRef(myUid)
-  const isMyTurnRef = useRef(isMyTurn)
-  
+  // ✅ CORREÇÃO 2: Atualiza refs compartilhadas de engineState
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
   useEffect(() => { roundRef.current = round }, [round])
+  
+  // ✅ CORREÇÃO 3: Refs locais para estado atual (usados por endTurn e commitTurn)
+  const myUidRef = useRef(myUid)
+  const isMyTurnRef = useRef(isMyTurn)
+  
   useEffect(() => { myUidRef.current = myUid }, [myUid])
   useEffect(() => { isMyTurnRef.current = isMyTurn }, [isMyTurn])
+  
+  // ✅ CORREÇÃO 2: Atualiza lockOwnerRef compartilhado
+  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
 
   // ✅ CORREÇÃO: Helper para enfileirar dados de turno de forma centralizada
   const queueTurnData = useCallback((patch) => {
@@ -200,7 +210,7 @@ export function useTurnEngine({
 
   const clearPending = useCallback((from) => {
     console.log(`[CLEAR pendingTurnDataRef FROM: ${from}]`)
-    pendingTurnDataRef.current = null
+        pendingTurnDataRef.current = null
   }, [])
 
   const stopTick = useCallback(() => {
@@ -214,17 +224,7 @@ export function useTurnEngine({
   // ✅ CORREÇÃO: Tick precisa ser criado fora do advanceAndMaybeLap para poder ser referenciado no timer
   // Mas como precisa acessar estado atual, vamos criar um useEffect que inicia/para o timer baseado em phase
   // O tick em si será executado dentro do useEffect do advanceAndMaybeLap mas via timer gerenciado
-
-  // ✅ CORREÇÃO: Helper para liberar locks locais
-  const releaseLocalLocksIfHeld = useCallback(() => {
-    const currentLockOwner = lockOwnerRef.current
-    const isLockOwner = String(currentLockOwner || '') === String(myUid)
-    if (isLockOwner) {
-      console.log('[releaseLocalLocksIfHeld] 🔓 Liberando locks locais')
-      setTurnLockBroadcast(false)
-      setLockOwner(null)
-    }
-  }, [myUid, setTurnLockBroadcast])
+  // ✅ CORREÇÃO: releaseLocalLocksIfHeld foi movido para antes de commitTurn
 
   // ✅ CORREÇÃO 7: Efeito para controlar a ativação/desativação do motor de turnos com base na fase
   // ✅ CORREÇÃO 7: Não limpe pendingTurnDataRef nas transições erradas - só limpe ao sair de 'game' definitivamente
@@ -375,61 +375,9 @@ export function useTurnEngine({
   }, [phase, players, round, turnIdx, isMyTurn, myUid, stackLength, gameJustStarted, 
       setTurnIdx, setPlayers, setRound, commitTurn, clearPending, releaseLocalLocksIfHeld, stopTick])
 
-  // ✅ CORREÇÃO CRÍTICA: Helper para abrir modal travando o turno até resolver
-  // Trava o turno quando abre a modal e só destrava quando a modal resolve
-  const openModalWithTurnLock = useCallback(async (element) => {
-    const playerName = players[turnIdx]?.name || 'Jogador'
-    
-    console.log(`[🔒 MODAL] ${playerName} - Abrindo modal com lock de turno`)
-    console.log(`[🔒 MODAL] ${playerName} - pushModal:`, typeof pushModal, 'awaitTop:', typeof awaitTop)
-    
-    if (!pushModal) {
-      console.error(`[🔒 MODAL] ❌ ${playerName} - pushModal não está disponível!`)
-      return null
-    }
-    if (!awaitTop) {
-      console.error(`[🔒 MODAL] ❌ ${playerName} - awaitTop não está disponível!`)
-      return null
-    }
-    if (!isMyTurn) {
-      console.error(`[🔒 MODAL] ❌ ${playerName} - Não é minha vez! isMyTurn:`, isMyTurn)
-      return null
-    }
-    
-    // ✅ CORREÇÃO: Trava o turno ANTES de abrir a modal
-    console.log(`[🔒 MODAL] ${playerName} - TRAVANDO turno (setTurnLockBroadcast(true))`)
-    setTurnLockBroadcast(true)
-    
-    // ✅ CORREÇÃO: Incrementa modalLocks para rastrear modais abertas
-    console.log(`[🔒 MODAL] ${playerName} - ABRINDO modal, modalLocks: ${modalLocks} → ${modalLocks + 1}`)
-    setModalLocks(c => c + 1)
-    
-    try {
-      // Abre a modal
-      pushModal(element)
-      console.log(`[🔒 MODAL] ${playerName} - Modal aberta, aguardando resolução...`)
-      
-      // ✅ CORREÇÃO: Espera a resolução da modal (só sai daqui ao fechar/confirmar/skip)
-      const payload = await awaitTop()
-      console.log(`[🔒 MODAL] ${playerName} - Modal resolvida, payload:`, payload)
-      
-      return payload
-    } catch (error) {
-      console.error(`[🔒 MODAL] ❌ ${playerName} - Erro ao abrir/fechar modal:`, error)
-      return null
-    } finally {
-      // ✅ CORREÇÃO: Destrava o turno DEPOIS de resolver a modal
-      console.log(`[🔒 MODAL] ${playerName} - DESTRAVANDO turno (setTurnLockBroadcast(false))`)
-      setTurnLockBroadcast(false)
-      
-      // ✅ CORREÇÃO: Decrementa modalLocks
-      console.log(`[🔒 MODAL] ${playerName} - FECHANDO modal, modalLocks: ${modalLocks} → ${Math.max(0, modalLocks - 1)}`)
-      setModalLocks(c => Math.max(0, c - 1))
-    }
-  }, [pushModal, awaitTop, isMyTurn, players, turnIdx, modalLocks, setModalLocks, setTurnLockBroadcast])
-
-  // Mantém compatibilidade com código existente (deprecated)
-  const openModalAndWait = openModalWithTurnLock
+  // ✅ CORREÇÃO 1: openModalAndWait agora vem via deps, não precisa criar aqui
+  // ✅ CORREÇÃO: Mantém compatibilidade criando alias se necessário
+  const openModalWithTurnLock = openModalAndWait
 
   // ✅ CORREÇÃO CRÍTICA: Função única para avançar turno que sempre faz broadcast
   // Garante que o turno seja atualizado localmente ANTES do broadcast
@@ -518,8 +466,20 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: NÃO limpe pendingTurnDataRef nem libere lock aqui - deixe o tick fazer isso
   }, [players, turnIdx, queueTurnData, findNextAliveIdx, deriveRound, TRACK_LEN])
 
+  // ✅ CORREÇÃO: Helper para liberar locks locais (movido para antes de commitTurn)
+  const releaseLocalLocksIfHeld = useCallback(() => {
+    const currentLockOwner = lockOwnerRef.current
+    const isLockOwner = String(currentLockOwner || '') === String(myUid)
+    if (isLockOwner) {
+      console.log('[releaseLocalLocksIfHeld] 🔓 Liberando locks locais')
+      setTurnLockBroadcast(false)
+      setLockOwner(null)
+    }
+  }, [myUid, setTurnLockBroadcast, lockOwnerRef])
+  
   // ✅ CORREÇÃO 3: endTurn() sempre preenche pendingTurnDataRef antes do broadcast
-  const endTurn = useCallback((reason = 'action-complete') => {
+  // ✅ CORREÇÃO 4: Transformado em function declaration para hoisting
+  function endTurn(reason = 'action-complete') {
     if (!isMyTurnRef.current) {
       console.warn('[endTurn] ⚠️ Não é minha vez, ignorando')
       return
@@ -547,11 +507,13 @@ export function useTurnEngine({
       // ✅ CORREÇÃO 5: commitTurn atômico será chamado pelo tick
       return upd
     })
-  }, [])
+  }
 
   // ✅ CORREÇÃO 5: commitTurn() atômico (estado + turno + lockOwner)
-  const commitTurn = useCallback(({ nextTurnIdx, nextRound, nextPlayers }) => {
-    const version = (window.roomRef?.current?.stateVersion || 0) + 1
+  // ✅ CORREÇÃO 4: Transformado em function declaration para hoisting
+  // ✅ CORREÇÃO: Usa releaseLocalLocksIfHeld que está definido antes
+  function commitTurn({ nextTurnIdx, nextRound, nextPlayers }) {
+    const version = (roomRef?.current?.stateVersion || 0) + 1
     
     console.log('[commitTurn] ✅ Commitando turno atômico - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound, 'version:', version)
     
@@ -583,22 +545,16 @@ export function useTurnEngine({
       // opcional: retry/backoff
       releaseLocalLocksIfHeld()
     }
-  }, [setTurnIdx, setPlayers, setRound, broadcastState, gameOver, winner, releaseLocalLocksIfHeld])
+  }
 
   // ========= regras auxiliares de saldo =========
-  const canPay = useCallback((idx, amount) => {
+  // ✅ CORREÇÃO 1: requireFunds agora vem via deps, não precisa criar aqui
+  // ✅ CORREÇÃO 4: canPay transformado em function declaration para hoisting (se usado antes da definição)
+  function canPay(idx, amount) {
     const p = players[idx]
     const amt = Math.max(0, Number(amount || 0))
     return (Number(p?.cash || 0) >= amt)
-  }, [players])
-
-  const requireFunds = useCallback((idx, amount, reason) => {
-    const ok = canPay(idx, amount)
-    if (!ok) {
-      appendLog(`Saldo insuficiente${reason ? ' para ' + reason : ''}. Use RECUPERAÇÃO (demitir / emprestar / reduzir) ou declare FALÊNCIA.`)
-    }
-    return ok
-  }, [canPay, appendLog])
+  }
 
   // ========= fim de jogo =========
   const maybeFinishGame = useCallback((nextPlayers, nextRound) => {
@@ -1020,14 +976,14 @@ export function useTurnEngine({
       console.log('  - awaitTop:', typeof awaitTop, awaitTop ? '✅' : '❌')
       
     if (isErpTile && itsMe && pushModal && awaitTop) {
-      console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal ERP')
-    } else {
-      console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
+        console.log('✅ TODAS AS CONDIÇÕES ATENDIDAS - Abrindo modal ERP')
+      } else {
+        console.warn('❌ BLOQUEADO - Alguma condição não foi atendida')
       if (!itsMe) console.warn('  - Não é minha vez! (itsMe:', itsMe, 'myPlayerId:', myPlayerId, 'currentPlayer.id:', players[turnIdx]?.id, ')')
-      if (!pushModal) console.warn('  - pushModal não está disponível!')
-      if (!awaitTop) console.warn('  - awaitTop não está disponível!')
-    }
-    console.groupEnd()
+        if (!pushModal) console.warn('  - pushModal não está disponível!')
+        if (!awaitTop) console.warn('  - awaitTop não está disponível!')
+      }
+      console.groupEnd()
     }
     if (isErpTile && itsMe && pushModal && awaitTop) {
       ;(async () => {
@@ -1745,19 +1701,19 @@ export function useTurnEngine({
               next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
             }
             return next
-          })
+        })
 
-          const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
-          if (anyDerived) {
+        const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
+        if (anyDerived) {
             const me2 = upd[curIdx] || {}
-            let extra = 0
-            if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
-            if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
-            if (res.mixLevelBonusABOnly) {
+          let extra = 0
+          if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
+          if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
+          if (res.mixLevelBonusABOnly) {
               const level = String(me2.mixProdutos || me2.mixProdutosSet || '').toUpperCase()
-              if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
-            }
-            if (extra) {
+            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
+          }
+          if (extra) {
               upd[curIdx] = {
                 ...me2,
                 cash: (Number(me2.cash) || 0) + extra

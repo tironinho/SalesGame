@@ -37,6 +37,10 @@ import { leaveRoom } from './lib/lobbies'
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
 
+// ✅ CORREÇÃO 1: Importa engineState e useModal
+import { engineState } from './game/engineState'
+import { useModal } from './modals/ModalContext'
+
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
 // -------------------------------------------------------------
@@ -107,9 +111,59 @@ export default function App() {
   const [turnLock, setTurnLock] = useState(false)
   const bcRef = useRef(null)
 
+  // ✅ CORREÇÃO 2: Atualiza refs compartilhadas de engineState
+  const { roomRef, playersRef, roundRef, turnIdxRef } = engineState
+  useEffect(() => { playersRef.current = players }, [players])
+  useEffect(() => { roundRef.current = round }, [round])
+  useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
+  
+  // ✅ CORREÇÃO: roomRef atualizado quando currentLobbyId muda
+  useEffect(() => { 
+    roomRef.current = currentLobbyId ? { code: currentLobbyId } : null 
+  }, [currentLobbyId])
+
   // ====== "quem sou eu" no array de players
   const isMine = useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
   const myCash = useMemo(() => (players.find(isMine)?.cash ?? 0), [players, isMine])
+  
+  // ✅ CORREÇÃO 1: Usa useModal para criar openModalAndWait
+  const modalContext = useModal()
+  const { pushModal, awaitTop } = modalContext || {}
+  
+  // ✅ CORREÇÃO 1: Cria openModalAndWait no App.jsx
+  const openModalAndWait = useCallback(async (element) => {
+    if (!pushModal || !awaitTop) {
+      console.error('[App] openModalAndWait - pushModal ou awaitTop não disponíveis')
+      return null
+    }
+    const playerName = players[turnIdx]?.name || 'Jogador'
+    console.log(`[App] openModalAndWait - ${playerName} - Abrindo modal`)
+    
+    // Abre a modal
+    pushModal(element)
+    
+    // Aguarda resolução
+    try {
+      const result = await awaitTop()
+      console.log(`[App] openModalAndWait - ${playerName} - Modal resolvida:`, result)
+      return result
+    } catch (error) {
+      console.error(`[App] openModalAndWait - ${playerName} - Erro:`, error)
+      return null
+    }
+  }, [pushModal, awaitTop, players, turnIdx])
+  
+  // ✅ CORREÇÃO 1: Cria requireFunds no App.jsx
+  const requireFunds = useCallback((idx, amount, reason) => {
+    const p = players[idx]
+    const amt = Math.max(0, Number(amount || 0))
+    const canPay = (Number(p?.cash || 0) >= amt)
+    
+    if (!canPay) {
+      appendLog(`Saldo insuficiente${reason ? ' para ' + reason : ''}. Use RECUPERAÇÃO (demitir / emprestar / reduzir) ou declare FALÊNCIA.`)
+    }
+    return canPay
+  }, [players, appendLog])
 
   // ====== bootstrap de fase via ?room= e último lobby salvo
   useEffect(() => {
@@ -1042,7 +1096,7 @@ export default function App() {
 
   // ====== Hook do motor de turnos (centraliza TODA a lógica pesada)
   // Este hook DEVE ser chamado ANTES dos returns condicionais para manter consistência de hooks
-  // ✅ PATCH 3: Garantir que todos os parâmetros estejam sendo passados corretamente
+  // ✅ CORREÇÃO 1: Passa tudo via deps incluindo openModalAndWait e requireFunds
   const {
     advanceAndMaybeLap,
     onAction,
@@ -1069,6 +1123,8 @@ export default function App() {
     phase, // Passar a fase como prop
     gameJustStarted, // ✅ CORREÇÃO: Passa gameJustStarted para prevenir mudança de turno imediata
     myName, // ✅ CORREÇÃO: Passa myName para verificação de owner por nome
+    openModalAndWait, // ✅ CORREÇÃO 1: Passa openModalAndWait via deps
+    requireFunds, // ✅ CORREÇÃO 1: Passa requireFunds via deps
   })
 
   // ====== fases ======
