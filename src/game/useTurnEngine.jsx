@@ -24,6 +24,8 @@ import {
   computeFaturamentoFor,
   countAlivePlayers,
   findNextAliveIdx,
+  deriveRound, // ✅ CORREÇÃO: Função para calcular round baseado em laps
+  advanceTile, // ✅ CORREÇÃO: Função para calcular movimento e incremento de lap
 } from './gameMath'
 
 /**
@@ -269,7 +271,8 @@ export function useTurnEngine({
   const endTurnWith = useCallback((updPlayers) => {
     const total = updPlayers?.length ?? players.length
     const nextIdx = findNextAliveIdx(updPlayers ?? players, turnIdx)
-    const nextRnd = nextIdx === 0 ? (round + 1) : round
+    // ✅ CORREÇÃO: Usa deriveRound para calcular round baseado nos laps dos jogadores
+    const nextRnd = deriveRound(updPlayers ?? players, TRACK_LEN)
     
     console.log('[endTurnWith] ✅ Avançando turno - atual:', turnIdx, 'próximo:', nextIdx, 'round:', round, 'próximo round:', nextRnd)
     
@@ -288,7 +291,7 @@ export function useTurnEngine({
     broadcastState(updPlayers ?? null, nextIdx, nextRnd)
     
     console.log('[endTurnWith] ✅ Turno avançado - próximo jogador:', (updPlayers ?? players)[nextIdx]?.name, 'turnIdx:', nextIdx)
-  }, [players, turnIdx, round, setPlayers, setTurnIdx, setRound, broadcastState, findNextAliveIdx])
+  }, [players, turnIdx, round, setPlayers, setTurnIdx, setRound, broadcastState, findNextAliveIdx, deriveRound, TRACK_LEN])
 
   // ✅ CORREÇÃO: Finaliza turno quando a modal foi fechada sem compra, ou quando faltou saldo.
   const finishTurnNoBuy = useCallback(() => {
@@ -583,39 +586,46 @@ export function useTurnEngine({
       }
     }
 
-    const oldPos = cur.pos
-    const newPos = (oldPos + steps) % TRACK_LEN
-    const lap = newPos < oldPos
+    // ✅ CORREÇÃO: Usa advanceTile para calcular movimento e lap corretamente
+    const oldTile = cur.tile ?? cur.pos ?? 0
+    const { newTile, lapInc } = advanceTile(oldTile, steps, TRACK_LEN)
 
-    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap)
+    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldTile, 'Para posição:', newTile, 'Steps:', steps, 'Lap incremento:', lapInc)
 
     // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
+    // ✅ CORREÇÃO: Usa applyDeltas com steps para calcular tile e lap automaticamente
     const nextPlayers = players.map((p, i) => {
-      if (i !== curIdx) return p
+      if (i !== curIdx) {
+        // Garante que todos os jogadores tenham lap inicializado
+        return { ...p, lap: p.lap ?? 0 }
+      }
       const nextCash = (p.cash || 0) + (deltaCash || 0)
-      return { ...p, pos: newPos, cash: Math.max(0, nextCash) }
+      const oldLap = p.lap ?? 0
+      const newLap = oldLap + lapInc
+      return { 
+        ...p, 
+        tile: newTile,
+        pos: newTile, // mantém compatibilidade
+        lap: newLap,
+        cash: Math.max(0, nextCash) 
+      }
     })
     
-    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash)
+    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.tile ?? nextPlayers[curIdx]?.pos, 'Lap:', nextPlayers[curIdx]?.lap, 'Saldo:', nextPlayers[curIdx]?.cash)
 
-    // >>> controle de rodada: só vira quando TODOS cruzarem a casa 1
-    let nextFlags = roundFlags
-    let nextRound = round
-    if (lap) {
-      nextFlags = [...roundFlags]
-      nextFlags[curIdx] = true
-      const allDone = nextFlags.slice(0, players.length).every(Boolean)
-      if (allDone) {
-        nextRound = round + 1
-        nextFlags = new Array(players.length).fill(false)
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound)
-      }
+    // ✅ CORREÇÃO: Usa deriveRound para calcular round baseado nos laps de todos os jogadores
+    const nextRound = deriveRound(nextPlayers, TRACK_LEN)
+    
+    if (nextRound !== round) {
+      console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, '(todos os jogadores têm lap >=', nextRound - 1, ')')
     }
-    setRoundFlags(nextFlags)
     
     // ✅ CORREÇÃO CRÍTICA: Garante que nextRound seja uma constante após todas as reatribuições
     // Isso previne problemas de TDZ (Temporal Dead Zone) em funções assíncronas
     const finalNextRound = nextRound
+    
+    // ✅ CORREÇÃO: Não usa mais roundFlags, pois round é derivado de lap
+    // Mantém compatibilidade removendo uso de roundFlags
 
     // >>> pular jogadores falidos ao decidir o próximo turno
     const nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
@@ -626,8 +636,8 @@ export function useTurnEngine({
     setPlayers(nextPlayers)
     setRound(finalNextRound)
     
-    // 🔚 Encerramento por rodada: quando round passar de 5 após as marcações, encerramos
-    // ✅ PATCH 2: Simplificado - usa finalNextRound diretamente, que já é incrementado corretamente via roundFlags
+    // 🔚 Encerramento por rodada: quando round passar de 5, encerramos
+    // ✅ CORREÇÃO: Round é derivado de laps, não incrementado por turno
     if (finalNextRound > 5) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - 5 rodadas completas')
       maybeFinishGame(nextPlayers, finalNextRound)
@@ -637,9 +647,9 @@ export function useTurnEngine({
     
     // ✅ CORREÇÃO CRÍTICA: Verifica se há tiles de modal antes de definir pendingTurnDataRef
     // Isso previne que o tick mude o turno antes das modais serem abertas
-    const landedOneBased = newPos + 1
-    const crossedStart1 = crossedTile(oldPos, newPos, 0)
-    const crossedExpenses23 = crossedTile(oldPos, newPos, 22)
+    const landedOneBased = newTile + 1
+    const crossedStart1 = crossedTile(oldTile, newTile, 0)
+    const crossedExpenses23 = crossedTile(oldTile, newTile, 22)
     const hasModalTile = 
       (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49) || // ERP
       (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47) || // Training

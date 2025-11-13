@@ -134,7 +134,9 @@ export default function Board({
 
           {players.map((p, idx) => {
             const isTurn = idx === turnIdx
-            const i   = ((p.pos % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
+            // ✅ CORREÇÃO: Usa tile ou pos (tile tem prioridade para sincronização)
+            const tile = p.tile ?? p.pos ?? 0
+            const i   = ((tile % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
             const pt  = TRACK_POINTS_NORM[i]
             const xy  = scalePoint(pt, size.w, size.h)
 

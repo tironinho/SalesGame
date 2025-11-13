@@ -99,10 +99,53 @@ export function computeDespesasFor(player = {}) {
   return total
 }
 
+// ======= Helpers de round e movimento =======
+/**
+ * Calcula o round baseado nos laps dos jogadores.
+ * Round começa em 1; só vira 2 quando TODOS tiverem lap >= 1
+ */
+export function deriveRound(players, boardSize = null) {
+  if (!Array.isArray(players) || players.length === 0) return 1
+  const laps = players.map(p => p.lap ?? 0)
+  return 1 + Math.min(...laps)
+}
+
+/**
+ * Calcula nova posição e incremento de lap baseado em steps.
+ * @param {number} oldTile - Posição atual (0-based)
+ * @param {number} steps - Passos a avançar
+ * @param {number} boardSize - Tamanho do tabuleiro (TRACK_LEN)
+ * @returns {{newTile: number, lapInc: number}}
+ */
+export function advanceTile(oldTile, steps, boardSize) {
+  const old = oldTile ?? 0
+  const total = old + (steps ?? 0)
+  const newTile = ((total % boardSize) + boardSize) % boardSize
+  const lapInc = Math.floor(total / boardSize) // cruza o start a cada boardSize
+  return { newTile, lapInc }
+}
+
 // ======= Mutações simples =======
-export function applyDeltas(player, deltas = {}) {
+export function applyDeltas(player, deltas = {}, boardSize = null) {
   const next = { ...player }
   const add = (k, v) => { next[k] = (next[k] ?? 0) + v }
+
+  // ✅ CORREÇÃO: Suporte para movimento e lap
+  if (boardSize && typeof deltas.steps === 'number') {
+    const oldTile = next.tile ?? next.pos ?? 0
+    const { newTile, lapInc } = advanceTile(oldTile, deltas.steps, boardSize)
+    next.tile = newTile
+    next.pos = newTile // mantém compatibilidade com código que usa pos
+    next.lap = (next.lap ?? 0) + lapInc
+  } else if (typeof deltas.tileSet === 'number' && boardSize) {
+    const newTile = ((deltas.tileSet % boardSize) + boardSize) % boardSize
+    next.tile = newTile
+    next.pos = newTile // mantém compatibilidade
+  }
+  
+  if (typeof deltas.lapInc === 'number') {
+    next.lap = (next.lap ?? 0) + Number(deltas.lapInc)
+  }
 
   if (Number.isFinite(deltas.cashDelta)) add('cash', Number(deltas.cashDelta))
   if (Number.isFinite(deltas.clientsDelta)) add('clients', Number(deltas.clientsDelta))

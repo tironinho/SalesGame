@@ -64,6 +64,9 @@ export default function App() {
     erpLevel: obj.erpLevel ?? 'D',
     clients: obj.clients ?? 1,
     vendedoresComuns: obj.vendedoresComuns ?? 1,
+    lap: obj.lap ?? 0, // ✅ CORREÇÃO: Inicializa lap sempre
+    tile: obj.tile ?? obj.pos ?? 0, // ✅ CORREÇÃO: Garante tile inicializado
+    pos: obj.pos ?? obj.tile ?? 0, // mantém compatibilidade
   })
 
   const [players, setPlayers] = useState([
