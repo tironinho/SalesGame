@@ -147,6 +147,19 @@ export function useTurnEngine({
   // 🔄 dados do próximo turno (para evitar stale closure)
   const pendingTurnDataRef = useRef(null)
   const tickTimerRef = useRef(null) // ✅ CORREÇÃO: Timer do tick para poder parar ao sair da fase
+  
+  // ✅ CORREÇÃO 3: Refs para estado atual (usados por endTurn e commitTurn)
+  const playersRef = useRef(players)
+  const turnIdxRef = useRef(turnIdx)
+  const roundRef = useRef(round)
+  const myUidRef = useRef(myUid)
+  const isMyTurnRef = useRef(isMyTurn)
+  
+  useEffect(() => { playersRef.current = players }, [players])
+  useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
+  useEffect(() => { roundRef.current = round }, [round])
+  useEffect(() => { myUidRef.current = myUid }, [myUid])
+  useEffect(() => { isMyTurnRef.current = isMyTurn }, [isMyTurn])
 
   // ✅ CORREÇÃO: Helper para enfileirar dados de turno de forma centralizada
   const queueTurnData = useCallback((patch) => {
@@ -213,23 +226,32 @@ export function useTurnEngine({
     }
   }, [myUid, setTurnLockBroadcast])
 
-  // Efeito para controlar a ativação/desativação do motor de turnos com base na fase
+  // ✅ CORREÇÃO 7: Efeito para controlar a ativação/desativação do motor de turnos com base na fase
+  // ✅ CORREÇÃO 7: Não limpe pendingTurnDataRef nas transições erradas - só limpe ao sair de 'game' definitivamente
+  const prevPhaseRef = useRef(phase)
   useEffect(() => {
-    if (phase !== 'game') {
-      console.log('[USE_TURN_ENGINE] Desativando motor de turnos (fase:', phase, ')');
-      stopTick() // ✅ CORREÇÃO: Para o tick ao sair da fase
-      setModalLocks(0);
-      setTurnLockBroadcast(false);
-      clearPending('phase-change') // ✅ CORREÇÃO: Usa helper com log
-      setLockOwner(null);
-    } else {
-      console.log('[USE_TURN_ENGINE] Ativando motor de turnos (fase: game)');
-      // ✅ CORREÇÃO: Garante que pendingTurnDataRef seja limpo quando a fase muda para 'game'
+    const phasePrev = prevPhaseRef.current
+    const phaseNow = phase
+    prevPhaseRef.current = phaseNow
+    
+    // ✅ CORREÇÃO 7: Limpe só quando sair de 'game' definitivamente, não na entrada/reativação
+    if (phasePrev === 'game' && phaseNow !== 'game') {
+      console.log('[USE_TURN_ENGINE] Saindo de fase game para', phaseNow, '- limpando pendingTurnDataRef')
+      stopTick()
+      setModalLocks(0)
+      setTurnLockBroadcast(false)
+      clearPending('phase-change-game-to-' + phaseNow) // ✅ CORREÇÃO 7: só limpa ao sair de 'game'
+      setLockOwner(null)
+    } else if (phaseNow === 'game') {
+      console.log('[USE_TURN_ENGINE] Ativando motor de turnos (fase: game)')
+      // ✅ CORREÇÃO 7: NÃO zere quando (start -> game) ou (lobbies -> game)
       if (gameJustStarted) {
-        console.log('[USE_TURN_ENGINE] Jogo acabou de começar - limpando pendingTurnDataRef')
-        clearPending('game-just-started')
-        setLockOwner(null)
+        console.log('[USE_TURN_ENGINE] Jogo acabou de começar - NÃO limpando pendingTurnDataRef (proteção)')
+        // Não limpa aqui - deixa o jogo começar naturalmente
       }
+    } else {
+      console.log('[USE_TURN_ENGINE] Fase:', phaseNow, '- motor de turnos desativado')
+      stopTick()
     }
     
     return () => {
@@ -247,6 +269,7 @@ export function useTurnEngine({
     
     // ✅ CORREÇÃO: Tick definido dentro do useEffect para ter acesso ao estado atual
     const startTime = Date.now()
+    let idleStartTime = Date.now() // ✅ CORREÇÃO 4: rastreia tempo ocioso
     const tick = () => {
       // Curto-circuito se não está na fase de jogo
       if (phase !== 'game') {
@@ -258,16 +281,37 @@ export function useTurnEngine({
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
       const currentStackLength = modalContextRef.current?.stackLength || stackLength || 0
+      const turnData = pendingTurnDataRef.current
+      const idleMs = Date.now() - idleStartTime // ✅ CORREÇÃO 4: tempo ocioso
       
-      console.log('[tick] modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
+      console.log('[tick] modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner, 'idleMs:', idleMs)
       
-      // ✅ CORREÇÃO CRÍTICA: Só processa turno se não houver modais e for o lockOwner
-      if (currentModalLocks === 0 && currentStackLength === 0 && isLockOwner) {
-        const turnData = pendingTurnDataRef.current
-        
-        // ✅ CORREÇÃO CRÍTICA: NÃO libera lock sem turnData
+      // ✅ CORREÇÃO 4: No tick, não "destrave e morra" quando turnData for null
+      if (isLockOwner) {
         if (!turnData) {
-          console.log('[tick] ⚠️ turnData é null, não há nada para commitar - não liberando lock')
+          // ✅ CORREÇÃO 4: watchdog: se estiver ocioso e sem modais/ações, auto-avança
+          if (idleMs > 2000 && currentModalLocks === 0 && currentStackLength === 0) {
+            console.log('[tick] ⚠️ Watchdog: estou ocioso há', idleMs, 'ms - auto-avançando turno')
+            const nextTurnIdx = (turnIdxRef.current + 1) % playersRef.current.length
+            const nextRound = (turnIdxRef.current + 1 === playersRef.current.length)
+              ? roundRef.current + 1
+              : roundRef.current
+            pendingTurnDataRef.current = {
+              nextTurnIdx,
+              nextRound,
+              by: myUidRef.current,
+              reason: 'watchdog',
+              ts: Date.now()
+            }
+            // Chama commitTurn com os dados do watchdog
+            commitTurn({
+              nextTurnIdx,
+              nextRound,
+              nextPlayers: playersRef.current
+            })
+            idleStartTime = Date.now() // reseta timer ocioso
+          }
+          // ✅ CORREÇÃO 4: importante: NÃO desativar o lock à toa
           return
         }
         
@@ -276,37 +320,38 @@ export function useTurnEngine({
           console.log('[tick] ⚠️ Jogo acabou de começar (turnIdx=0) - ignorando turnData')
           clearPending('game-just-started')
           releaseLocalLocksIfHeld()
+          idleStartTime = Date.now() // reseta timer ocioso
           return
         }
         
-        try {
-          // ✅ CORREÇÃO: Commita turno - faz broadcastState + rotateTurn
-          console.log(`[tick] ✅ Commitando turno - de ${turnIdx} para ${turnData.nextTurnIdx}`)
-          
-          const currentPlayerName = players[turnIdx]?.name || 'Jogador'
-          const nextPlayerName = turnData.nextPlayers?.[turnData.nextTurnIdx]?.name || 'Jogador'
-          console.log(`[🎲 TURNO] ${currentPlayerName} → ${nextPlayerName}`)
-          
-          // Atualiza estado local
-          setTurnIdx(turnData.nextTurnIdx)
-          if (turnData.nextPlayers) {
-            setPlayers(turnData.nextPlayers)
+        // ✅ CORREÇÃO CRÍTICA: Só processa turno se não houver modais
+        if (currentModalLocks === 0 && currentStackLength === 0) {
+          try {
+            // ✅ CORREÇÃO 5: Usa commitTurn atômico
+            console.log(`[tick] ✅ Commitando turno - de ${turnIdx} para ${turnData.nextTurnIdx}`)
+            
+            const currentPlayerName = players[turnIdx]?.name || 'Jogador'
+            const nextPlayerName = turnData.nextPlayers?.[turnData.nextTurnIdx]?.name || 'Jogador'
+            console.log(`[🎲 TURNO] ${currentPlayerName} → ${nextPlayerName}`)
+            
+            commitTurn({
+              nextTurnIdx: turnData.nextTurnIdx,
+              nextRound: turnData.nextRound ?? round,
+              nextPlayers: turnData.nextPlayers || players
+            })
+            
+            idleStartTime = Date.now() // reseta timer ocioso
+          } catch (err) {
+            console.error('[tick] ❌ Erro ao commitar turno:', err)
+            releaseLocalLocksIfHeld()
           }
-          if (turnData.nextRound !== undefined) {
-            setRound(turnData.nextRound)
-          }
-          
-          // Faz broadcast
-          broadcastState(
-            turnData.nextPlayers || players, 
-            turnData.nextTurnIdx, 
-            turnData.nextRound ?? round
-          )
-        } finally {
-          // ✅ CORREÇÃO: Limpa turnData DEPOIS do commit e libera locks
-          clearPending('tick-commit')
-          releaseLocalLocksIfHeld()
+        } else {
+          // Há modais abertas, reseta timer ocioso
+          idleStartTime = Date.now()
         }
+      } else {
+        // Não é lockOwner, reseta timer ocioso
+        idleStartTime = Date.now()
       }
       
       // ✅ CORREÇÃO: Timeout de segurança
@@ -328,7 +373,7 @@ export function useTurnEngine({
       stopTick()
     }
   }, [phase, players, round, turnIdx, isMyTurn, myUid, stackLength, gameJustStarted, 
-      setTurnIdx, setPlayers, setRound, broadcastState, clearPending, releaseLocalLocksIfHeld, stopTick])
+      setTurnIdx, setPlayers, setRound, commitTurn, clearPending, releaseLocalLocksIfHeld, stopTick])
 
   // ✅ CORREÇÃO CRÍTICA: Helper para abrir modal travando o turno até resolver
   // Trava o turno quando abre a modal e só destrava quando a modal resolve
@@ -472,6 +517,73 @@ export function useTurnEngine({
     
     // ✅ CORREÇÃO: NÃO limpe pendingTurnDataRef nem libere lock aqui - deixe o tick fazer isso
   }, [players, turnIdx, queueTurnData, findNextAliveIdx, deriveRound, TRACK_LEN])
+
+  // ✅ CORREÇÃO 3: endTurn() sempre preenche pendingTurnDataRef antes do broadcast
+  const endTurn = useCallback((reason = 'action-complete') => {
+    if (!isMyTurnRef.current) {
+      console.warn('[endTurn] ⚠️ Não é minha vez, ignorando')
+      return
+    }
+
+    const nextTurnIdx = (turnIdxRef.current + 1) % playersRef.current.length
+    const nextRound = (turnIdxRef.current + 1 === playersRef.current.length)
+      ? roundRef.current + 1
+      : roundRef.current
+
+    // ✅ CORREÇÃO 3: 1) marca o pendingTurn antes de qualquer setState/broadcast
+    pendingTurnDataRef.current = {
+      nextTurnIdx,
+      nextRound,
+      by: myUidRef.current,
+      reason,
+      ts: Date.now()
+    }
+
+    console.log('[endTurn] ✅ pendingTurnDataRef preenchido - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound, 'reason:', reason)
+
+    // ✅ CORREÇÃO 3: 2) atualiza players de forma imutável e já faz broadcast atômico
+    setPlayers(prev => {
+      const upd = prev.map(p => ({ ...p })) // aplique deltas aqui se houver
+      // ✅ CORREÇÃO 5: commitTurn atômico será chamado pelo tick
+      return upd
+    })
+  }, [])
+
+  // ✅ CORREÇÃO 5: commitTurn() atômico (estado + turno + lockOwner)
+  const commitTurn = useCallback(({ nextTurnIdx, nextRound, nextPlayers }) => {
+    const version = (window.roomRef?.current?.stateVersion || 0) + 1
+    
+    console.log('[commitTurn] ✅ Commitando turno atômico - nextTurnIdx:', nextTurnIdx, 'nextRound:', nextRound, 'version:', version)
+    
+    try {
+      // ✅ CORREÇÃO 5: update único no backend (idealmente via RPC/upsert)
+      // Atualiza estado local primeiro
+      setTurnIdx(nextTurnIdx)
+      if (nextPlayers) {
+        setPlayers(nextPlayers)
+      }
+      if (nextRound !== undefined) {
+        setRound(nextRound)
+      }
+      
+      // Faz broadcast atômico
+      broadcastState(nextPlayers || playersRef.current, nextTurnIdx, nextRound, gameOver, winner, {
+        lockOwner: null,
+        stateVersion: version,
+        atomic: true
+      })
+      
+      console.log('[commitTurn] ✅ Commit atômico concluído')
+      // ✅ CORREÇÃO 5: Limpa pendingTurnDataRef após commit bem-sucedido
+      pendingTurnDataRef.current = null
+      // ✅ CORREÇÃO 5: Libera locks após commit
+      releaseLocalLocksIfHeld()
+    } catch (err) {
+      console.error('[commitTurn] ❌ Erro no commit atômico:', err)
+      // opcional: retry/backoff
+      releaseLocalLocksIfHeld()
+    }
+  }, [setTurnIdx, setPlayers, setRound, broadcastState, gameOver, winner, releaseLocalLocksIfHeld])
 
   // ========= regras auxiliares de saldo =========
   const canPay = useCallback((idx, amount) => {
@@ -803,14 +915,45 @@ export function useTurnEngine({
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
 
-    setPlayers(nextPlayers)
+    // ✅ CORREÇÃO 6: Movimento do token imutável + broadcast imediato
+    // ✅ CORREÇÃO 6: Garante imutabilidade criando nova cópia do array
+    // ✅ CORREÇÃO: Garante que tile e pos sejam sempre sincronizados
+    const updatedPlayers = nextPlayers.map(p => {
+      const playerCopy = { ...p }
+      // ✅ CORREÇÃO: Sincroniza tile e pos - tile tem prioridade
+      if (playerCopy.tile !== undefined) {
+        playerCopy.pos = playerCopy.tile
+      } else if (playerCopy.pos !== undefined) {
+        playerCopy.tile = playerCopy.pos
+      }
+      return playerCopy
+    })
+    
+    // ✅ CORREÇÃO 6: Atualiza estado local de forma imutável
+    setPlayers(updatedPlayers)
     setRound(finalNextRound)
+    
+    // ✅ CORREÇÃO: Broadcast imediato do movimento (apenas posição, SEM mudar turnIdx)
+    // Isso garante que o P2 veja o movimento do P1 imediatamente, mas não muda o turno ainda
+    // O turno será mudado quando commitTurn for chamado pelo tick
+    try {
+      broadcastState(updatedPlayers, turnIdx, finalNextRound, gameOver, winner, {
+        move: true, // flag para indicar que é um movimento (não muda turno ainda)
+        playerIdx: curIdx,
+        oldTile,
+        newTile,
+        skipTurnUpdate: true // flag para indicar que não deve mudar turnIdx neste broadcast
+      })
+      console.log('[DEBUG] ✅ Broadcast imediato do movimento (sem mudar turno) - playerIdx:', curIdx, 'oldTile:', oldTile, 'newTile:', newTile, 'turnIdx:', turnIdx)
+    } catch (err) {
+      console.error('[DEBUG] ❌ Erro no broadcast imediato do movimento:', err)
+    }
     
     // 🔚 Encerramento por rodada: quando round passar de 5, encerramos
     // ✅ CORREÇÃO: Round é derivado de laps, não incrementado por turno
     if (finalNextRound > 5) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - 5 rodadas completas')
-      maybeFinishGame(nextPlayers, finalNextRound)
+      maybeFinishGame(updatedPlayers, finalNextRound)
       setTurnLockBroadcast(false)
       return
     }
@@ -836,7 +979,7 @@ export function useTurnEngine({
     if (!hasModalTile || !itsMe || !pushModal || !awaitTop) {
       // ✅ CORREÇÃO: Usa queueTurnData para enfileirar dados de turno
       queueTurnData({
-        nextPlayers,
+        nextPlayers: updatedPlayers, // ✅ CORREÇÃO 6: usa updatedPlayers (já atualizado e broadcastado)
         nextTurnIdx,
         nextRound: finalNextRound,
         action: 'MOVE',

@@ -44,6 +44,16 @@ export default function App() {
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
+  
+  // ✅ CORREÇÃO 2: gamePhaseRef para rastrear fase atual (usado por leaveRoom)
+  const gamePhaseRef = useRef('start')
+  useEffect(() => {
+    gamePhaseRef.current = phase
+    // Expõe no window para leaveRoom poder acessar
+    if (typeof window !== 'undefined') {
+      window.gamePhaseRef = gamePhaseRef
+    }
+  }, [phase])
 
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
@@ -240,6 +250,14 @@ export default function App() {
               const playerId = String(syncedPlayer.id)
               const localPlayer = syncedPlayersMap.get(playerId)
               
+              // ✅ CORREÇÃO: Sincroniza tile e pos nos jogadores remotos
+              const syncedPlayerWithPos = {
+                ...syncedPlayer,
+                // Garante que tile e pos estejam sempre sincronizados
+                tile: syncedPlayer.tile ?? syncedPlayer.pos ?? 0,
+                pos: syncedPlayer.pos ?? syncedPlayer.tile ?? 0
+              }
+              
               if (localPlayer) {
                 // Se é o próprio jogador, preserva TODOS os dados locais
                 if (String(syncedPlayer.id) === String(myUid)) {
@@ -255,7 +273,7 @@ export default function App() {
                 } else {
                   // Para outros jogadores, aplica dados sincronizados (preservando progresso)
                   syncedPlayersMap.set(playerId, {
-                    ...syncedPlayer,
+                    ...syncedPlayerWithPos,
                     // Preserva certificados e treinamentos locais (dados de progresso)
                     az: localPlayer.az || syncedPlayer.az || 0,
                     am: localPlayer.am || syncedPlayer.am || 0,
@@ -266,7 +284,7 @@ export default function App() {
                 }
               } else {
                 // Novo jogador remoto (não existe localmente)
-                syncedPlayersMap.set(playerId, syncedPlayer)
+                syncedPlayersMap.set(playerId, syncedPlayerWithPos)
               }
             })
           }
@@ -333,6 +351,15 @@ export default function App() {
           }
           
           setPlayers(syncedPlayers)
+          
+          // ✅ CORREÇÃO: Verifica se é apenas um movimento (não deve sincronizar turnIdx)
+          const isMoveOnly = d.move === true && d.skipTurnUpdate === true
+          if (isMoveOnly) {
+            console.log('[App] SYNC - ⚠️ Broadcast de movimento apenas - NÃO sincronizando turnIdx')
+            console.log('[App] SYNC - Apenas sincronizando posição dos tokens (players atualizados)')
+            console.groupEnd()
+            return // ✅ CORREÇÃO: Retorna cedo para não processar mudança de turno
+          }
           
           // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
           // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
@@ -719,17 +746,23 @@ export default function App() {
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, extra = {}) {
     broadcastSeqRef.current += 1
     
-    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
+    const isMoveOnly = extra.move === true && extra.skipTurnUpdate === true
+    
+    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}${isMoveOnly ? ' (MOVIMENTO APENAS)' : ''}`)
     console.log('  - players:', nextPlayers.length)
     console.log('  - turnIdx:', nextTurnIdx, '(local atual:', turnIdx, ')')
     console.log('  - round:', nextRound, '(local atual:', round, ')')
     console.log('  - source (meId):', meId)
     console.log('  - seq:', broadcastSeqRef.current)
+    if (isMoveOnly) {
+      console.log('  - ⚠️ Broadcast de movimento apenas - NÃO atualiza turnIdx')
+    }
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza o estado LOCAL ANTES de fazer broadcast
     // Isso garante que o cliente que faz o broadcast também atualiza seu próprio estado
     // Isso previne que o cliente ignore seu próprio broadcast por pensar que o estado remoto é antigo
-    if (nextTurnIdx !== turnIdx) {
+    // ✅ CORREÇÃO: Se for apenas movimento (skipTurnUpdate), não atualiza turnIdx
+    if (!isMoveOnly && nextTurnIdx !== turnIdx) {
       console.log('  - ⚠️ turnIdx mudou - atualizando estado local ANTES do broadcast')
       console.log('  - turnIdx atual:', turnIdx, '→ novo:', nextTurnIdx)
       setTurnIdx(nextTurnIdx)
