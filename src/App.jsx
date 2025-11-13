@@ -450,6 +450,9 @@ export default function App() {
       if ((phase === 'lobbies' || phase === 'playersLobby' || phase === 'game') && currentLobbyId && myUid) {
         try {
           console.log(`[App] Saindo da sala ${currentLobbyId} na fase ${phase}`)
+          
+          // ✅ CORREÇÃO: Ao sair da sala, zera tudo (tick, locks, pendingTurnData)
+          // O useEffect de phase no useTurnEngine já faz isso, mas garantimos aqui também
           await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
         } catch (error) {
           console.warn('[App] Erro ao sair da sala:', error)

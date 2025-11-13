@@ -146,26 +146,189 @@ export function useTurnEngine({
 
   // 🔄 dados do próximo turno (para evitar stale closure)
   const pendingTurnDataRef = useRef(null)
+  const tickTimerRef = useRef(null) // ✅ CORREÇÃO: Timer do tick para poder parar ao sair da fase
+
+  // ✅ CORREÇÃO: Helper para enfileirar dados de turno de forma centralizada
+  const queueTurnData = useCallback((patch) => {
+    const calcNextTurnIdx = () => {
+      const total = players.length
+      return findNextAliveIdx(players, turnIdx) % total
+    }
+    const maybeIncRound = () => {
+      // Round é derivado de laps, então apenas retorna o round atual ou derivado
+      return deriveRound(players, TRACK_LEN)
+    }
+    
+    const base = pendingTurnDataRef.current ?? {
+      nextTurnIdx: calcNextTurnIdx(),
+      nextRound: maybeIncRound(),
+      nextPlayers: players,
+      events: []
+    }
+    
+    pendingTurnDataRef.current = {
+      ...base,
+      ...patch,
+      ts: Date.now()
+    }
+    
+    console.log('[queueTurnData] 📝 Enfileirando dados de turno:', {
+      nextTurnIdx: pendingTurnDataRef.current.nextTurnIdx,
+      nextRound: pendingTurnDataRef.current.nextRound,
+      ...patch
+    })
+  }, [players, turnIdx, deriveRound, TRACK_LEN, findNextAliveIdx])
+
+  // ✅ CORREÇÃO: Guard-rails de instrumentação para rastrear quem setou/limpou
+  const setPending = useCallback((from, data) => {
+    pendingTurnDataRef.current = data
+    console.log(`[SET pendingTurnDataRef FROM: ${from}]`, data)
+  }, [])
+
+  const clearPending = useCallback((from) => {
+    console.log(`[CLEAR pendingTurnDataRef FROM: ${from}]`)
+    pendingTurnDataRef.current = null
+  }, [])
+
+  const stopTick = useCallback(() => {
+    if (tickTimerRef.current) {
+      console.log('[stopTick] ✅ Parando tick timer')
+      clearInterval(tickTimerRef.current)
+      tickTimerRef.current = null
+    }
+  }, [])
+
+  // ✅ CORREÇÃO: Tick precisa ser criado fora do advanceAndMaybeLap para poder ser referenciado no timer
+  // Mas como precisa acessar estado atual, vamos criar um useEffect que inicia/para o timer baseado em phase
+  // O tick em si será executado dentro do useEffect do advanceAndMaybeLap mas via timer gerenciado
+
+  // ✅ CORREÇÃO: Helper para liberar locks locais
+  const releaseLocalLocksIfHeld = useCallback(() => {
+    const currentLockOwner = lockOwnerRef.current
+    const isLockOwner = String(currentLockOwner || '') === String(myUid)
+    if (isLockOwner) {
+      console.log('[releaseLocalLocksIfHeld] 🔓 Liberando locks locais')
+      setTurnLockBroadcast(false)
+      setLockOwner(null)
+    }
+  }, [myUid, setTurnLockBroadcast])
 
   // Efeito para controlar a ativação/desativação do motor de turnos com base na fase
   useEffect(() => {
     if (phase !== 'game') {
       console.log('[USE_TURN_ENGINE] Desativando motor de turnos (fase:', phase, ')');
+      stopTick() // ✅ CORREÇÃO: Para o tick ao sair da fase
       setModalLocks(0);
-      setTurnLockBroadcast(false); // Resetar lock interno
-      pendingTurnDataRef.current = null; // Limpar dados de turno pendentes
-      setLockOwner(null); // ✅ CORREÇÃO: Limpa lockOwner quando sai da fase de jogo
+      setTurnLockBroadcast(false);
+      clearPending('phase-change') // ✅ CORREÇÃO: Usa helper com log
+      setLockOwner(null);
     } else {
       console.log('[USE_TURN_ENGINE] Ativando motor de turnos (fase: game)');
       // ✅ CORREÇÃO: Garante que pendingTurnDataRef seja limpo quando a fase muda para 'game'
-      // Isso previne que dados de turno pendentes de uma partida anterior causem mudança de turno imediata
       if (gameJustStarted) {
         console.log('[USE_TURN_ENGINE] Jogo acabou de começar - limpando pendingTurnDataRef')
-        pendingTurnDataRef.current = null
+        clearPending('game-just-started')
         setLockOwner(null)
       }
     }
-  }, [phase, gameJustStarted, setTurnLockBroadcast]); // ✅ CORREÇÃO: Adiciona gameJustStarted como dependência
+    
+    return () => {
+      // Cleanup: sempre para o tick ao desmontar ou mudar fase
+      stopTick()
+    }
+  }, [phase, gameJustStarted, setTurnLockBroadcast, stopTick, clearPending])
+
+  // ✅ CORREÇÃO: useEffect separado para gerenciar o timer do tick baseado em phase
+  useEffect(() => {
+    if (phase !== 'game') {
+      stopTick()
+      return
+    }
+    
+    // ✅ CORREÇÃO: Tick definido dentro do useEffect para ter acesso ao estado atual
+    const startTime = Date.now()
+    const tick = () => {
+      // Curto-circuito se não está na fase de jogo
+      if (phase !== 'game') {
+        stopTick()
+        return
+      }
+      
+      const currentModalLocks = modalLocksRef.current
+      const currentLockOwner = lockOwnerRef.current
+      const isLockOwner = String(currentLockOwner || '') === String(myUid)
+      const currentStackLength = modalContextRef.current?.stackLength || stackLength || 0
+      
+      console.log('[tick] modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
+      
+      // ✅ CORREÇÃO CRÍTICA: Só processa turno se não houver modais e for o lockOwner
+      if (currentModalLocks === 0 && currentStackLength === 0 && isLockOwner) {
+        const turnData = pendingTurnDataRef.current
+        
+        // ✅ CORREÇÃO CRÍTICA: NÃO libera lock sem turnData
+        if (!turnData) {
+          console.log('[tick] ⚠️ turnData é null, não há nada para commitar - não liberando lock')
+          return
+        }
+        
+        // ✅ CORREÇÃO: Previne mudança de turno imediata após início do jogo
+        if (gameJustStarted && turnIdx === 0) {
+          console.log('[tick] ⚠️ Jogo acabou de começar (turnIdx=0) - ignorando turnData')
+          clearPending('game-just-started')
+          releaseLocalLocksIfHeld()
+          return
+        }
+        
+        try {
+          // ✅ CORREÇÃO: Commita turno - faz broadcastState + rotateTurn
+          console.log(`[tick] ✅ Commitando turno - de ${turnIdx} para ${turnData.nextTurnIdx}`)
+          
+          const currentPlayerName = players[turnIdx]?.name || 'Jogador'
+          const nextPlayerName = turnData.nextPlayers?.[turnData.nextTurnIdx]?.name || 'Jogador'
+          console.log(`[🎲 TURNO] ${currentPlayerName} → ${nextPlayerName}`)
+          
+          // Atualiza estado local
+          setTurnIdx(turnData.nextTurnIdx)
+          if (turnData.nextPlayers) {
+            setPlayers(turnData.nextPlayers)
+          }
+          if (turnData.nextRound !== undefined) {
+            setRound(turnData.nextRound)
+          }
+          
+          // Faz broadcast
+          broadcastState(
+            turnData.nextPlayers || players, 
+            turnData.nextTurnIdx, 
+            turnData.nextRound ?? round
+          )
+        } finally {
+          // ✅ CORREÇÃO: Limpa turnData DEPOIS do commit e libera locks
+          clearPending('tick-commit')
+          releaseLocalLocksIfHeld()
+        }
+      }
+      
+      // ✅ CORREÇÃO: Timeout de segurança
+      if (Date.now() - startTime > 20000) {
+        console.log('[tick] ⏰ TIMEOUT após 20s - forçando desbloqueio')
+        releaseLocalLocksIfHeld()
+        clearPending('timeout')
+        stopTick()
+      }
+    }
+    
+    // Inicia timer se ainda não estiver ativo
+    if (!tickTimerRef.current) {
+      console.log('[useEffect tick] ✅ Iniciando timer do tick')
+      tickTimerRef.current = window.setInterval(tick, 250)
+    }
+    
+    return () => {
+      stopTick()
+    }
+  }, [phase, players, round, turnIdx, isMyTurn, myUid, stackLength, gameJustStarted, 
+      setTurnIdx, setPlayers, setRound, broadcastState, clearPending, releaseLocalLocksIfHeld, stopTick])
 
   // ✅ CORREÇÃO CRÍTICA: Helper para abrir modal travando o turno até resolver
   // Trava o turno quando abre a modal e só destrava quando a modal resolve
@@ -274,34 +437,41 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Usa deriveRound para calcular round baseado nos laps dos jogadores
     const nextRnd = deriveRound(updPlayers ?? players, TRACK_LEN)
     
-    console.log('[endTurnWith] ✅ Avançando turno - atual:', turnIdx, 'próximo:', nextIdx, 'round:', round, 'próximo round:', nextRnd)
+    console.log('[endTurnWith] ✅ Enfileirando avanço de turno - atual:', turnIdx, 'próximo:', nextIdx, 'round:', round, 'próximo round:', nextRnd)
     
-    // Atualiza players se fornecido
+    // ✅ CORREÇÃO: Aplica players localmente
     if (updPlayers && JSON.stringify(updPlayers) !== JSON.stringify(players)) {
       setPlayers(updPlayers)
     }
     
-    // Atualiza turno e rodada
-    setTurnIdx(nextIdx)
-    if (nextRnd !== round) {
-      setRound(nextRnd)
-    }
+    // ✅ CORREÇÃO: Enfileira dados de turno para o tick commitar
+    queueTurnData({
+      action: 'END_TURN',
+      nextTurnIdx: nextIdx,
+      nextRound: nextRnd,
+      nextPlayers: updPlayers ?? players
+    })
     
-    // Faz broadcast
-    broadcastState(updPlayers ?? null, nextIdx, nextRnd)
-    
-    console.log('[endTurnWith] ✅ Turno avançado - próximo jogador:', (updPlayers ?? players)[nextIdx]?.name, 'turnIdx:', nextIdx)
-  }, [players, turnIdx, round, setPlayers, setTurnIdx, setRound, broadcastState, findNextAliveIdx, deriveRound, TRACK_LEN])
+    // ✅ CORREÇÃO: NÃO faz broadcast nem atualiza turnIdx aqui - deixa o tick fazer isso
+    console.log('[endTurnWith] ✅ Dados de turno enfileirados - próximo jogador:', (updPlayers ?? players)[nextIdx]?.name, 'turnIdx:', nextIdx)
+  }, [players, turnIdx, round, setPlayers, queueTurnData, findNextAliveIdx, deriveRound, TRACK_LEN])
 
   // ✅ CORREÇÃO: Finaliza turno quando a modal foi fechada sem compra, ou quando faltou saldo.
   const finishTurnNoBuy = useCallback(() => {
-    try {
-      // nada a atualizar em players; só avança o turno
-      endTurnWith(players)
-    } finally {
-      setTurnLockBroadcast(false)
-    }
-  }, [players, endTurnWith, setTurnLockBroadcast])
+    // ✅ CORREÇÃO: Enfileira dados de turno para o tick commitar (sem atualizar players)
+    const nextTurnIdx = findNextAliveIdx(players, turnIdx)
+    const nextRound = deriveRound(players, TRACK_LEN)
+    
+    queueTurnData({
+      action: 'NO_BUY',
+      playerIdx: turnIdx,
+      nextTurnIdx,
+      nextRound,
+      nextPlayers: players // sem mudanças em players
+    })
+    
+    // ✅ CORREÇÃO: NÃO limpe pendingTurnDataRef nem libere lock aqui - deixe o tick fazer isso
+  }, [players, turnIdx, queueTurnData, findNextAliveIdx, deriveRound, TRACK_LEN])
 
   // ========= regras auxiliares de saldo =========
   const canPay = useCallback((idx, amount) => {
@@ -660,19 +830,22 @@ export function useTurnEngine({
       crossedStart1 || // Start
       crossedExpenses23 // Despesas
     
-    // ✅ CORREÇÃO CRÍTICA: Só define pendingTurnDataRef se NÃO houver tiles de modal
-    // Se houver tiles de modal, o pendingTurnDataRef será definido DEPOIS que todas as modais forem fechadas
+    // ✅ CORREÇÃO CRÍTICA: Enfileira dados de turno se NÃO houver tiles de modal
+    // Se houver tiles de modal, o queueTurnData será chamado DEPOIS que todas as modais forem fechadas
     // Isso garante que o tick não mude o turno antes das modais serem abertas
     if (!hasModalTile || !itsMe || !pushModal || !awaitTop) {
-      // Armazena os dados do próximo turno para uso na função tick
-      pendingTurnDataRef.current = {
+      // ✅ CORREÇÃO: Usa queueTurnData para enfileirar dados de turno
+      queueTurnData({
         nextPlayers,
         nextTurnIdx,
-        nextRound: finalNextRound
-      }
-      console.log('[DEBUG] ✅ pendingTurnDataRef definido (sem tiles de modal ou condições não atendidas)')
+        nextRound: finalNextRound,
+        action: 'MOVE',
+        playerIdx: curIdx,
+        payload: { steps, oldTile, newTile, lapInc }
+      })
+      console.log('[DEBUG] ✅ queueTurnData chamado (sem tiles de modal ou condições não atendidas)')
     } else {
-      console.log('[DEBUG] ⚠️ pendingTurnDataRef NÃO definido ainda (há tiles de modal que serão abertos)')
+      console.log('[DEBUG] ⚠️ queueTurnData NÃO chamado ainda (há tiles de modal que serão abertos)')
     }
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
@@ -735,14 +908,30 @@ export function useTurnEngine({
         if (!requireFunds(curIdx, price, 'comprar ERP')) return finishTurnNoBuy()
         
         console.log('[ERP] Processando compra, price:', price, 'level:', res.level)
-        const updatedPlayers = players.map((p, i) =>
-          i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
-        )
         
-        // ✅ CORREÇÃO: Atualiza players e avança turno
-        setPlayers(updatedPlayers)
-        endTurnWith(updatedPlayers)
-        setTurnLockBroadcast(false)
+        // ✅ CORREÇÃO: 1) Aplica efeitos do turno no estado local
+        let updatedPlayers
+        setPlayers(ps => {
+          updatedPlayers = ps.map((p, i) =>
+            i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level }, TRACK_LEN)
+          )
+          return updatedPlayers
+        })
+        
+        // ✅ CORREÇÃO: 2) ENFILEIRA o pacote de turno para o tick commitar/broadcastar e rotacionar turno
+        const nextTurnIdx = findNextAliveIdx(updatedPlayers, curIdx)
+        const nextRound = deriveRound(updatedPlayers, TRACK_LEN)
+        
+        queueTurnData({
+          action: 'BUY_ERP',
+          playerIdx: curIdx,
+          payload: { level: res.level, price },
+          nextTurnIdx,
+          nextRound,
+          nextPlayers: updatedPlayers
+        })
+        
+        // ✅ CORREÇÃO: 3) NÃO limpe pendingTurnDataRef aqui. Deixe o tick consumi-lo.
       })()
     }
 
@@ -1548,147 +1737,8 @@ export function useTurnEngine({
       })()
     }
 
-    // fail-safe: solta o cadeado quando todas as modais fecharem
-    const start = Date.now()
-    const tick = () => {
-      if (phase !== 'game') {
-        // console.log('[DEBUG] tick - Não executando fora da fase de jogo.');
-        return;
-      }
-      const currentModalLocks = modalLocksRef.current
-      const currentLockOwner = lockOwnerRef.current
-      const isLockOwner = String(currentLockOwner || '') === String(myUid)
-      // ✅ CORREÇÃO CRÍTICA: Verifica também o stackLength do ModalContext
-      // Isso garante que o tick não mude o turno se houver modais abertas
-      const currentStackLength = modalContextRef.current?.stackLength || stackLength || 0
-      
-      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'stackLength:', currentStackLength, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
-      console.log('[DEBUG] tick - pendingTurnDataRef:', pendingTurnDataRef.current ? `nextTurnIdx=${pendingTurnDataRef.current.nextTurnIdx}, nextRound=${pendingTurnDataRef.current.nextRound}` : 'null')
-      
-      // ✅ CORREÇÃO CRÍTICA: Só muda o turno se não houver modais abertas (nem modalLocks nem stackLength)
-      if (currentModalLocks === 0 && currentStackLength === 0) {
-        // libera apenas se EU for o dono do cadeado
-        if (isLockOwner) {
-          console.log('[DEBUG] tick - ✅ Sou o lockOwner, verificando se posso mudar turno')
-          // ✅ CORREÇÃO: Previne mudança de turno imediata após início do jogo
-          // Se o jogo acabou de começar e o turnIdx é 0, não muda o turno mesmo que haja pendingTurnData
-          if (gameJustStarted && turnIdx === 0) {
-            console.log('[DEBUG] ⚠️ tick - Jogo acabou de começar (turnIdx=0) - ignorando pendingTurnData para prevenir mudança de turno imediata')
-            // Limpa pendingTurnData para evitar que seja usado depois
-            pendingTurnDataRef.current = null
-            setTurnLockBroadcast(false)
-            setLockOwner(null)
-            return
-          }
-          
-          // ✅ CORREÇÃO CRÍTICA: Verifica novamente o stackLength ANTES de mudar o turno
-          // Isso previne que o turno mude se houver modais abertas
-          // Usa o modalContextRef diretamente para garantir que estamos verificando o estado mais atual
-          const finalStackLength = modalContextRef.current?.stackLength ?? stackLength ?? 0
-          const finalModalLocks = modalLocksRef.current ?? modalLocks ?? 0
-          
-          console.log('[DEBUG] tick - ⚠️ Verificação final antes de mudar turno - stackLength:', finalStackLength, 'modalLocks:', finalModalLocks)
-          
-          if (finalStackLength > 0 || finalModalLocks > 0) {
-            console.log('[DEBUG] tick - ⚠️ Há modais abertas (stackLength:', finalStackLength, 'modalLocks:', finalModalLocks, ') - não mudando turno ainda')
-            return
-          }
-          
-          // Agora muda o turno quando todas as modais são fechadas
-          const turnData = pendingTurnDataRef.current
-          console.log('[DEBUG] tick - turnData:', turnData ? `nextTurnIdx=${turnData.nextTurnIdx}, nextRound=${turnData.nextRound}` : 'null')
-          if (turnData) {
-            const currentPlayerName = players[turnIdx]?.name || 'Jogador'
-            const nextPlayerName = turnData.nextPlayers[turnData.nextTurnIdx]?.name || 'Jogador'
-            console.log(`[🎲 TURNO] ✅ MUDANDO TURNO - ${currentPlayerName} terminou → ${nextPlayerName} pode jogar`)
-            console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
-            console.log('[DEBUG] ✅ Jogadores antes:', players.map(p => p.name), 'depois:', turnData.nextPlayers.map(p => p.name))
-            
-            // ✅ CORREÇÃO CRÍTICA: Limpa pendingTurnData ANTES de atualizar o estado para evitar condições de corrida
-            console.log('🧹 LIMPANDO pendingTurnDataRef')
-            pendingTurnDataRef.current = null
-            
-            // ✅ CORREÇÃO: Atualiza o estado local PRIMEIRO antes de fazer broadcast
-            // Isso garante que o turnIdx seja atualizado antes da sincronização
-            console.log('📝 ATUALIZANDO ESTADO LOCAL:')
-            console.log('  - setTurnIdx(', turnData.nextTurnIdx, ') - ANTES:', turnIdx)
-            console.log('  - setPlayers(', turnData.nextPlayers.length, 'jogadores)')
-            console.log('  - setRound(', turnData.nextRound, ') - ANTES:', round)
-            
-            // ✅ CORREÇÃO CRÍTICA: Atualiza o estado local ANTES do broadcast
-            // O broadcastState já atualiza o estado local, mas é melhor fazer explicitamente aqui também
-            setTurnIdx(turnData.nextTurnIdx)
-            setPlayers(turnData.nextPlayers)
-            setRound(turnData.nextRound)
-            
-            // ✅ CORREÇÃO: Desativa o lock DEPOIS de atualizar o estado mas ANTES do broadcast
-            // Isso garante que o próximo jogador pode receber o estado correto
-            console.log('🔓 DESATIVANDO LOCK:')
-            console.log('  - setTurnLockBroadcast(false)')
-            console.log('  - setLockOwner(null)')
-            setTurnLockBroadcast(false)
-            // ✅ CORREÇÃO: Limpa o lockOwner para permitir que o próximo jogador defina seu próprio lockOwner
-            setLockOwner(null)
-            
-            // ✅ CORREÇÃO: Faz broadcast DEPOIS de atualizar o estado local
-            // Isso garante que a sincronização receba o estado correto
-            console.log('📡 BROADCAST - Enviando mudança de turno:')
-            console.log('  - turnIdx:', turnData.nextTurnIdx)
-            console.log('  - round:', turnData.nextRound)
-            console.log('  - players:', turnData.nextPlayers.length)
-            broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
-            
-            console.log('✅ TURNO MUDADO COM SUCESSO')
-            console.groupEnd()
-          } else {
-            console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
-            console.log('[DEBUG] ⚠️ tick - Verificando por que turnData é null...')
-            console.log('[DEBUG] ⚠️ tick - pendingTurnDataRef.current:', pendingTurnDataRef.current)
-            console.log('[DEBUG] ⚠️ tick - Foi limpo prematuramente? Verificando...')
-            // Se não há turnData mas há lock ativo, desativa o lock de qualquer forma
-            // Mas só se não houver modais abertas (para evitar desbloqueio prematuro)
-            if (currentStackLength === 0 && currentModalLocks === 0) {
-              console.log('[DEBUG] ⚠️ tick - Desativando lock pois não há modais e não há turnData')
-              setTurnLockBroadcast(false)
-              setLockOwner(null)
-            } else {
-              console.log('[DEBUG] ⚠️ tick - Mantendo lock pois ainda há modais abertas (stackLength:', currentStackLength, 'modalLocks:', currentModalLocks, ')')
-            }
-          }
-        } else {
-          console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
-          console.log('[DEBUG] ❌ tick - lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
-          console.log('[DEBUG] ❌ tick - Isso significa que outro jogador iniciou a ação')
-          console.log('[DEBUG] ❌ tick - Verificando se o lockOwner deveria ser eu...')
-          // ✅ CORREÇÃO: Se não sou o lockOwner mas deveria ser (é minha vez), força atualização
-          if (isMyTurn && String(currentLockOwner || '') !== String(myUid)) {
-            console.log('[DEBUG] ⚠️ tick - É minha vez mas não sou lockOwner - forçando atualização do lockOwner')
-            setLockOwner(String(myUid))
-          }
-          // ✅ CORREÇÃO: Continua verificando mesmo se não for o lockOwner, para garantir que o tick continue
-          // O tick deve continuar executando até que o lockOwner resolva ou timeout
-        }
-        // ✅ CORREÇÃO CRÍTICA: NÃO retorna aqui - continua executando para verificar novamente
-        // O tick deve continuar verificando até que o turno seja mudado ou timeout
-      } else {
-        // ✅ CORREÇÃO: Se ainda há modais abertas, continua verificando
-        console.log('[DEBUG] tick - Ainda há modais abertas, continuando a verificar...')
-        console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'stackLength:', currentStackLength)
-      }
-      
-      if (Date.now() - start > 20000) {
-        // força desbloqueio em caso extremo
-        console.log('[DEBUG] ⏰ TIMEOUT - forçando desbloqueio após 20s')
-        if (isLockOwner) {
-          setTurnLockBroadcast(false)
-        }
-        return
-      }
-      
-      // Continua verificando a cada 80ms
-      setTimeout(tick, 80)
-    }
-    tick()
+    // ✅ CORREÇÃO: Tick é executado via timer gerenciado separadamente em useEffect
+    // Não precisa mais definir tick aqui - será gerenciado pelo useEffect baseado em phase
   }, [
     phase, players, round, turnIdx, roundFlags, isMyTurn, isMine,
     myUid, myCash, gameOver,
