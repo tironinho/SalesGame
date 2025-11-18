@@ -1,7 +1,6 @@
 // src/components/FinalWinners.jsx
 import React, { useMemo } from "react";
 import ModalBase from "../modals/ModalBase";
-import { getPlayerEmojiById } from "../utils/playerEmojis";
 
 /**
  * Pódio final (Top 3) como **modal travada** no centro da tela.

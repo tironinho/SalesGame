@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react'
-import { getPlayerEmojiById } from '../utils/playerEmojis'
 
 export default function HUD({ totals, players }){
   useEffect(() => {
@@ -31,12 +30,7 @@ export default function HUD({ totals, players }){
         <div className="title">Placar</div>
         {players.map(p => (
           <div className="row" key={p.id}>
-            <span>
-              <span style={{ marginRight: '8px', fontSize: '16px' }}>
-                {getPlayerEmojiById(p.id, players)}
-              </span>
-              {p.name}
-            </span>
+            <span>{p.name}</span>
             <span>{p.cash}</span>
           </div>
         ))}

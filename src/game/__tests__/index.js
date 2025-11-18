@@ -11,7 +11,6 @@ import './regressionTests.js'
 import './integrationTests.js'
 import './realTimeValidator.js'
 import './testControlPanel.js'
-import './hookConsistencyTests.js'
 
 // ====== INICIALIZAÇÃO ======
 if (typeof window !== 'undefined') {
@@ -39,18 +38,11 @@ if (typeof window !== 'undefined') {
   console.log('  testResourceUpdates()  - Testa atualização de recursos')
   console.log('  testLevelRestrictions() - Testa restrições de nível')
   console.log('')
-  console.log('🔧 TESTES DE HOOKS:')
-  console.log('  runAllHookTests()      - Testa consistência de hooks')
-  console.log('  testHookConsistency()  - Testa hooks incondicionais')
-  console.log('  testPhaseTransitions() - Testa transições de fase')
-  console.log('  testHookErrorPrevention() - Testa prevenção de erros')
-  console.log('')
   console.log('📊 TESTES INDIVIDUAIS:')
   console.log('  runRegressionTests()   - Testes regressivos')
   console.log('  runIntegrationTests()  - Testes de integração')
   console.log('  testReportedIssues()   - Testa problemas reportados')
   console.log('')
   console.log('🚀 EXECUTE "runAllTests()" PARA COMEÇAR!')
-  console.log('🔧 EXECUTE "runAllHookTests()" PARA TESTAR HOOKS!')
   console.log('')
 }

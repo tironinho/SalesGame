@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import './styles.css'
 
 // Telas
@@ -26,7 +26,7 @@ import { validateGameState as validateGameStateRealTime } from './game/__tests__
 import './game/__tests__/index.js'
 
 // Identidade por aba
-import { getOrCreateTabPlayerId, getOrSetTabPlayerName, setTabPlayerName } from './auth'
+import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
 
 // Net (opcional)
 import { useGameNet } from './net/GameNetProvider.jsx'
@@ -37,10 +37,6 @@ import { leaveRoom } from './lib/lobbies'
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
 
-// ✅ CORREÇÃO 1: Importa engineState e useModal
-import { engineState } from './game/engineState'
-import { useModal } from './modals/ModalContext'
-
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
 // -------------------------------------------------------------
@@ -48,16 +44,6 @@ export default function App() {
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
-  
-  // ✅ CORREÇÃO 2: gamePhaseRef para rastrear fase atual (usado por leaveRoom)
-  const gamePhaseRef = useRef('start')
-  useEffect(() => {
-    gamePhaseRef.current = phase
-    // Expõe no window para leaveRoom poder acessar
-    if (typeof window !== 'undefined') {
-      window.gamePhaseRef = gamePhaseRef
-    }
-  }, [phase])
 
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
@@ -78,9 +64,6 @@ export default function App() {
     erpLevel: obj.erpLevel ?? 'D',
     clients: obj.clients ?? 1,
     vendedoresComuns: obj.vendedoresComuns ?? 1,
-    lap: obj.lap ?? 0, // ✅ CORREÇÃO: Inicializa lap sempre
-    tile: obj.tile ?? obj.pos ?? 0, // ✅ CORREÇÃO: Garante tile inicializado
-    pos: obj.pos ?? obj.tile ?? 0, // mantém compatibilidade
   })
 
   const [players, setPlayers] = useState([
@@ -111,59 +94,9 @@ export default function App() {
   const [turnLock, setTurnLock] = useState(false)
   const bcRef = useRef(null)
 
-  // ✅ CORREÇÃO 2: Atualiza refs compartilhadas de engineState
-  const { roomRef, playersRef, roundRef, turnIdxRef } = engineState
-  useEffect(() => { playersRef.current = players }, [players])
-  useEffect(() => { roundRef.current = round }, [round])
-  useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
-  
-  // ✅ CORREÇÃO: roomRef atualizado quando currentLobbyId muda
-  useEffect(() => { 
-    roomRef.current = currentLobbyId ? { code: currentLobbyId } : null 
-  }, [currentLobbyId])
-
-  // ====== "quem sou eu" no array de players
-  const isMine = useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
+  // ====== “quem sou eu” no array de players
+  const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
   const myCash = useMemo(() => (players.find(isMine)?.cash ?? 0), [players, isMine])
-  
-  // ✅ CORREÇÃO 1: Usa useModal para criar openModalAndWait
-  const modalContext = useModal()
-  const { pushModal, awaitTop, stackLength } = modalContext || {}
-  
-  // ✅ CORREÇÃO 1: Cria openModalAndWait no App.jsx
-  const openModalAndWait = useCallback(async (element) => {
-    if (!pushModal || !awaitTop) {
-      console.error('[App] openModalAndWait - pushModal ou awaitTop não disponíveis')
-      return null
-    }
-    const playerName = players[turnIdx]?.name || 'Jogador'
-    console.log(`[App] openModalAndWait - ${playerName} - Abrindo modal`)
-    
-    // Abre a modal
-    pushModal(element)
-    
-    // Aguarda resolução
-    try {
-      const result = await awaitTop()
-      console.log(`[App] openModalAndWait - ${playerName} - Modal resolvida:`, result)
-      return result
-    } catch (error) {
-      console.error(`[App] openModalAndWait - ${playerName} - Erro:`, error)
-      return null
-    }
-  }, [pushModal, awaitTop, players, turnIdx])
-  
-  // ✅ CORREÇÃO 1: Cria requireFunds no App.jsx
-  const requireFunds = useCallback((idx, amount, reason) => {
-    const p = players[idx]
-    const amt = Math.max(0, Number(amount || 0))
-    const canPay = (Number(p?.cash || 0) >= amt)
-    
-    if (!canPay) {
-      appendLog(`Saldo insuficiente${reason ? ' para ' + reason : ''}. Use RECUPERAÇÃO (demitir / emprestar / reduzir) ou declare FALÊNCIA.`)
-    }
-    return canPay
-  }, [players, appendLog])
 
   // ====== bootstrap de fase via ?room= e último lobby salvo
   useEffect(() => {
@@ -194,7 +127,6 @@ export default function App() {
 
   // ====== BroadcastChannel para sync entre abas (mesmo navegador)
   const syncKey = useMemo(() => `sg-sync:${currentLobbyId || 'local'}`, [currentLobbyId])
-  const lastSeqRef = useRef(0)  // seq monotônico para evitar estados antigos
 
   useEffect(() => {
     try {
@@ -208,50 +140,19 @@ export default function App() {
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
-          console.log('[App] START recebido - jogadores:', mapped.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0 (forçado)')
-
-          // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID e valida nome
+          // adota UID real se PlayersLobby tiver setado
           try {
             const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-            if (wuid) {
-              const foundPlayer = mapped.find(p => String(p.id) === String(wuid))
-              if (foundPlayer) {
-                const nameMatches = (String(foundPlayer.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-                if (String(foundPlayer.id) !== String(myUid)) {
-                  console.log('[App] START - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayer.name, 'myName:', myName, 'nome corresponde:', nameMatches)
-                  if (nameMatches) {
-                    setMyUid(String(wuid))
-                  } else {
-                    console.warn('[App] START - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-                  }
-                }
-              }
-            } else {
-              // Se não encontrou pelo window.__MY_UID, tenta pelo nome
-              const mineByName = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-                console.log('[App] START - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
-                setMyUid(String(mineByName.id))
-              }
-            }
-          } catch (e) {
-            console.warn('[App] START - Erro ao atualizar myUid:', e)
-          }
+            if (wuid) setMyUid(String(wuid))
+          } catch {}
 
           setPlayers(mapped)
-          // ✅ CORREÇÃO: Garante que o turnIdx seja sempre 0 (jogador 1) ao iniciar
-          // Ignora qualquer turnIdx que venha na mensagem START (se houver)
           setTurnIdx(0)
           setRound(1)
           setRoundFlags(new Array(Math.max(1, mapped.length)).fill(false))
           setGameOver(false); setWinner(null)
-          // ✅ CORREÇÃO: Marca que o jogo acabou de começar para proteger o turnIdx inicial
-          setGameJustStarted(true)
-          // ✅ CORREÇÃO: Reseta o flag após um pequeno delay para permitir sincronização normal depois
-          setTimeout(() => setGameJustStarted(false), 3000)
           setPhase('game')
           setLog(['Jogo iniciado!'])
-          console.log('[App] START aplicado - turnIdx: 0, jogadores:', mapped.length, 'nomes:', mapped.map(p => p.name))
           return
         }
 
@@ -260,249 +161,35 @@ export default function App() {
           return
         }
 
-        // ✅ CORREÇÃO: Suporta tanto SYNC (antigo) quanto GAME_STATE (novo com seq)
-        if ((d.type === 'SYNC' || d.type === 'GAME_STATE') && phase === 'game') {
-          // Para GAME_STATE, verifica seq para evitar estados antigos/duplicados
-          if (d.type === 'GAME_STATE' && typeof d.seq === 'number') {
-            if (d.seq <= lastSeqRef.current) {
-              console.log(`[App] GAME_STATE - ⚠️ Ignorando estado antigo (seq: ${d.seq} <= lastSeq: ${lastSeqRef.current})`)
-              return
-            }
-            lastSeqRef.current = d.seq
-            console.log(`[App] GAME_STATE - ✅ Seq válido: ${d.seq}`)
-          }
+        if (d.type === 'SYNC' && phase === 'game') {
+          console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
+          console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
           
-          console.group(`[App] ${d.type} recebido - turnIdx: ${d.turnIdx}, round: ${d.round}, source: ${d.source}${d.seq ? `, seq: ${d.seq}` : ''}`)
-          console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid, 'meId:', meId)
-          console.log('[App] SYNC - jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
-          console.log('[App] SYNC - jogadores remotos:', d.players?.map(p => ({ id: p.id, name: p.name })))
+          // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
+          setTurnIdx(d.turnIdx)
+          setRound(d.round)
           
-          // ✅ CORREÇÃO CRÍTICA: Se o SYNC/GAME_STATE é do próprio cliente, ignora (evita loop de sincronização)
-          if (String(d.source) === String(meId)) {
-            console.log(`[App] ${d.type} - ⚠️ Ignorando ${d.type} do próprio cliente (source: ${d.source}, meId: ${meId})`)
-            console.groupEnd()
-            return
-          }
-          
-          // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de processar jogadores
-          // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
-          // Não sincroniza turnIdx aqui ainda - será feito depois de processar os jogadores
-          
-          // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
-          // ✅ CORREÇÃO: Garante que TODOS os jogadores sejam mantidos (mescla local + remoto)
+          // Preserva apenas certificados e treinamentos locais (dados de progresso)
           const currentPlayers = players
-          const syncedPlayersMap = new Map()
-          
-          // Primeiro, adiciona todos os jogadores locais
-          currentPlayers.forEach(p => {
-            syncedPlayersMap.set(String(p.id), p)
-          })
-          
-          // Depois, mescla com jogadores remotos
-          if (Array.isArray(d.players)) {
-            d.players.forEach(syncedPlayer => {
-              const playerId = String(syncedPlayer.id)
-              const localPlayer = syncedPlayersMap.get(playerId)
-              
-              // ✅ CORREÇÃO: Sincroniza tile e pos nos jogadores remotos
-              const syncedPlayerWithPos = {
-                ...syncedPlayer,
-                // Garante que tile e pos estejam sempre sincronizados
-                tile: syncedPlayer.tile ?? syncedPlayer.pos ?? 0,
-                pos: syncedPlayer.pos ?? syncedPlayer.tile ?? 0
-              }
-              
-              if (localPlayer) {
-                // Se é o próprio jogador, preserva TODOS os dados locais
-                if (String(syncedPlayer.id) === String(myUid)) {
-                  syncedPlayersMap.set(playerId, {
-                    ...localPlayer,
-                    // Aplica apenas certificados e treinamentos sincronizados (se houver)
-                    az: syncedPlayer.az || localPlayer.az || 0,
-                    am: syncedPlayer.am || localPlayer.am || 0,
-                    rox: syncedPlayer.rox || localPlayer.rox || 0,
-                    trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
-                    onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
-                  })
-                } else {
-                  // Para outros jogadores, aplica dados sincronizados (preservando progresso)
-                  syncedPlayersMap.set(playerId, {
-                    ...syncedPlayerWithPos,
-                    // Preserva certificados e treinamentos locais (dados de progresso)
-                    az: localPlayer.az || syncedPlayer.az || 0,
-                    am: localPlayer.am || syncedPlayer.am || 0,
-                    rox: localPlayer.rox || syncedPlayer.rox || 0,
-                    trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-                    onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
-                  })
-                }
-              } else {
-                // Novo jogador remoto (não existe localmente)
-                syncedPlayersMap.set(playerId, syncedPlayerWithPos)
-              }
-            })
-          }
-          
-          // Converte Map para array, mantendo a ordem dos jogadores remotos (se existir)
-          let syncedPlayers = []
-          if (Array.isArray(d.players) && d.players.length > 0) {
-            syncedPlayers = d.players.map(sp => {
-              const playerId = String(sp.id)
-              return syncedPlayersMap.get(playerId) || sp
-            })
-          } else {
-            // Se não há jogadores remotos, usa os locais
-            syncedPlayers = Array.from(syncedPlayersMap.values())
-          }
-          
-          // Adiciona jogadores locais que não estão no remoto (segurança)
-          currentPlayers.forEach(p => {
-            const playerId = String(p.id)
-            if (!syncedPlayers.find(sp => String(sp.id) === playerId)) {
-              syncedPlayers.push(p)
-            }
-          })
-          
-          console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
-          console.log('[App] SYNC - jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
-          
-          // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
-          // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
-          try {
-            // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
-            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-            if (wuid) {
-              const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
-              if (foundPlayerByWindow) {
-                // Valida que o nome corresponde
-                const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-                if (String(foundPlayerByWindow.id) !== String(myUid)) {
-                  console.log('[App] SYNC - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
-                  if (nameMatches) {
-                    setMyUid(String(wuid))
-                  } else {
-                    console.warn('[App] SYNC - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-                  }
-                }
-              }
-            }
+          const syncedPlayers = d.players.map(syncedPlayer => {
+            const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
+            if (!localPlayer) return syncedPlayer
             
-            // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
-            if (!wuid || !syncedPlayers.find(p => String(p.id) === String(wuid))) {
-              const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-              if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-                // Só atualiza se não houver window.__MY_UID ou se corresponder
-                if (!wuid || String(wuid) === String(mineByName.id)) {
-                  console.log('[App] SYNC - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
-                  setMyUid(String(mineByName.id))
-                } else {
-                  console.warn('[App] SYNC - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
-                }
-              }
+            return {
+              ...syncedPlayer,
+              // Preserva apenas dados de progresso local (certificados e treinamentos)
+              az: localPlayer.az || syncedPlayer.az || 0,
+              am: localPlayer.am || syncedPlayer.am || 0,
+              rox: localPlayer.rox || syncedPlayer.rox || 0,
+              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
             }
-          } catch (e) {
-            console.warn('[App] SYNC - Erro ao atualizar myUid:', e)
-          }
-          
+          })
           setPlayers(syncedPlayers)
           
-          // ✅ CORREÇÃO: Verifica se é apenas um movimento (não deve sincronizar turnIdx)
-          const isMoveOnly = d.move === true && d.skipTurnUpdate === true
-          if (isMoveOnly) {
-            console.log('[App] SYNC - ⚠️ Broadcast de movimento apenas - NÃO sincronizando turnIdx')
-            console.log('[App] SYNC - Apenas sincronizando posição dos tokens (players atualizados)')
-            console.groupEnd()
-            return // ✅ CORREÇÃO: Retorna cedo para não processar mudança de turno
-          }
-          
-          // ✅ CORREÇÃO: Sincroniza turnIdx e round DEPOIS de atualizar jogadores
-          // Isso garante que os jogadores estejam atualizados antes de verificar quem é o dono do turno
-          // ✅ CORREÇÃO CRÍTICA: Se gameJustStarted está ativo, NUNCA sincroniza turnIdx remoto
-          if (gameJustStarted) {
-            if (d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
-              console.log('[App] SYNC - ⚠️ gameJustStarted ativo - IGNORANDO sincronização de turnIdx remoto - remoto:', d.turnIdx, 'local:', turnIdx, 'round:', round)
-            }
-            // Força turnIdx = 0 se o round é 1 (jogo acabou de começar)
-            if (round === 1 && turnIdx !== 0) {
-              console.log('[App] SYNC - ⚠️ gameJustStarted ativo - FORÇANDO turnIdx = 0 (jogo deve começar no jogador 1)')
-              setTurnIdx(0)
-            }
-          }
-          // Se o jogo acabou de começar (round === 1 e turnIdx === 0), não sobrescreve
-          else if (round === 1 && turnIdx === 0 && d.turnIdx !== undefined && d.turnIdx !== turnIdx) {
-            if (d.turnIdx > 0) {
-              console.log('[App] SYNC - ⚠️ Ignorando sincronização de turnIdx remoto (jogo acabou de começar - deve ser 0) - remoto:', d.turnIdx, 'local:', turnIdx)
-            } else {
-              // Se o remoto também é 0, está ok
-              console.log('[App] SYNC - ✅ Sincronizando turnIdx (BroadcastChannel) - ambos são 0 - remoto:', d.turnIdx, 'local:', turnIdx)
-            }
-          }
-          // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo do BroadcastChannel)
-          // ✅ CORREÇÃO CRÍTICA: Mas só ignora se o turnIdx remoto também for menor ou igual (para não bloquear avanços válidos)
-          else if (d.round !== undefined && d.round < round) {
-            console.log('[App] SYNC - Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', d.round, 'local round:', round, 'turnIdx remoto:', d.turnIdx, 'turnIdx local:', turnIdx)
-          }
-          // ✅ CORREÇÃO CRÍTICA: Se o round remoto é igual ao local mas o turnIdx remoto é maior, significa que outro jogador avançou - DEVE sincronizar
-          else if (d.round !== undefined && d.round === round && d.turnIdx !== undefined && d.turnIdx > turnIdx) {
-            console.log('[App] SYNC - ✅ Sincronizando turnIdx (outro jogador avançou) - remoto:', d.turnIdx, 'local:', turnIdx, 'round:', round)
-            setTurnIdx(d.turnIdx)
-          }
-          // ✅ CORREÇÃO: BroadcastChannel tem prioridade sobre Supabase - sempre sincroniza se o turnIdx é diferente e o round é igual ou maior
-          else if (d.turnIdx !== undefined && d.turnIdx !== turnIdx && (d.round === undefined || d.round >= round)) {
-            console.log('[App] SYNC - Sincronizando turnIdx (BroadcastChannel) - remoto:', d.turnIdx, 'local:', turnIdx, 'round remoto:', d.round, 'round local:', round)
-            setTurnIdx(d.turnIdx)
-          }
-          
-          // ✅ CORREÇÃO: Calcula turnIdxChanged DEPOIS de todas as verificações acima
-          const turnIdxChanged = (d.turnIdx !== undefined && d.turnIdx !== turnIdx) && !gameJustStarted && !(round === 1 && turnIdx === 0 && d.turnIdx > 0)
-          
-          // ✅ CORREÇÃO: Sincroniza round também
-          if (d.round !== undefined && d.round !== round) {
-            setRound(d.round)
-          }
-          
-          // ✅ CORREÇÃO: Usa o turnIdx local (que pode ter sido atualizado ou não) para verificar o jogador da vez
-          const currentTurnIdx = turnIdx // Usa o turnIdx local atual, não o remoto
-          console.log('[App] SYNC - jogador da vez (turnIdx local):', syncedPlayers[currentTurnIdx]?.name, 'id:', syncedPlayers[currentTurnIdx]?.id, 'turnIdx:', currentTurnIdx)
-          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[currentTurnIdx]?.id) === String(myUid), 'myUid:', myUid)
-          
-          // ✅ CORREÇÃO: Se o turnIdx mudou e agora é minha vez, desativa o turnLock para permitir que eu jogue
-          if (turnIdxChanged && d.turnIdx !== undefined) {
-            const newTurnPlayerId = syncedPlayers[d.turnIdx]?.id
-            const isMyTurnNow = newTurnPlayerId && String(newTurnPlayerId) === String(myUid)
-            console.log('[App] SYNC - Turno mudou - novo jogador:', newTurnPlayerId, 'myUid:', myUid, 'é minha vez?', isMyTurnNow)
-            if (isMyTurnNow) {
-              console.log('[App] SYNC - Turno mudou para mim, desativando turnLock')
-              setTurnLock(false)
-            }
-          }
-          // ✅ CORREÇÃO: Mesmo se turnIdx não mudou, verifica se é minha vez e desativa turnLock se necessário
-          // ✅ CORREÇÃO CRÍTICA: Também verifica se o myUid precisa ser atualizado
-          else {
-            const currentTurnPlayerId = syncedPlayers[currentTurnIdx]?.id
-            const isMyTurnNow = currentTurnPlayerId && String(currentTurnPlayerId) === String(myUid)
-            if (isMyTurnNow && turnLock) {
-              console.log('[App] SYNC - É minha vez e turnLock está ativo, desativando turnLock')
-              setTurnLock(false)
-            }
-            // ✅ CORREÇÃO: Se o turnIdx indica que é minha vez mas o myUid não corresponde, tenta atualizar
-            // Mas só atualiza se validado pelo window.__MY_UID
-            else if (!isMyTurnNow && currentTurnPlayerId) {
-              const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-              if (wuid) {
-                const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
-                if (foundPlayerByWindow && String(foundPlayerByWindow.id) !== String(myUid)) {
-                  const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-                  if (nameMatches) {
-                    console.log('[App] SYNC - ⚠️ myUid não corresponde ao owner.id - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'owner.id:', currentTurnPlayerId)
-                    setMyUid(String(wuid))
-                  } else {
-                    console.warn('[App] SYNC - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-                  }
-                }
-              }
-            }
-          }
+          console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
+          console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
+          console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           // Sincroniza estado do jogo (gameOver e winner)
           if (d.gameOver !== undefined) {
@@ -511,8 +198,6 @@ export default function App() {
           if (d.winner !== undefined) {
             setWinner(d.winner)
           }
-          
-          console.groupEnd()
         }
       }
       bcRef.current = bc
@@ -531,9 +216,6 @@ export default function App() {
       if ((phase === 'lobbies' || phase === 'playersLobby' || phase === 'game') && currentLobbyId && myUid) {
         try {
           console.log(`[App] Saindo da sala ${currentLobbyId} na fase ${phase}`)
-          
-          // ✅ CORREÇÃO: Ao sair da sala, zera tudo (tick, locks, pendingTurnData)
-          // O useEffect de phase no useTurnEngine já faz isso, mas garantimos aqui também
           await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
         } catch (error) {
           console.warn('[App] Erro ao sair da sala:', error)
@@ -583,382 +265,73 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
 
-  // ✅ CORREÇÃO: Flag para rastrear se o jogo acabou de começar
-  const [gameJustStarted, setGameJustStarted] = useState(false)
-  
-  // ✅ CORREÇÃO: stateRef para manter estado atual (incluindo rev) - DEFINIDO ANTES de ser usado
-  const stateRef = useRef({ rev: 0 })
-  useEffect(() => {
-    if (netState) {
-      stateRef.current = netState
-    }
-  }, [netState])
-  
   useEffect(() => {
     if (!netState) return
-    
-    // ✅ CORREÇÃO 2: Verifica rev antes de processar (aceita apenas rev maior)
-    // ✅ CORREÇÃO 1: Verifica seq também (se disponível) para evitar estados stale
-    const incomingRev = typeof netState.rev === 'number' ? netState.rev : 0
-    const localRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
-    const incomingSeq = typeof netState.lastEvent?.seq === 'number' ? netState.lastEvent.seq : incomingRev
-    const localSeq = typeof stateRef.current.lastEvent?.seq === 'number' ? stateRef.current.lastEvent.seq : localRev
-    
-    // ✅ CORREÇÃO 1: Ignora estados stale baseado em rev e seq
-    if (incomingRev < localRev || (incomingRev === localRev && incomingSeq < localSeq)) {
-      console.log(`[NET] ⚠️ ignorando estado remoto antigo (rev remoto: ${incomingRev} < local: ${localRev} ou seq remoto: ${incomingSeq} < local: ${localSeq})`)
-      return
-    }
-    
-    if (incomingRev > localRev || (incomingRev === localRev && incomingSeq > localSeq)) {
-      console.log(`[NET] ✅ aceitando estado remoto (rev: ${localRev} → ${incomingRev}, seq: ${localSeq} → ${incomingSeq})`)
-      stateRef.current = netState
-    }
-    
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
-    // ✅ CORREÇÃO: Log detalhado para debug quando WebSocket falha
-    if (nt !== null && nt !== turnIdx) {
-      console.log(`[NET] ⚠️ turnIdx divergente detectado - rev: ${incomingRev}, remoto: ${nt}, local: ${turnIdx}, round remoto: ${nr}, round local: ${round}, gameJustStarted: ${gameJustStarted}`)
-    }
-
     let changed = false
-    
-    // ✅ CORREÇÃO: Se o jogo acabou de começar (gameJustStarted = true), força turnIdx = 0
-    // Se o estado remoto tem turnIdx > 0 e round === 1, pode ser um estado antigo - corrige
-    if (gameJustStarted && nt !== null && nt !== 0 && nr === 1) {
-      console.log('[NET] Jogo acabou de começar - estado remoto tem turnIdx incorreto:', nt, '- corrigindo para 0')
-      // Força turnIdx = 0 no commit remoto também
-      if (typeof netCommit === 'function') {
-        commitRemoteState(np || players, 0, 1).catch(err => console.warn('[NET] Erro ao corrigir turnIdx:', err))
-      }
-      // Não atualiza o turnIdx local - mantém 0
-      return
-    }
-    
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
-      console.log('[NET] Sincronizando jogadores - local:', players.length, 'remoto:', np.length)
-      console.log('[NET] Jogadores locais:', players.map(p => ({ id: p.id, name: p.name })))
-      console.log('[NET] Jogadores remotos:', np.map(p => ({ id: p.id, name: p.name })))
-      
-      // ✅ CORREÇÃO: Preserva dados locais do próprio jogador, aplica dados sincronizados de outros
-      // ✅ CORREÇÃO: Garante que TODOS os jogadores sejam mantidos (mescla local + remoto)
+      // Preserva apenas certificados e treinamentos locais (dados de progresso)
       const currentPlayers = players
-      const syncedPlayersMap = new Map()
-      
-      // Primeiro, adiciona todos os jogadores locais
-      currentPlayers.forEach(p => {
-        syncedPlayersMap.set(String(p.id), p)
-      })
-      
-      // Depois, mescla com jogadores remotos
-      np.forEach(syncedPlayer => {
-        const playerId = String(syncedPlayer.id)
-        const localPlayer = syncedPlayersMap.get(playerId)
+      const syncedPlayers = np.map(syncedPlayer => {
+        const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
+        if (!localPlayer) return syncedPlayer
         
-        if (localPlayer) {
-          // Se é o próprio jogador, preserva TODOS os dados locais
-          if (String(syncedPlayer.id) === String(myUid)) {
-            syncedPlayersMap.set(playerId, {
-              ...localPlayer,
-              // Aplica apenas certificados e treinamentos sincronizados (se houver)
-              az: syncedPlayer.az || localPlayer.az || 0,
-              am: syncedPlayer.am || localPlayer.am || 0,
-              rox: syncedPlayer.rox || localPlayer.rox || 0,
-              trainingsByVendor: syncedPlayer.trainingsByVendor || localPlayer.trainingsByVendor || {},
-              onboarding: syncedPlayer.onboarding !== undefined ? syncedPlayer.onboarding : localPlayer.onboarding
-            })
-          } else {
-            // Para outros jogadores, aplica dados sincronizados (preservando progresso)
-            syncedPlayersMap.set(playerId, {
-              ...syncedPlayer,
-              // Preserva certificados e treinamentos locais (dados de progresso)
-              az: localPlayer.az || syncedPlayer.az || 0,
-              am: localPlayer.am || syncedPlayer.am || 0,
-              rox: localPlayer.rox || syncedPlayer.rox || 0,
-              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
-            })
-          }
-        } else {
-          // Novo jogador remoto (não existe localmente)
-          syncedPlayersMap.set(playerId, syncedPlayer)
+        return {
+          ...syncedPlayer,
+          // Preserva apenas dados de progresso local (certificados e treinamentos)
+          az: localPlayer.az || syncedPlayer.az || 0,
+          am: localPlayer.am || syncedPlayer.am || 0,
+          rox: localPlayer.rox || syncedPlayer.rox || 0,
+          trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+          onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
         }
       })
-      
-      // Converte Map para array, mantendo a ordem dos jogadores remotos
-      const syncedPlayers = np.map(sp => {
-        const playerId = String(sp.id)
-        return syncedPlayersMap.get(playerId) || sp
-      })
-      
-      // Adiciona jogadores locais que não estão no remoto (segurança)
-      currentPlayers.forEach(p => {
-        const playerId = String(p.id)
-        if (!np.find(sp => String(sp.id) === playerId)) {
-          syncedPlayers.push(p)
-        }
-      })
-      
-      console.log('[NET] Jogadores após sincronização:', syncedPlayers.map(p => ({ id: p.id, name: p.name })))
-      
-      // ✅ CORREÇÃO: Atualiza myUid se necessário quando os jogadores são sincronizados
-      // Isso garante que o myUid corresponda ao jogador correto na lista sincronizada
-      try {
-        // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
-        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-        if (wuid) {
-          const foundPlayerByWindow = syncedPlayers.find(p => String(p.id) === String(wuid))
-          if (foundPlayerByWindow) {
-            const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-            if (String(foundPlayerByWindow.id) !== String(myUid)) {
-              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
-              if (nameMatches) {
-                setMyUid(String(wuid))
-              } else {
-                console.warn('[NET] ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-              }
-            }
-          }
-        }
-        
-        // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
-        if (!wuid || !syncedPlayers.find(p => String(p.id) === String(wuid))) {
-          const mineByName = syncedPlayers.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-            if (!wuid || String(wuid) === String(mineByName.id)) {
-              console.log('[NET] Sincronizando jogadores - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
-              setMyUid(String(mineByName.id))
-            } else {
-              console.warn('[NET] ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[NET] Sincronizando jogadores - Erro ao atualizar myUid:', e)
-      }
-      
       setPlayers(syncedPlayers); 
       changed = true 
     }
-    
-      // ✅ CORREÇÃO: Só atualiza turnIdx se o jogo já estiver em andamento (round > 1 ou turnIdx > 0)
-      // Isso previne que a sincronização sobrescreva o turnIdx inicial (0) quando o jogo acaba de começar
-      if (nt !== null && nt !== turnIdx) {
-        // ✅ CORREÇÃO CRÍTICA: Se gameJustStarted está ativo, NUNCA sobrescreve turnIdx
-        if (gameJustStarted) {
-          console.log('[NET] ⚠️ gameJustStarted ativo - IGNORANDO sincronização de turnIdx remoto - remoto:', nt, 'local:', turnIdx, 'round:', round)
-          // Força turnIdx = 0 se o round é 1 (jogo acabou de começar)
-          if (round === 1 && turnIdx !== 0) {
-            console.log('[NET] ⚠️ gameJustStarted ativo - FORÇANDO turnIdx = 0 (jogo deve começar no jogador 1)')
-            setTurnIdx(0)
-            changed = true
-          }
-        }
-        // ✅ CORREÇÃO CRÍTICA: Se o turnIdx remoto é maior que o local E estamos no mesmo round, 
-        // significa que outro jogador avançou o turno - DEVE sincronizar (importante para quando WebSocket falha)
-        else if (nt > turnIdx && nr === round && nr === 1) {
-          // Se o round é 1 e o turnIdx remoto é maior, significa que o jogo já começou e outro jogador já jogou
-          // Isso é especialmente importante quando o WebSocket falha e o Player 2 precisa receber a atualização via polling
-          console.log('[NET] ✅ Sincronizando turnIdx (remoto maior que local - outro jogador avançou) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-          setTurnIdx(nt)
-          changed = true
-        }
-        // Se o jogo acabou de começar (round === 1 e turnIdx === 0) E o remoto é 0 também, está ok
-        // Mas se o remoto é > 0 e o local ainda é 0 no round 1, pode ser que o jogo já começou e outro jogador já jogou
-        // Mas só sincroniza se não for gameJustStarted (já tratado acima)
-        else if ((round === 1 && turnIdx === 0 && nt > 0) && !gameJustStarted) {
-          // ✅ CORREÇÃO: Se o jogo já começou (não está em gameJustStarted) e o remoto tem turnIdx > 0,
-          // significa que outro jogador já jogou - DEVE sincronizar (importante para quando WebSocket falha)
-          console.log('[NET] ✅ Sincronizando turnIdx (jogo em andamento - outro jogador já jogou) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-          setTurnIdx(nt)
-          changed = true
-        }
-        // ✅ CORREÇÃO: Se o turnIdx local é maior que o remoto E estamos no mesmo round, pode ser que o local esteja mais atualizado
-        // Não sobrescreve se o turnIdx local é maior que o remoto (prioriza estado local mais recente)
-        else if (turnIdx > nt && nr === round) {
-          console.log('[NET] Ignorando sincronização de turnIdx remoto (local é mais recente) - remoto:', nt, 'local:', turnIdx, 'round:', round)
-        }
-        // ✅ CORREÇÃO: Se o round remoto é menor que o local, ignora (estado antigo)
-        else if (nr !== null && nr < round) {
-          console.log('[NET] Ignorando sincronização de turnIdx remoto (round remoto é menor) - remoto round:', nr, 'local round:', round, 'turnIdx remoto:', nt, 'turnIdx local:', turnIdx)
-        }
-        else {
-          console.log('[NET] Sincronizando turnIdx - remoto:', nt, 'local:', turnIdx, 'round:', round)
-          setTurnIdx(nt); 
-          changed = true 
-        }
-      }
-    
-    if (nr !== null && nr !== round) { 
-      console.log('[NET] Sincronizando round - remoto:', nr, 'local:', round)
-      setRound(nr); 
-      changed = true 
-    }
+    if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
+    if (nr !== null && nr !== round)  { setRound(nr); changed = true }
 
     if (changed) console.log('[NET] applied remote v=%d', netVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [netVersion, gameJustStarted])
+  }, [netVersion])
 
-  // ✅ CORREÇÃO: Pull defensivo - se idleMs > 2s e stackLength === 0 e turnLock === false, força reload
-  const lastActionTimeRef = useRef(Date.now())
-  useEffect(() => {
-    // Atualiza lastActionTime quando há ações (turno muda, players mudam, etc.)
-    lastActionTimeRef.current = Date.now()
-  }, [turnIdx, players, round, netVersion])
-
-  useEffect(() => {
-    if (phase !== 'game' || !currentLobbyId) return
-    
-    const checkDefensivePull = () => {
-      const idleMs = Date.now() - lastActionTimeRef.current
-      const shouldPull = idleMs > 2000 && stackLength === 0 && !turnLock
-      
-      if (shouldPull) {
-        console.log(`[App] ⚠️ Pull defensivo: idleMs=${idleMs}ms, stackLength=${stackLength}, turnLock=${turnLock} - forçando verificação de estado`)
-        // ✅ CORREÇÃO: Força uma verificação do estado do Supabase
-        // O GameNetProvider já tem polling, mas forçamos uma verificação aqui também
-        // Isso ajuda se algum evento do realtime falhar
-        if (typeof netCommit === 'function' && netState) {
-          // Não faz commit, apenas força uma verificação do estado
-          // O polling do GameNetProvider já faz isso, mas garantimos aqui
-          console.log('[App] Pull defensivo - estado atual:', {
-            rev: netState.rev,
-            turnIdx: netState.turnIdx,
-            round: netState.round,
-            playersCount: netState.players?.length || 0
-          })
-        }
-      }
-    }
-    
-    // Verifica a cada 3s se necessário fazer pull defensivo
-    const interval = setInterval(checkDefensivePull, 3000)
-    return () => clearInterval(interval)
-  }, [phase, currentLobbyId, stackLength, turnLock, netCommit, netState])
-
-  // ✅ CORREÇÃO 1: commitRemoteState agora persiste movimentos também (não só turnos)
-  // ✅ CORREÇÃO 2: Usa rev no estado JSON com trava otimista (via netCommit)
-  // ✅ CORREÇÃO 3: MOVE não deve sobrescrever turnIdx/round (anti-regressão)
-  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound, eventType = 'TURN', eventBy = myUid) {
+  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
     if (typeof netCommit === 'function') {
       try {
-        // ✅ CORREÇÃO 3: Para MOVE, preserva turnIdx/round atual do estado (não permite regressão)
-        const isMove = eventType === 'MOVE'
-        const currentRev = typeof stateRef.current.rev === 'number' ? stateRef.current.rev : 0
-        
-        console.log(`[NET] commitRemoteState - ${eventType} - rev atual: ${currentRev}, turnIdx: ${nextTurnIdx}, round: ${nextRound}, players: ${nextPlayers.length}`)
-        
-        // ✅ CORREÇÃO: Sempre persiste (movimentos e turnos)
-        // O netCommit já usa rev com trava otimista e incrementa automaticamente
-        await netCommit(prev => {
-          const prevState = prev || {}
-          const prevRev = typeof prevState.rev === 'number' ? prevState.rev : 0
-          const nextRev = prevRev + 1
-          
-          // ✅ CORREÇÃO 3: Se é MOVE, preserva turnIdx/round atual (não permite regressão)
-          const finalTurnIdx = isMove ? (prevState.turnIdx ?? turnIdx) : ((nextRound === 1 && nextTurnIdx === 0) ? 0 : nextTurnIdx)
-          const finalRound = isMove ? (prevState.round ?? round) : nextRound
-          
-          if (isMove) {
-            console.log(`[NET] commitRemoteState - 🔁 MOVE preservando turnIdx/round - turnIdx: ${finalTurnIdx} (não ${nextTurnIdx}), round: ${finalRound} (não ${nextRound})`)
-          }
-          
-          return {
-            ...prevState,
-            players: nextPlayers,
-            turnIdx: finalTurnIdx,
-            round: finalRound,
-            gameOver: gameOver,
-            winner: winner,
-            lastEvent: {
-              type: eventType,
-              by: eventBy || myUid,
-              seq: nextRev, // ✅ CORREÇÃO: seq = rev (sempre igual ao rev final)
-              ts: Date.now()
-            },
-            lastKind: eventType // ✅ CORREÇÃO: Adiciona lastKind para rastreamento
-            // ✅ CORREÇÃO: Não define rev aqui - o netCommit vai incrementar automaticamente
-          }
-        })
-        
-        // ✅ CORREÇÃO: stateRef será atualizado automaticamente quando netState mudar
-        // Não precisa atualizar manualmente aqui
+        await netCommit(prev => ({
+          ...(prev || {}),
+          players: nextPlayers,
+          turnIdx: nextTurnIdx,
+          round: nextRound,
+        }))
       } catch (e) {
-        console.warn('[NET] commitRemoteState failed:', e?.message || e)
+        console.warn('[NET] commit failed:', e?.message || e)
       }
     }
   }
 
-  // seq monotônico para ordenar mensagens e evitar estados antigos
-  const broadcastSeqRef = useRef(0)
-
-  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, extra = {}) {
-    broadcastSeqRef.current += 1
-    
-    const isMoveOnly = extra.move === true && extra.skipTurnUpdate === true
-    const eventType = isMoveOnly ? 'MOVE' : 'TURN'
-    
-    console.group(`[📡 BROADCAST] Enviando estado GAME_STATE - ${eventType} - seq: ${broadcastSeqRef.current}, turnIdx: ${nextTurnIdx}, round: ${nextRound}`)
-    console.log('  - players:', nextPlayers.length)
-    console.log('  - turnIdx:', nextTurnIdx, '(local atual:', turnIdx, ')')
-    console.log('  - round:', nextRound, '(local atual:', round, ')')
-    console.log('  - source (meId):', meId)
-    console.log('  - seq:', broadcastSeqRef.current)
-    if (isMoveOnly) {
-      console.log('  - 🔁 PERSISTINDO MOVIMENTO - não atualiza turnIdx localmente, mas persiste no Supabase')
-    }
-    
-    // ✅ CORREÇÃO CRÍTICA: Atualiza o estado LOCAL ANTES de fazer broadcast
-    // Se for movimento, não atualiza turnIdx localmente (será atualizado quando o turno mudar)
-    // Mas SEMPRE atualiza players (posições/tile) para refletir o movimento imediato
-    if (!isMoveOnly && nextTurnIdx !== turnIdx) {
-      console.log('  - ⚠️ turnIdx mudou - atualizando estado local ANTES do broadcast')
-      console.log('  - turnIdx atual:', turnIdx, '→ novo:', nextTurnIdx)
-      setTurnIdx(nextTurnIdx)
-    }
-    if (nextRound !== round) {
-      console.log('  - ⚠️ round mudou - atualizando estado local ANTES do broadcast')
-      console.log('  - round atual:', round, '→ novo:', nextRound)
-      setRound(nextRound)
-    }
-    if (JSON.stringify(nextPlayers) !== JSON.stringify(players)) {
-      console.log('  - ⚠️ players mudaram - atualizando estado local ANTES do broadcast')
-      setPlayers(nextPlayers)
-    }
-    
-    // ✅ CORREÇÃO 1: SEMPRE persiste no Supabase (movimentos e turnos)
-    // ✅ CORREÇÃO 2: Passa eventType para commitRemoteState
-    commitRemoteState(nextPlayers, nextTurnIdx, nextRound, eventType, myUid)
-    
-    // 2) entre abas - agora com tipo GAME_STATE e seq
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
+    // 1) rede
+    commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    // 2) entre abas
     try {
       bcRef.current?.postMessage?.({
-        type: 'GAME_STATE',
-        players: nextPlayers,          // inclui posições/tile atualizados
+        type: 'SYNC',
+        players: nextPlayers,
         turnIdx: nextTurnIdx,
         round: nextRound,
-        seq: broadcastSeqRef.current,
-        ts: Date.now(),
         gameOver: gameOverState,
         winner: winnerState,
         source: meId,
-        eventType: eventType, // ✅ CORREÇÃO: Inclui eventType na mensagem
-        ...extra          // (opcional) dados de UX, ex.: dice, landed, actorId
       })
-      console.log(`  - ✅ Broadcast GAME_STATE enviado via BroadcastChannel - ${eventType} - seq:`, broadcastSeqRef.current)
-    } catch (e) { 
-      console.warn('[App] broadcastState failed:', e) 
-    }
-    
-    console.groupEnd()
+    } catch (e) { console.warn('[App] broadcastState failed:', e) }
   }
 
   function broadcastStart(nextPlayers) {
-    console.log('[App] broadcastStart - jogadores:', nextPlayers.map(p => ({ id: p.id, name: p.name })), 'turnIdx: 0')
-    // ✅ CORREÇÃO: Garante que o turnIdx seja 0 (jogador 1) ao iniciar o jogo
     // rede
     commitRemoteState(nextPlayers, 0, 1)
     // entre abas
@@ -966,145 +339,13 @@ export default function App() {
       bcRef.current?.postMessage?.({
         type: 'START',
         players: nextPlayers,
-        turnIdx: 0, // ✅ CORREÇÃO: Garante que o turnIdx seja 0 no START
-        round: 1,
         source: meId,
       })
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
   }
 
-  // ✅ CORREÇÃO: Garante que myUid seja atualizado quando players mudar (especialmente no início do jogo)
-  useEffect(() => {
-    if (players.length > 0 && phase === 'game') {
-      // ✅ CORREÇÃO CRÍTICA: Se o turnIdx mudou e o myUid não corresponde ao owner.id, tenta atualizar
-      const currentOwner = players[turnIdx]
-      const isMyTurnBasedOnOwner = currentOwner && String(currentOwner.id) === String(myUid)
-      
-      // Se é minha vez mas o myUid não corresponde, tenta encontrar meu ID correto
-      if (currentOwner && !isMyTurnBasedOnOwner) {
-        console.log('[App] useEffect - ⚠️ myUid não corresponde ao owner.id - turnIdx:', turnIdx, 'owner.id:', currentOwner.id, 'myUid:', myUid, 'owner.name:', currentOwner.name)
-        
-        // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
-        const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-        if (wuid) {
-          const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
-          if (foundPlayerByWindow) {
-            const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-            if (String(foundPlayerByWindow.id) !== String(myUid)) {
-              console.log('[App] useEffect - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches, 'owner.id:', currentOwner.id)
-              if (nameMatches) {
-                setMyUid(String(wuid))
-                return
-              } else {
-                console.warn('[App] useEffect - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-              }
-            }
-          }
-        }
-        
-        // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
-        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-          if (!wuid || String(wuid) === String(mineByName.id)) {
-            console.log('[App] useEffect - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
-            setMyUid(String(mineByName.id))
-            return
-          } else {
-            console.warn('[App] useEffect - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
-          }
-        }
-      }
-      
-      // Se não é minha vez, ainda verifica se o myUid está correto (para garantir que está sincronizado)
-      // Mas prioriza window.__MY_UID
-      const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-      if (wuid) {
-        const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
-        if (foundPlayerByWindow && String(foundPlayerByWindow.id) !== String(myUid)) {
-          const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-          if (nameMatches) {
-            console.log('[App] useEffect - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name)
-            setMyUid(String(wuid))
-          }
-        }
-      }
-      
-      // Se não encontrou pelo window.__MY_UID, tenta pelo nome (mas valida)
-      if (!wuid || !players.find(p => String(p.id) === String(wuid))) {
-        const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-        if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-          if (!wuid || String(wuid) === String(mineByName.id)) {
-            console.log('[App] useEffect - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name)
-            setMyUid(String(mineByName.id))
-          }
-        }
-      }
-    }
-  }, [players, phase, myName, myUid, turnIdx])
-  
-  // ✅ CORREÇÃO CRÍTICA: Monitora mudanças no turnIdx e verifica se myUid precisa ser atualizado
-  // Este useEffect é executado SEMPRE que turnIdx muda, garantindo que o myUid seja atualizado imediatamente
-  useEffect(() => {
-    if (players.length > 0 && phase === 'game' && turnIdx >= 0) {
-      const currentOwner = players[turnIdx]
-      if (currentOwner) {
-        const isMyTurnBasedOnOwner = String(currentOwner.id) === String(myUid)
-        
-        // Se o turnIdx indica que é minha vez mas o myUid não corresponde, tenta atualizar IMEDIATAMENTE
-        if (!isMyTurnBasedOnOwner) {
-          console.log('[App] useEffect turnIdx - ⚠️ turnIdx mudou mas myUid não corresponde ao owner.id - turnIdx:', turnIdx, 'owner.id:', currentOwner.id, 'myUid:', myUid, 'owner.name:', currentOwner.name)
-          console.log('[App] useEffect turnIdx - ⚠️ players:', players.map(p => ({ name: p.name, id: p.id })))
-          console.log('[App] useEffect turnIdx - ⚠️ myName:', myName)
-          
-          // ✅ CORREÇÃO CRÍTICA: Prioriza window.__MY_UID sobre busca por nome
-          // Isso previne que o myUid seja atualizado incorretamente para outro jogador
-          const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-          if (wuid) {
-            const foundPlayerByWindow = players.find(p => String(p.id) === String(wuid))
-            if (foundPlayerByWindow) {
-              // Se encontrou pelo window.__MY_UID, valida que o nome corresponde
-              const nameMatches = (String(foundPlayerByWindow.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase())
-              if (String(foundPlayerByWindow.id) !== String(myUid)) {
-                console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid, 'player:', foundPlayerByWindow.name, 'myName:', myName, 'nome corresponde:', nameMatches)
-                if (nameMatches) {
-                  setMyUid(String(wuid))
-                  return
-                } else {
-                  console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID encontrou jogador mas nome não corresponde! Ignorando atualização.')
-                  console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID encontrou:', foundPlayerByWindow.name, 'mas myName é:', myName)
-                }
-              }
-            }
-          }
-          
-          // Se não encontrou pelo window.__MY_UID ou não corresponde, tenta pelo nome
-          // Mas só atualiza se o nome corresponder EXATAMENTE
-          const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-          if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-            // ✅ CORREÇÃO CRÍTICA: Valida que o window.__MY_UID não está definido ou corresponde ao jogador encontrado
-            if (!wuid || String(wuid) === String(mineByName.id)) {
-              console.log('[App] useEffect turnIdx - ⚠️ Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mineByName.id, 'player:', mineByName.name, 'owner.id:', currentOwner.id)
-              setMyUid(String(mineByName.id))
-              return
-            } else {
-              console.warn('[App] useEffect turnIdx - ⚠️ Jogador encontrado pelo nome mas window.__MY_UID é diferente! Ignorando atualização.')
-              console.warn('[App] useEffect turnIdx - ⚠️ window.__MY_UID:', wuid, 'jogador encontrado pelo nome:', mineByName.id)
-            }
-          }
-          
-          // ✅ CORREÇÃO CRÍTICA: Se ainda não encontrou, verifica se algum jogador tem o mesmo nome (case-insensitive)
-          // Isso pode acontecer se houver diferenças de capitalização ou espaços
-          const allPlayers = players.map(p => ({ name: p.name, id: p.id }))
-          console.log('[App] useEffect turnIdx - ⚠️ Todos os jogadores:', allPlayers)
-          console.log('[App] useEffect turnIdx - ⚠️ Tentando encontrar pelo nome exato (case-insensitive):', myName)
-        }
-      }
-    }
-  }, [turnIdx, players, phase, myName, myUid])
-
-  // ====== "é minha vez?" e player atual
-  // ✅ PATCH 3: Definidos antes do hook useTurnEngine para garantir ordem correta
-  const current = useMemo(() => players[turnIdx] || null, [players, turnIdx])
+  // ====== "é minha vez?"
+  const current = players[turnIdx]
   const isMyTurn = useMemo(() => {
     const owner = players[turnIdx]
     if (!owner) {
@@ -1112,33 +353,9 @@ export default function App() {
       return false
     }
     const isMine = owner.id != null && String(owner.id) === String(myUid)
-    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine, 'turnIdx:', turnIdx)
-    // ✅ CORREÇÃO: Log adicional para debug
-    if (!isMine && phase === 'game') {
-      if (turnIdx === 0) {
-        console.log('[App] ⚠️ isMyTurn - Player 1 não reconheceu que é sua vez! Verificando...')
-      } else {
-        console.log('[App] ⚠️ isMyTurn - Player', turnIdx + 1, 'não reconheceu que é sua vez! Verificando...')
-      }
-      console.log('[App] ⚠️ isMyTurn - players:', players.map(p => ({ name: p.name, id: p.id, index: players.indexOf(p) })))
-      console.log('[App] ⚠️ isMyTurn - myName:', myName, 'myUid:', myUid, 'owner.id:', owner.id)
-      console.log('[App] ⚠️ isMyTurn - window.__MY_UID:', window.__MY_UID || window.__myUid || window.__playerId || 'undefined')
-      
-      // ✅ CORREÇÃO CRÍTICA: Se o turnIdx indica que é minha vez mas o myUid não corresponde, loga detalhes
-      const mineByName = players.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-      if (mineByName?.id && String(mineByName.id) !== String(myUid)) {
-        console.log('[App] ⚠️ isMyTurn - myUid está incorreto! Deveria ser:', mineByName.id, 'mas é:', myUid)
-        console.log('[App] ⚠️ isMyTurn - jogador encontrado pelo nome:', mineByName)
-        // O useEffect acima deve corrigir isso
-      } else if (!mineByName) {
-        console.log('[App] ⚠️ isMyTurn - Nenhum jogador encontrado pelo nome:', myName)
-      }
-    } else if (isMine) {
-      console.log('[App] ✅ isMyTurn - É minha vez!', owner.name, 'pode jogar')
-    }
-    console.groupEnd()
+    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
     return isMine
-  }, [players, turnIdx, myUid, phase, myName])
+  }, [players, turnIdx, myUid])
 
   // ====== Validação do estado do jogo (modo debug)
   useEffect(() => {
@@ -1153,53 +370,37 @@ export default function App() {
   useEffect(() => {
     const mine = players.find(isMine)
     if (!mine) return
-    // ✅ CORREÇÃO 3: Garante defaults seguros antes de passar para capacityAndAttendance
-    const safeMine = {
-      ...mine,
-      vendedoresComuns: mine.vendedoresComuns ?? 0,
-      insideSales: typeof mine.insideSales === 'number' ? mine.insideSales : (Array.isArray(mine.insideSales) ? mine.insideSales.length : 0),
-      fieldSales: typeof mine.fieldSales === 'number' ? mine.fieldSales : (Array.isArray(mine.fieldSales) ? mine.fieldSales.length : 0),
-      clients: typeof mine.clients === 'number' ? mine.clients : (Array.isArray(mine.clients) ? mine.clients.length : 0)
-    }
-    const { cap, inAtt } = capacityAndAttendance(safeMine)
+    const { cap, inAtt } = capacityAndAttendance(mine)
     setMeHud(h => ({ ...h, cash: mine.cash, possibAt: cap, clientsAt: inAtt, name: mine.name, color: mine.color }))
   }, [players, isMine])
 
   // ====== Totais do HUD (faturamento/ despesas / etc.)
   const totals = useMemo(() => {
     const me = players.find(isMine) || players[0] || {}
-    // ✅ CORREÇÃO 3: Garante defaults seguros para arrays e objetos antes de passar para gameMath
-    const safeMe = {
-      ...me,
-      clients: Array.isArray(me.clients) ? me.clients : (typeof me.clients === 'number' ? me.clients : 0),
-      fieldSales: Array.isArray(me.fieldSales) ? me.fieldSales : (typeof me.fieldSales === 'number' ? me.fieldSales : 0),
-      insideSales: Array.isArray(me.insideSales) ? me.insideSales : (typeof me.insideSales === 'number' ? me.insideSales : 0),
-      trainingsByVendor: me.trainingsByVendor && typeof me.trainingsByVendor === 'object' ? me.trainingsByVendor : {}
-    }
-    const fat = computeFaturamentoFor(safeMe)
-    const desp = computeDespesasFor(safeMe)
-    const { cap, inAtt } = capacityAndAttendance(safeMe)
-    const lvl = String(safeMe.erpLevel || 'D').toUpperCase()
-    const managerQty = Number(safeMe.gestores ?? safeMe.gestoresComerciais ?? safeMe.managers ?? 0)
+    const fat = computeFaturamentoFor(me)
+    const desp = computeDespesasFor(me)
+    const { cap, inAtt } = capacityAndAttendance(me)
+    const lvl = String(me.erpLevel || 'D').toUpperCase()
+    const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
     
-    console.log('[App] Totals recalculado - me:', safeMe.name, 'clients:', safeMe.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', safeMe.vendedoresComuns, 'fieldSales:', safeMe.fieldSales, 'insideSales:', safeMe.insideSales)
+    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
     
     // Validação de cálculos em modo debug
-    validateCalculations(safeMe, 'HUD Totals')
+    validateCalculations(me, 'HUD Totals')
     
     return {
       faturamento: fat,
       manutencao: desp,
-      emprestimos: (safeMe.loanPending && !safeMe.loanPending.charged) ? Number(safeMe.loanPending.amount || 0) : 0,
-      vendedoresComuns: safeMe.vendedoresComuns || 0,
-      fieldSales: safeMe.fieldSales || 0,
-      insideSales: safeMe.insideSales || 0,
-      mixProdutos: safeMe.mixProdutos || 'D',
-      bens: safeMe.bens ?? 0,
+      emprestimos: (me.loanPending && !me.loanPending.charged) ? Number(me.loanPending.amount || 0) : 0,
+      vendedoresComuns: me.vendedoresComuns || 0,
+      fieldSales: me.fieldSales || 0,
+      insideSales: me.insideSales || 0,
+      mixProdutos: me.mixProdutos || 'D',
+      bens: me.bens ?? 0,
       erpSistemas: lvl,
-      clientes: typeof safeMe.clients === 'number' ? safeMe.clients : (Array.isArray(safeMe.clients) ? safeMe.clients.length : 0),
-      onboarding: !!safeMe.onboarding,
-      az: safeMe.az || 0, am: safeMe.am || 0, rox: safeMe.rox || 0,
+      clientes: me.clients || 0,
+      onboarding: !!me.onboarding,
+      az: me.az || 0, am: me.am || 0, rox: me.rox || 0,
       gestores: managerQty,
       gestoresComerciais: managerQty,
       possibAt: cap,
@@ -1207,18 +408,15 @@ export default function App() {
     }
   }, [players, isMine])
 
-  // ====== overlay "falido" (mostra quando eu declaro falência)
+  // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
   // ====== Hook do motor de turnos (centraliza TODA a lógica pesada)
-  // Este hook DEVE ser chamado ANTES dos returns condicionais para manter consistência de hooks
-  // ✅ CORREÇÃO 1: Passa tudo via deps incluindo openModalAndWait e requireFunds
   const {
     advanceAndMaybeLap,
     onAction,
     nextTurn,
     modalLocks,
-    lockOwner,
   } = useTurnEngine({
     players, setPlayers,
     round, setRound,
@@ -1236,11 +434,6 @@ export default function App() {
     gameOver, setGameOver,
     winner, setWinner,
     setShowBankruptOverlay,
-    phase, // Passar a fase como prop
-    gameJustStarted, // ✅ CORREÇÃO: Passa gameJustStarted para prevenir mudança de turno imediata
-    myName, // ✅ CORREÇÃO: Passa myName para verificação de owner por nome
-    openModalAndWait, // ✅ CORREÇÃO 1: Passa openModalAndWait via deps
-    requireFunds, // ✅ CORREÇÃO 1: Passa requireFunds via deps
   })
 
   // ====== fases ======
@@ -1324,46 +517,11 @@ export default function App() {
           )
           if (mapped.length === 0) return
 
-          // ✅ NOVO: Se PlayersLobby informou quem sou eu, fixa myUid e meu nome para esta aba
+          // alinha meu UID com o id real (comparando pelo nome salvo)
           try {
-            const meFromPayload = payload?.me || payload?.current || null
-            if (meFromPayload?.id) {
-              window.__MY_UID = String(meFromPayload.id)
-              if (String(myUid) !== String(meFromPayload.id)) {
-                console.log('[App] onStartGame - Fixando myUid pelo payload.me - antigo:', myUid, 'novo:', meFromPayload.id)
-                setMyUid(String(meFromPayload.id))
-              }
-            }
-            if (meFromPayload?.name) {
-              try {
-                setTabPlayerName(String(meFromPayload.name))
-              } catch {}
-            }
-          } catch (e) {
-            console.warn('[App] onStartGame - erro ao aplicar payload.me:', e)
-          }
-
-          // ✅ CORREÇÃO: Alinha meu UID com o id real (comparando pelo nome salvo)
-          // Tenta primeiro pelo window.__MY_UID, depois pelo nome
-          try {
-            const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
-            if (wuid) {
-              const foundPlayer = mapped.find(p => String(p.id) === String(wuid))
-              if (foundPlayer && String(foundPlayer.id) !== String(myUid)) {
-                console.log('[App] onStartGame - Atualizando myUid pelo window.__MY_UID - antigo:', myUid, 'novo:', wuid)
-                setMyUid(String(wuid))
-              }
-            } else {
-              // Se não encontrou pelo window.__MY_UID, tenta pelo nome
-              const mine = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-              if (mine?.id && String(mine.id) !== String(myUid)) {
-                console.log('[App] onStartGame - Atualizando myUid pelo nome - antigo:', myUid, 'novo:', mine.id)
-                setMyUid(String(mine.id))
-              }
-            }
-          } catch (e) {
-            console.warn('[App] onStartGame - Erro ao atualizar myUid:', e)
-          }
+            const mine = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+            if (mine?.id) setMyUid(String(mine.id))
+          } catch {}
 
           setPlayers(mapped)
           setTurnIdx(0)
@@ -1381,10 +539,6 @@ export default function App() {
             }
           })
           setLog(['Jogo iniciado!'])
-          // ✅ CORREÇÃO: Marca que o jogo acabou de começar para proteger o turnIdx inicial
-          setGameJustStarted(true)
-          // ✅ CORREÇÃO: Reseta o flag após um pequeno delay para permitir sincronização normal depois
-          setTimeout(() => setGameJustStarted(false), 3000)
           broadcastStart(mapped)
           setPhase('game')
         }}
@@ -1393,8 +547,10 @@ export default function App() {
   }
 
   // 4) Jogo
-  if (phase === 'game') {
-    return (
+  const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
+  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'result:', controlsCanRoll)
+
+  return (
     <div className="page">
       <header className="topbar">
         <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -1443,10 +599,7 @@ export default function App() {
                 onAction(act)
               }}
               current={current}
-              isMyTurn={isMyTurn}
-              turnLocked={turnLock}
-              myUid={myUid}
-              myName={myName}
+              isMyTurn={controlsCanRoll}
             />
             <div style={{ marginTop: 10 }}>
               <button
@@ -1505,14 +658,7 @@ export default function App() {
       </footer>
 
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
-      {/* ✅ PATCH 3: Renderiza overlay quando necessário */}
-      {showBankruptOverlay && (
-        <BankruptOverlay onClose={() => setShowBankruptOverlay(false)} />
-      )}
+      {showBankruptOverlay && <BankruptOverlay />}
     </div>
   )
-  }
-
-  // Fallback para fases não reconhecidas
-  return <div>Fase não reconhecida: {phase}</div>
 }

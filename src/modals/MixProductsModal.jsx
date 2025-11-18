@@ -29,11 +29,8 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
   }
 
   async function resolveBuy(level){
-    console.log(`[🎲 MODAL] Jogador clicou em "Comprar" Mix nível ${level}`)
-    
     // Verifica se o nível já foi adquirido
     if (currentLevel === level) {
-      console.log(`[🎲 MODAL] Tentativa de comprar nível já adquirido: ${level}`)
       return // Não permite comprar o mesmo nível
     }
 
@@ -90,11 +87,6 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
             const v = LEVELS[k]
             const isOwned = currentLevel === k
             const isDisabled = isOwned
-            
-            // Debug log para verificar comparação
-            if (k === 'D') {
-              console.log('[DEBUG] MIX Modal - k:', k, 'currentLevel:', currentLevel, 'isOwned:', isOwned, 'isDisabled:', isDisabled)
-            }
             
             return (
               <div key={k} style={{

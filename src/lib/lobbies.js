@@ -283,15 +283,9 @@ export async function getLatestMatch(lobbyId) {
  * Remove um jogador de uma sala de jogo e deleta a sala se ficar vazia
  * Trabalha com a tabela 'lobbies' que é onde as salas realmente estão armazenadas
  */
-export async function leaveRoom({ roomCode, playerId, opts = {} }) {
+export async function leaveRoom({ roomCode, playerId }) {
   if (!roomCode || !playerId) {
     console.log('[leaveRoom] Parâmetros inválidos:', { roomCode, playerId })
-    return
-  }
-
-  // ✅ CORREÇÃO 1: evita sair durante a fase 'game' a menos que seja explícito
-  if (window.gamePhaseRef?.current === 'game' && !opts.force) {
-    console.warn('[leaveRoom] Ignorado: estamos em fase game (use opts.force para forçar)')
     return
   }
 

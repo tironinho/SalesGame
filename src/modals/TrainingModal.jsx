@@ -169,8 +169,6 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
   const handleBuy = () => {
     if (purchases.length === 0) return
 
-    console.log(`[🎲 MODAL] Jogador clicou em "Comprar" treinamentos:`, purchases)
-
     onResolve?.({
       action: 'BUY',
       purchases,

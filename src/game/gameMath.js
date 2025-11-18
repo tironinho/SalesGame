@@ -12,24 +12,10 @@ export const GESTOR = { baseDesp: 3000, incDesp: 500, boostByCert: [0.20, 0.30, 
 export const MIX = { A:{ fat:1200, desp:700 }, B:{ fat:600, desp:400 }, C:{ fat:300, desp:200 }, D:{ fat:100, desp:50 } };
 export const ERP = { A:{ fat:1000, desp:400 }, B:{ fat:500, desp:200 }, C:{ fat:200, desp:100 }, D:{ fat:70, desp:50 } };
 
-// ✅ CORREÇÃO 3: Helper para converter valor para número (trata arrays)
-export const num = (v) => {
-  if (Array.isArray(v)) return v.length
-  if (typeof v === 'number') return v
-  if (typeof v === 'string') {
-    const parsed = Number(v)
-    return isNaN(parsed) ? 0 : parsed
-  }
-  return Number(v || 0)
-}
+export const num = (v) => Number(v || 0);
 
 // ======= Certificados / Checks =======
-// ✅ CORREÇÃO 3: Garante que trainingsByVendor seja um objeto e o array seja válido
-export const certCount = (player = {}, type) => {
-  const trainingsByVendor = player?.trainingsByVendor || {}
-  const trainingArray = Array.isArray(trainingsByVendor[type]) ? trainingsByVendor[type] : []
-  return new Set(trainingArray).size
-}
+export const certCount = (player = {}, type) => new Set(player?.trainingsByVendor?.[type] || []).size;
 
 export const hasBlue   = (p) => Number(p?.az  || 0) > 0; // certificado azul
 export const hasYellow = (p) => Number(p?.am  || 0) > 0; // certificado amarelo
@@ -44,16 +30,6 @@ export function capacityAndAttendance(player = {}) {
   const cap = qComum*VENDOR_CONF.comum.cap + qInside*VENDOR_CONF.inside.cap + qField*VENDOR_CONF.field.cap;
   const clients = num(player.clients);
   return { cap, inAtt: Math.min(clients, cap) };
-}
-
-// ✅ CORREÇÃO 3: Helper para garantir array seguro
-function safeArray(arr) {
-  return Array.isArray(arr) ? arr : [];
-}
-
-// ✅ CORREÇÃO 3: Helper para garantir objeto seguro
-function safeObject(obj) {
-  return obj && typeof obj === 'object' ? obj : {};
 }
 
 export function computeFaturamentoFor(player = {}) {
@@ -123,53 +99,10 @@ export function computeDespesasFor(player = {}) {
   return total
 }
 
-// ======= Helpers de round e movimento =======
-/**
- * Calcula o round baseado nos laps dos jogadores.
- * Round começa em 1; só vira 2 quando TODOS tiverem lap >= 1
- */
-export function deriveRound(players, boardSize = null) {
-  if (!Array.isArray(players) || players.length === 0) return 1
-  const laps = players.map(p => p.lap ?? 0)
-  return 1 + Math.min(...laps)
-}
-
-/**
- * Calcula nova posição e incremento de lap baseado em steps.
- * @param {number} oldTile - Posição atual (0-based)
- * @param {number} steps - Passos a avançar
- * @param {number} boardSize - Tamanho do tabuleiro (TRACK_LEN)
- * @returns {{newTile: number, lapInc: number}}
- */
-export function advanceTile(oldTile, steps, boardSize) {
-  const old = oldTile ?? 0
-  const total = old + (steps ?? 0)
-  const newTile = ((total % boardSize) + boardSize) % boardSize
-  const lapInc = Math.floor(total / boardSize) // cruza o start a cada boardSize
-  return { newTile, lapInc }
-}
-
 // ======= Mutações simples =======
-export function applyDeltas(player, deltas = {}, boardSize = null) {
+export function applyDeltas(player, deltas = {}) {
   const next = { ...player }
   const add = (k, v) => { next[k] = (next[k] ?? 0) + v }
-
-  // ✅ CORREÇÃO: Suporte para movimento e lap
-  if (boardSize && typeof deltas.steps === 'number') {
-    const oldTile = next.tile ?? next.pos ?? 0
-    const { newTile, lapInc } = advanceTile(oldTile, deltas.steps, boardSize)
-    next.tile = newTile
-    next.pos = newTile // mantém compatibilidade com código que usa pos
-    next.lap = (next.lap ?? 0) + lapInc
-  } else if (typeof deltas.tileSet === 'number' && boardSize) {
-    const newTile = ((deltas.tileSet % boardSize) + boardSize) % boardSize
-    next.tile = newTile
-    next.pos = newTile // mantém compatibilidade
-  }
-  
-  if (typeof deltas.lapInc === 'number') {
-    next.lap = (next.lap ?? 0) + Number(deltas.lapInc)
-  }
 
   if (Number.isFinite(deltas.cashDelta)) add('cash', Number(deltas.cashDelta))
   if (Number.isFinite(deltas.clientsDelta)) add('clients', Number(deltas.clientsDelta))
@@ -210,33 +143,24 @@ export function applyTrainingPurchase(player, payload) {
   next.cash = (next.cash ?? 0) - Number(grandTotal || 0)
   next.bens = (next.bens ?? 0) + Number(grandTotal || 0)
   next.onboarding = true
-  
-  // ✅ CORREÇÃO 3: Garante que trainingsByVendor seja um objeto
-  if (!next.trainingsByVendor || typeof next.trainingsByVendor !== 'object') {
-    next.trainingsByVendor = {}
-  }
 
   // Processa cada compra (cada tipo de vendedor)
   purchases.forEach(purchase => {
     const { vendorType, items = [] } = purchase || {}
     
-    // ✅ CORREÇÃO 3: Garante que items seja um array
-    const safeItems = Array.isArray(items) ? items : []
-    
     // Adiciona certificados globais
-    safeItems.forEach(it => {
+    items.forEach(it => {
       const key = certMap[it?.id]
       if (key) next[key] = (next[key] ?? 0) + 1
     })
 
     // Adiciona treinamentos específicos por tipo de vendedor
     const tv = String(vendorType || 'comum')
-    const currentArray = Array.isArray(next.trainingsByVendor[tv]) ? next.trainingsByVendor[tv] : []
-    const current = new Set(currentArray)
-    safeItems.forEach(it => { if (it?.id) current.add(it.id) })
+    const current = new Set( (next.trainingsByVendor?.[tv] || []) )
+    items.forEach(it => { if (it?.id) current.add(it.id) })
 
     next.trainingsByVendor = {
-      ...next.trainingsByVendor,
+      ...(next.trainingsByVendor || {}),
       [tv]: Array.from(current)
     }
   })

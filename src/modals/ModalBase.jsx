@@ -7,7 +7,6 @@ import React from "react";
  */
 export default function ModalBase({ children, onClose, zIndex = 3000 }) {
   const handleClose = () => {
-    console.log('[🎲 MODAL] Jogador clicou no botão X (fechar)')
     if (typeof onClose === "function") onClose();
   };
 

@@ -30,11 +30,8 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
   }
 
   const handleBuy = async (level) => {
-    console.log(`[🎲 MODAL] Jogador clicou em "Comprar" ERP nível ${level}`)
-    
     // Verifica se o nível já foi adquirido
     if (currentLevel === level) {
-      console.log(`[🎲 MODAL] Tentativa de comprar nível já adquirido: ${level}`)
       return // Não permite comprar o mesmo nível
     }
 
@@ -103,11 +100,6 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
             const v = LEVELS[k]
             const isOwned = currentLevel === k
             const isDisabled = isOwned
-            
-            // Debug log para verificar comparação
-            if (k === 'D') {
-              console.log('[DEBUG] ERP Modal - k:', k, 'currentLevel:', currentLevel, 'isOwned:', isOwned, 'isDisabled:', isDisabled)
-            }
             
             return (
               <div key={k} style={{

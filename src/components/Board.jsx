@@ -12,9 +12,6 @@ import TrackRecorder from '../dev/TrackRecorder'
 // Fallbacks (caso o pai ainda não envie `me`)
 import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from '../auth'
 
-// Utilitário para emojis consistentes
-import { getPlayerEmojiWithTurn } from '../utils/playerEmojis'
-
 // --- NOVO: dimensões/estilo dos tokens ---
 const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
 const TOKEN_ACTIVE_SCALE = 1.15; // multiplicador para o peão do jogador da vez
@@ -134,9 +131,7 @@ export default function Board({
 
           {players.map((p, idx) => {
             const isTurn = idx === turnIdx
-            // ✅ CORREÇÃO: Usa tile ou pos (tile tem prioridade para sincronização)
-            const tile = p.tile ?? p.pos ?? 0
-            const i   = ((tile % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
+            const i   = ((p.pos % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
             const pt  = TRACK_POINTS_NORM[i]
             const xy  = scalePoint(pt, size.w, size.h)
 
@@ -148,8 +143,9 @@ export default function Board({
             const sizePx = base * (isTurn ? TOKEN_ACTIVE_SCALE : 1)
             const ring = Math.max(2, TOKEN_RING_PX * s)
 
-            // Emoji do jogador usando função centralizada
-            const playerEmoji = getPlayerEmojiWithTurn(idx, isTurn)
+            // Emojis de pessoinhas para cada jogador
+            const personEmojis = ['👤', '👥', '👨', '👩', '🧑', '👦', '👧', '👶']
+            const personEmoji = personEmojis[idx % personEmojis.length]
             
             return (
               <div
@@ -178,8 +174,8 @@ export default function Board({
                 title={`${p.name} • Casa ${i + 1}`}
                 aria-label={`${p.name} está na casa ${i + 1}`}
               >
-                {/* Emoji do jogador (com estrela se for a vez) */}
-                {playerEmoji}
+                {/* Pessoinha + estrela se for a vez */}
+                {isTurn ? '⭐' : personEmoji}
               </div>
             )
           })}
