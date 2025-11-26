@@ -369,17 +369,37 @@ export function useTurnEngine({
     
     console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash)
 
-    // >>> controle de rodada: só vira quando TODOS cruzarem a casa 1
+    // ✅ CORREÇÃO: Verifica se passou pela casa 0 (Faturamento do Mês) - será usado abaixo
+    // crossedStart1 será definido mais abaixo, mas precisamos verificar aqui também
+    const crossedStart1ForRound = crossedTile(oldPos, newPos, 0)
+
+    // >>> controle de rodada: só vira quando TODOS os jogadores VIVOS cruzarem a casa 0
     let nextRound = round
-    let nextFlags = roundFlags
-    if (lap) {
-      nextFlags = [...roundFlags]
+    let nextFlags = [...roundFlags]
+    
+    // ✅ CORREÇÃO: Usa crossedStart1ForRound em vez de lap para detectar passagem pela casa 0
+    if (crossedStart1ForRound) {
+      // Garante que o array de flags tem o tamanho correto
+      if (nextFlags.length < players.length) {
+        nextFlags = [...nextFlags, ...new Array(players.length - nextFlags.length).fill(false)]
+      }
+      
+      // Marca que este jogador passou pela casa 0
       nextFlags[curIdx] = true
-      const allDone = nextFlags.slice(0, players.length).every(Boolean)
-      if (allDone) {
+      console.log('[DEBUG] 🏁 Jogador passou pela casa 0 - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      
+      // ✅ CORREÇÃO: Conta apenas jogadores vivos para verificar se todos passaram
+      const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
+      const aliveIndices = nextPlayers.map((p, i) => !p?.bankrupt ? i : -1).filter(i => i >= 0)
+      
+      // Verifica se todos os jogadores vivos passaram pela casa 0
+      const allAliveDone = aliveIndices.length > 0 && aliveIndices.every(idx => nextFlags[idx] === true)
+      
+      if (allAliveDone) {
         nextRound = round + 1
-        nextFlags = new Array(players.length).fill(false)
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound)
+        // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos
+        nextFlags = nextFlags.map((_, idx) => nextPlayers[idx]?.bankrupt ? nextFlags[idx] : false)
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Jogadores vivos:', alivePlayers.length)
       }
     }
     setRoundFlags(nextFlags)
@@ -1092,7 +1112,8 @@ export function useTurnEngine({
       appendLog(`${cur.name} ativou Recuperação Financeira (+$${recover})`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
-      setTurnLockBroadcast(false)
+      // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
+      // setTurnLockBroadcast(false)
       return
     }
 
@@ -1104,7 +1125,8 @@ export function useTurnEngine({
       appendLog(`${cur.name} recuperou +$${amount}`)
       setPlayers(nextPlayers)
       broadcastState(nextPlayers, turnIdx, round)
-      setTurnLockBroadcast(false)
+      // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
+      // setTurnLockBroadcast(false)
       return
     }
 
@@ -1243,20 +1265,26 @@ export function useTurnEngine({
       });
 
       appendLog(`${players[curIdx]?.name || 'Jogador'}: ${act.note || 'Demissões'}`);
-      setTurnLockBroadcast(false);
+      // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
+      // setTurnLockBroadcast(false);
       return;
     }
 
     if (act.type === 'RECOVERY_LOAN') {
       const amt = Math.max(0, Number(act.amount || 0));
-      if (!amt) { setTurnLockBroadcast(false); return; }
+      if (!amt) { 
+        // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno
+        // setTurnLockBroadcast(false); 
+        return; 
+      }
 
       const curIdx = turnIdx;
       const cur = players[curIdx];
 
       if (cur?.loanPending && !cur.loanPending.charged) {
         appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`);
-        setTurnLockBroadcast(false);
+        // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno
+        // setTurnLockBroadcast(false);
         return;
       }
 
@@ -1276,7 +1304,8 @@ export function useTurnEngine({
       });
 
       appendLog(`${cur?.name || 'Jogador'} pegou empréstimo: +$${amt.toLocaleString()}`);
-      setTurnLockBroadcast(false);
+      // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
+      // setTurnLockBroadcast(false);
       return;
     }
 
@@ -1361,7 +1390,8 @@ export function useTurnEngine({
               level: normLevel(it.level),
               credit: Math.max(0, Number(it.credit ?? it.amount ?? 0)),
             }))
-            .filter(s => (s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level));
+            // ✅ CORREÇÃO: Não permite reduzir nível D (básico)
+            .filter(s => (s.group === 'MIX' || s.group === 'ERP') && ['A','B','C'].includes(s.level));
         }
         const one = act.selection || act.target || null;
         if (one) {
@@ -1370,7 +1400,8 @@ export function useTurnEngine({
             level: normLevel(one.level),
             credit: Math.max(0, Number(one.credit ?? one.amount ?? act.amount ?? 0)),
           };
-          if ((s.group === 'MIX' || s.group === 'ERP') && ['A','B','C','D'].includes(s.level)) {
+          // ✅ CORREÇÃO: Não permite reduzir nível D (básico)
+          if ((s.group === 'MIX' || s.group === 'ERP') && ['A','B','C'].includes(s.level)) {
             return [s];
           }
         }
@@ -1391,7 +1422,8 @@ export function useTurnEngine({
             return upd;
           });
         }
-        setTurnLockBroadcast(false);
+        // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno
+        // setTurnLockBroadcast(false);
         return;
       }
 
@@ -1409,6 +1441,25 @@ export function useTurnEngine({
       const curIdx = turnIdx;
       const cur = players[curIdx];
 
+      // ✅ CORREÇÃO: Valida que não está tentando reduzir nível D
+      const hasInvalidLevel = selections.some(s => s.level === 'D');
+      if (hasInvalidLevel) {
+        appendLog('Não é possível reduzir o nível D (básico).');
+        return;
+      }
+
+      // ✅ CORREÇÃO: Valida que não está tentando reduzir nível já reduzido
+      const reducedMix = Array.isArray(cur.reducedLevels?.MIX) ? cur.reducedLevels.MIX : [];
+      const reducedErp = Array.isArray(cur.reducedLevels?.ERP) ? cur.reducedLevels.ERP : [];
+      const alreadyReduced = selections.some(s => 
+        (s.group === 'MIX' && reducedMix.includes(s.level)) ||
+        (s.group === 'ERP' && reducedErp.includes(s.level))
+      );
+      if (alreadyReduced) {
+        appendLog('Não é possível reduzir um nível que já foi reduzido anteriormente.');
+        return;
+      }
+
       setPlayers(ps => {
         const upd = ps.map((p, i) => {
           if (i !== curIdx) return p;
@@ -1419,23 +1470,87 @@ export function useTurnEngine({
           mixOwned = ensureOwnedFromLetter(mixOwned, p.mixProdutos);
           erpOwned = ensureOwnedFromLetter(erpOwned, p.erpSistemas);
 
+          // ✅ CORREÇÃO: Rastreia níveis reduzidos
+          const newReducedMix = [...(Array.isArray(p.reducedLevels?.MIX) ? p.reducedLevels.MIX : [])];
+          const newReducedErp = [...(Array.isArray(p.reducedLevels?.ERP) ? p.reducedLevels.ERP : [])];
+
           let totalCredit = 0;
+          let currentMixLevel = String(p.mixProdutos || 'D').toUpperCase();
+          let currentErpLevel = String(p.erpLevel || p.erpSistemas || 'D').toUpperCase();
+
           for (const s of selections) {
             totalCredit += Math.max(0, Number(s.credit || 0));
-            if (s.group === 'MIX')  mixOwned[s.level] = false;
-            else                     erpOwned[s.level] = false;
+            if (s.group === 'MIX') {
+              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de marcar como false
+              if (s.level === currentMixLevel) {
+                // Encontra o próximo nível disponível (B, C ou D)
+                const levels = ['A', 'B', 'C', 'D'];
+                const currentIdx = levels.indexOf(currentMixLevel);
+                for (let idx = currentIdx + 1; idx < levels.length; idx++) {
+                  const nextLevel = levels[idx];
+                  // Verifica se o próximo nível está disponível (antes de marcar o atual como false)
+                  if (mixOwned[nextLevel] || nextLevel === 'D') {
+                    currentMixLevel = nextLevel;
+                    break;
+                  }
+                }
+              }
+              // Agora marca como false
+              mixOwned[s.level] = false;
+              // ✅ CORREÇÃO: Adiciona à lista de reduzidos
+              if (!newReducedMix.includes(s.level)) {
+                newReducedMix.push(s.level);
+              }
+            } else if (s.group === 'ERP') {
+              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de marcar como false
+              if (s.level === currentErpLevel) {
+                // Encontra o próximo nível disponível (B, C ou D)
+                const levels = ['A', 'B', 'C', 'D'];
+                const currentIdx = levels.indexOf(currentErpLevel);
+                for (let idx = currentIdx + 1; idx < levels.length; idx++) {
+                  const nextLevel = levels[idx];
+                  // Verifica se o próximo nível está disponível (antes de marcar o atual como false)
+                  if (erpOwned[nextLevel] || nextLevel === 'D') {
+                    currentErpLevel = nextLevel;
+                    break;
+                  }
+                }
+              }
+              // Agora marca como false
+              erpOwned[s.level] = false;
+              // ✅ CORREÇÃO: Adiciona à lista de reduzidos
+              if (!newReducedErp.includes(s.level)) {
+                newReducedErp.push(s.level);
+              }
+            }
           }
+
+          // ✅ CORREÇÃO: Garante que D sempre esteja disponível se não houver outros níveis
+          const hasAnyMix = mixOwned.A || mixOwned.B || mixOwned.C;
+          if (!hasAnyMix) mixOwned.D = true;
+          const hasAnyErp = erpOwned.A || erpOwned.B || erpOwned.C;
+          if (!hasAnyErp) erpOwned.D = true;
 
           const mixLetter = letterFromOwned(mixOwned);
           const erpLetter = letterFromOwned(erpOwned);
+
+          // ✅ CORREÇÃO: Garante que o nível atual seja atualizado corretamente após redução
+          const finalMixLevel = mixLetter !== '-' ? mixLetter : (currentMixLevel || 'D');
+          const finalErpLevel = erpLetter !== '-' ? erpLetter : (currentErpLevel || 'D');
 
           return {
             ...p,
             cash: (Number(p.cash) || 0) + totalCredit,
             mixOwned, erpOwned,
             mix: mixOwned, erp: erpOwned,
-            mixProdutos: mixLetter,
-            erpSistemas: erpLetter,
+            mixProdutos: finalMixLevel,
+            erpLevel: finalErpLevel,
+            erpSistemas: finalErpLevel,
+            // ✅ CORREÇÃO: Salva lista de níveis reduzidos
+            reducedLevels: {
+              MIX: newReducedMix,
+              ERP: newReducedErp,
+            },
           };
         });
 
@@ -1451,7 +1566,8 @@ export function useTurnEngine({
         appendLog(`${cur?.name || 'Jogador'} reduziu ${selections.length} níveis e recebeu +$${total.toLocaleString()}`);
       }
 
-      setTurnLockBroadcast(false);
+      // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
+      // setTurnLockBroadcast(false);
       return;
     }
 

@@ -24,12 +24,37 @@ export const countManagerCerts = (p) => certCount(p, 'gestor');
 
 // ======= Cálculos principais =======
 export function capacityAndAttendance(player = {}) {
-  const qComum  = num(player.vendedoresComuns);
-  const qInside = num(player.insideSales);
-  const qField  = num(player.fieldSales);
-  const cap = qComum*VENDOR_CONF.comum.cap + qInside*VENDOR_CONF.inside.cap + qField*VENDOR_CONF.field.cap;
-  const clients = num(player.clients);
-  return { cap, inAtt: Math.min(clients, cap) };
+  // ✅ CORREÇÃO: Garante que valores negativos não afetem o cálculo
+  const qComum  = Math.max(0, num(player.vendedoresComuns));
+  const qInside = Math.max(0, num(player.insideSales));
+  const qField  = Math.max(0, num(player.fieldSales));
+  
+  // ✅ CORREÇÃO: Cálculo detalhado da capacidade
+  const capComum = qComum * VENDOR_CONF.comum.cap;
+  const capInside = qInside * VENDOR_CONF.inside.cap;
+  const capField = qField * VENDOR_CONF.field.cap;
+  const cap = capComum + capInside + capField;
+  
+  const clients = Math.max(0, num(player.clients));
+  const inAtt = Math.min(clients, cap);
+  
+  // ✅ DEBUG: Log para identificar problemas
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[capacityAndAttendance]', {
+      player: player.name || 'Unknown',
+      vendedoresComuns: qComum,
+      insideSales: qInside,
+      fieldSales: qField,
+      capComum,
+      capInside,
+      capField,
+      totalCap: cap,
+      clients,
+      inAtt
+    });
+  }
+  
+  return { cap, inAtt };
 }
 
 export function computeFaturamentoFor(player = {}) {

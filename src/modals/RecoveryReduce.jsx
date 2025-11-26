@@ -79,8 +79,12 @@ export default function RecoveryReduce(props) {
   const [confirming, setConfirming] = useState(false)
 
   const toggle = (card) => {
+    // ✅ CORREÇÃO: Não permite reduzir nível D (básico)
+    if (card.level === 'D') return
     if (!card.owned) return
     if (soldKeys.has(card.key)) return
+    // ✅ CORREÇÃO: Verifica se o nível já foi reduzido anteriormente
+    if (card.alreadyReduced) return
     setSelected((old) => {
       const exists = old.some((c) => c.key === card.key)
       if (exists) return old.filter((c) => c.key !== card.key)
@@ -97,7 +101,9 @@ export default function RecoveryReduce(props) {
 
   const renderCard = (card) => {
     const isSel = isSelected(card)
-    const disabled = !card.owned || soldKeys.has(card.key) || confirming
+    // ✅ CORREÇÃO: Desabilita nível D e níveis já reduzidos
+    const isLevelD = card.level === 'D'
+    const disabled = isLevelD || !card.owned || soldKeys.has(card.key) || card.alreadyReduced || confirming
     const pal = GROUP_PALETTE[card.group] || GROUP_PALETTE.MIX
 
     const cardStyle = {
@@ -129,8 +135,12 @@ export default function RecoveryReduce(props) {
         aria-pressed={isSel}
         style={cardStyle}
         title={
-          soldKeys.has(card.key)
+          isLevelD
+            ? 'Nível D é o básico e não pode ser reduzido.'
+            : soldKeys.has(card.key)
             ? 'Nível já reduzido nesta sessão.'
+            : card.alreadyReduced
+            ? 'Este nível já foi reduzido anteriormente.'
             : (card.owned ? '' : 'Só é possível selecionar níveis adquiridos.')
         }
         onMouseDown={(e) => !disabled && (e.currentTarget.style.transform = 'translateY(1px)')}
@@ -138,7 +148,13 @@ export default function RecoveryReduce(props) {
         onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
       >
         <span style={pillStyle}>
-          {soldKeys.has(card.key) ? 'vendido' : (card.owned ? 'adquirido' : 'não adquirido')}
+          {isLevelD 
+            ? 'básico' 
+            : soldKeys.has(card.key) 
+            ? 'vendido' 
+            : card.alreadyReduced
+            ? 'já reduzido'
+            : (card.owned ? 'adquirido' : 'não adquirido')}
         </span>
 
         <div style={labelStyle}>{card.label}</div>

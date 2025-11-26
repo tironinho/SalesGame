@@ -152,6 +152,15 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     console.groupEnd()
   }, [mixLetter, erpLetter, ownedMix, ownedErp])
 
+  // ✅ CORREÇÃO: Verifica quais níveis já foram reduzidos
+  const reducedLevels = useMemo(() => {
+    const p = snapshot.raw || {}
+    return {
+      MIX: Array.isArray(p.reducedLevels?.MIX) ? p.reducedLevels.MIX : [],
+      ERP: Array.isArray(p.reducedLevels?.ERP) ? p.reducedLevels.ERP : [],
+    }
+  }, [snapshot.raw])
+
   // --------- montar cartões (com crédito e flag owned) ---------
   const optionsMix = useMemo(
     () => ['A','B','C','D'].map(k => ({
@@ -161,8 +170,10 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
       label:`Nível ${k}`,
       credit:(MIX_PRICES[k] || 0) / 2,
       owned: ownedMix.has(k),
+      // ✅ CORREÇÃO: Marca se o nível já foi reduzido
+      alreadyReduced: reducedLevels.MIX.includes(k),
     })),
-    [ownedMix, MIX_PRICES]
+    [ownedMix, MIX_PRICES, reducedLevels.MIX]
   )
 
   const optionsErp = useMemo(
@@ -173,8 +184,10 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
       label:`Nível ${k}`,
       credit:(ERP_PRICES[k] || 0) / 2,
       owned: ownedErp.has(k),
+      // ✅ CORREÇÃO: Marca se o nível já foi reduzido
+      alreadyReduced: reducedLevels.ERP.includes(k),
     })),
-    [ownedErp, ERP_PRICES]
+    [ownedErp, ERP_PRICES, reducedLevels.ERP]
   )
 
   // tabelas de crédito por nível (se a sub-tela quiser usar)
