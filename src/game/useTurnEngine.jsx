@@ -191,14 +191,17 @@ export function useTurnEngine({
       if (currentCash >= requiredAmount) {
         // Processa o pagamento já que tem saldo suficiente
         console.log('[DEBUG] ✅ Saldo suficiente! Processando pagamento de:', requiredAmount)
+        // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
         const updatedPlayers = currentPlayers.map((p, i) => 
-          i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+          i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
         )
         setPlayers(updatedPlayers)
         broadcastState(updatedPlayers, turnIdx, round)
         return true // Tem saldo suficiente e pagou
       }
 
+      // ✅ CORREÇÃO: Marca que uma modal será aberta ANTES de abrir
+      openingModalRef.current = true
       // Mostra modal de saldo insuficiente
       const recoveryRes = await openModalAndWait(
         <InsufficientFundsModal
@@ -235,7 +238,13 @@ export function useTurnEngine({
               gestoresDelta: -Number(recoveryModalRes.items?.gestor || 0),
             }
             console.log('[DEBUG] Deltas de demissão:', deltas)
-            updatedPlayers = currentPlayers.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)))
+            // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
+            updatedPlayers = currentPlayers.map((p, i) => {
+              if (i !== curIdx) return p
+              const updated = applyDeltas(p, deltas)
+              // Preserva a posição original
+              return { ...updated, pos: p.pos }
+            })
             console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[curIdx]?.cash)
             setPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, round)
@@ -285,11 +294,13 @@ export function useTurnEngine({
             const amt = Number(recoveryModalRes.amount || 0)
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[curIdx]?.cash)
+            // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             updatedPlayers = currentPlayers.map((p, i) =>
               i !== curIdx ? p : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
                 loanPending: { amount: amt, dueRound: round + 1, charged: false },
+                pos: p.pos // ✅ CORREÇÃO: Preserva a posição
               }
             )
             console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[curIdx]?.cash)
@@ -301,6 +312,7 @@ export function useTurnEngine({
             const selections = recoveryModalRes.items || []
             let totalCredit = 0
             console.log('[DEBUG] Seleções para reduzir:', selections)
+            // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             updatedPlayers = currentPlayers.map((p, i) => {
               if (i !== curIdx) return p
               let next = { ...p }
@@ -315,6 +327,8 @@ export function useTurnEngine({
                 }
               }
               next.cash = (Number(next.cash) || 0) + totalCredit
+              // ✅ CORREÇÃO: Preserva a posição original
+              next.pos = p.pos
               return next
             })
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
@@ -332,8 +346,9 @@ export function useTurnEngine({
           if (newCash >= requiredAmount) {
             console.log('[DEBUG] ✅ Saldo suficiente após recuperação! Processando pagamento de:', requiredAmount)
             // Processa o pagamento já que tem saldo suficiente
+            // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             const finalPlayers = updatedPlayers.map((p, i) => 
-              i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount) }
+              i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
             )
             console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[curIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[curIdx]?.cash)
             setPlayers(finalPlayers)
@@ -1039,11 +1054,14 @@ export function useTurnEngine({
         await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
         
-        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge)
+        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge, 'Posição:', nextPlayers[curIdx]?.pos)
+        // ✅ CORREÇÃO: Preserva a posição do jogador ao passar nextPlayers
         const canPayExpenses = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', nextPlayers)
-        console.log('[DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses:', canPayExpenses)
+        console.log('[DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses:', canPayExpenses, 'Posição atual:', nextPlayers[curIdx]?.pos)
         if (!canPayExpenses) {
-          setTurnLockBroadcast(false)
+          // ✅ CORREÇÃO: Não libera o turno aqui - deixa o tick() gerenciar
+          // O handleInsufficientFunds já gerencia o turno quando necessário (falência, etc)
+          console.log('[DEBUG] 💰 canPayExpenses é false - não liberando turno aqui, deixando tick() gerenciar')
           return
         }
         
@@ -1055,6 +1073,8 @@ export function useTurnEngine({
               if (i!==curIdx) return p
               const next = { ...p }
               next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
+              // ✅ CORREÇÃO: Preserva a posição original do nextPlayers
+              next.pos = nextPlayers[curIdx]?.pos ?? p.pos
               return next
             })
             broadcastState(upd, turnIdx, round); return upd
@@ -1062,10 +1082,15 @@ export function useTurnEngine({
         }
         appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
         if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
-        // Log do saldo final após o processamento
+        // ✅ CORREÇÃO: Garante que a posição seja preservada após o processamento
         setPlayers(ps => {
-          console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', ps[curIdx]?.name, 'Posição final:', ps[curIdx]?.pos, 'Saldo final:', ps[curIdx]?.cash)
-          return ps
+          const upd = ps.map((p, i) => {
+            if (i !== curIdx) return p
+            // Preserva a posição original do nextPlayers
+            return { ...p, pos: nextPlayers[curIdx]?.pos ?? p.pos }
+          })
+          console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', upd[curIdx]?.name, 'Posição final:', upd[curIdx]?.pos, 'Saldo final:', upd[curIdx]?.cash)
+          return upd
         })
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
       })()
