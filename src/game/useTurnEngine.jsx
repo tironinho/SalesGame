@@ -509,7 +509,8 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais (não nextTurnIdx/nextRound) para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -538,13 +539,14 @@ export function useTurnEngine({
         if (!res || res.action !== 'BUY') return
         const trainCost = Number(res.grandTotal || 0)
         if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyTrainingPurchase(p, res)
-          )
-          broadcastState(upd, nextTurnIdx, nextRound)
-          return upd
-        })
+          setPlayers(ps => {
+            const upd = ps.map((p, i) =>
+              i !== curIdx ? p : applyTrainingPurchase(p, res)
+            )
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+            broadcastState(upd, turnIdx, round)
+            return upd
+          })
       })()
     }
 
@@ -582,7 +584,8 @@ export function useTurnEngine({
                     }
                   })
                 )
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -606,7 +609,8 @@ export function useTurnEngine({
                   gestoresDelta: qty,
                   manutencaoDelta: mexp
                 }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -620,7 +624,8 @@ export function useTurnEngine({
               const qty  = Number(r2.headcount ?? r2.qty ?? 1)
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -640,7 +645,8 @@ export function useTurnEngine({
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -660,7 +666,8 @@ export function useTurnEngine({
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -677,7 +684,8 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -698,7 +706,8 @@ export function useTurnEngine({
                   manutencaoDelta: mAdd,
                   bensDelta: bensD
                 }))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -725,7 +734,8 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
-                broadcastState(upd, nextTurnIdx, nextRound); return upd
+                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+                broadcastState(upd, turnIdx, round); return upd
               })
             }
             return
@@ -760,7 +770,8 @@ export function useTurnEngine({
                       bensDelta: bensD
                     })
               )
-              broadcastState(upd, nextTurnIdx, nextRound)
+              // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+              broadcastState(upd, turnIdx, round)
               return upd
             })
             return
@@ -777,7 +788,8 @@ export function useTurnEngine({
                     directBuysPush: [ (res.item || { total }) ]
                   })
             )
-            broadcastState(upd, nextTurnIdx, nextRound)
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+            broadcastState(upd, turnIdx, round)
             return upd
           })
         }
@@ -798,7 +810,8 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -827,7 +840,8 @@ export function useTurnEngine({
                   bensDelta: bensD
                 })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -853,7 +867,8 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -879,7 +894,8 @@ export function useTurnEngine({
             const upd = ps.map((p, i) =>
               i !== curIdx ? p : applyDeltas(p, deltas)
             )
-            broadcastState(upd, nextTurnIdx, nextRound)
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+            broadcastState(upd, turnIdx, round)
             return upd
           })
         }
@@ -906,7 +922,8 @@ export function useTurnEngine({
           const upd = ps.map((p, i) =>
             i !== curIdx ? p : applyDeltas(p, deltas)
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -939,7 +956,8 @@ export function useTurnEngine({
                   },
                 })
           )
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
       })()
@@ -991,7 +1009,8 @@ export function useTurnEngine({
             }
             return next
           })
-          broadcastState(upd, nextTurnIdx, nextRound)
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, round)
           return upd
         })
 
@@ -1008,7 +1027,8 @@ export function useTurnEngine({
           if (extra) {
             setPlayers(ps => {
               const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
-              broadcastState(upd, nextTurnIdx, nextRound); return upd
+              // ✅ CORREÇÃO: Usa turnIdx e round atuais para bônus durante o turno
+              broadcastState(upd, turnIdx, round); return upd
             })
           }
         }
@@ -1024,7 +1044,8 @@ export function useTurnEngine({
         await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
-          broadcastState(upd, nextTurnIdx, nextRound); return upd
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para faturamento durante o turno
+          broadcastState(upd, turnIdx, round); return upd
         })
         appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
@@ -1077,6 +1098,7 @@ export function useTurnEngine({
               next.pos = nextPlayers[curIdx]?.pos ?? p.pos
               return next
             })
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para despesas durante o turno
             broadcastState(upd, turnIdx, round); return upd
           })
         }

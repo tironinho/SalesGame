@@ -35,8 +35,8 @@ export default function BuyCommonSellersModal({
   const closeRef = useRef(null)
   const inputRef = useRef(null)
 
-  // >>> pega closeTop do contexto (é ele que resolve o awaitTop no App.jsx)
-  const { pushModal, awaitTop, closeTop } = useModal()
+  // ✅ CORREÇÃO: Usa onResolve que é injetado pelo ModalContext
+  const { pushModal, awaitTop } = useModal()
 
   const priceHire = Number(unitHire || 0)
   const monthly   = Number(unitExpense || 0)
@@ -66,15 +66,10 @@ export default function BuyCommonSellersModal({
     setQty(String(bounded))
   }
 
-  // helper para resolver (prioriza closeTop; mantém fallback p/ onResolve se existir)
-  const resolve = (payload) => {
-    if (typeof closeTop === 'function') return closeTop(payload)
-    onResolve?.(payload)
-  }
-
+  // ✅ CORREÇÃO: Usa onResolve diretamente (injetado pelo ModalContext)
   const handleClose = (ev) => {
     ev?.stopPropagation?.()
-    resolve({ action: 'SKIP' })
+    onResolve?.({ action: 'SKIP' })
   }
 
   const handleBuy = async () => {
@@ -125,7 +120,8 @@ export default function BuyCommonSellersModal({
       hudUpdate: { category: 'Vendedores Comuns', addQty: qtyNum },
     }
 
-    resolve(payload)
+    // ✅ CORREÇÃO: Usa onResolve diretamente
+    onResolve?.(payload)
   }
 
   // UX: bloqueia scroll, foca no X e no input; Enter confirma

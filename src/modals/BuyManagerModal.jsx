@@ -27,7 +27,8 @@ export default function BuyManagerModal({
 }) {
   const closeRef = useRef(null)
   const inputRef = useRef(null)
-  const { pushModal, awaitTop, closeTop } = useModal() // <- usar closeTop p/ resolver a modal
+  // ✅ CORREÇÃO: Usa onResolve que é injetado pelo ModalContext
+  const { pushModal, awaitTop } = useModal()
 
   const [qty, setQty] = useState('')
 
@@ -55,16 +56,11 @@ export default function BuyManagerModal({
     setQty(String(bounded))
   }
 
-  // helper: resolve a modal preferindo closeTop (para awaitTop do App.jsx)
-  const resolve = (payload) => {
-    if (typeof closeTop === 'function') return closeTop(payload)
-    onResolve?.(payload)
-  }
-
+  // ✅ CORREÇÃO: Usa onResolve diretamente (injetado pelo ModalContext)
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
-    resolve({ action: 'SKIP' })
+    onResolve?.({ action: 'SKIP' })
   }
 
   const handleBuy = async () => {
@@ -83,7 +79,8 @@ export default function BuyManagerModal({
       return
     }
 
-    resolve({
+    // ✅ CORREÇÃO: Usa onResolve diretamente
+    onResolve?.({
       action: 'BUY',
       role: 'MANAGER',
       qty: qtyNum,
