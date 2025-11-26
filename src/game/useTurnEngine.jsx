@@ -69,6 +69,9 @@ export function useTurnEngine({
   const [modalLocks, setModalLocks] = React.useState(0)
   const modalLocksRef = React.useRef(0)
   React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
+  
+  // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
+  const openingModalRef = React.useRef(false)
 
   // 🔄 Sincronização de modalLocks entre jogadores
   React.useEffect(() => {
@@ -95,15 +98,29 @@ export function useTurnEngine({
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
-    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocks, '->', modalLocks + 1)
-    setModalLocks(c => c + 1)
+    // ✅ CORREÇÃO: Marca que uma modal está sendo aberta
+    openingModalRef.current = true
+    
+    // ✅ CORREÇÃO: Atualiza o ref ANTES de abrir a modal para evitar race condition
+    const newLockCount = modalLocksRef.current + 1
+    modalLocksRef.current = newLockCount
+    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocksRef.current, '->', newLockCount)
+    setModalLocks(newLockCount)
+    
     try {
       pushModal(element)
+      // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
+      await new Promise(resolve => setTimeout(resolve, 50))
+      openingModalRef.current = false
       const res = await awaitTop()
       return res
     } finally {
-      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', modalLocks, '->', Math.max(0, modalLocks - 1))
-      setModalLocks(c => Math.max(0, c - 1))
+      openingModalRef.current = false
+      // ✅ CORREÇÃO: Atualiza o ref ANTES de fechar a modal
+      const newLockCountAfter = Math.max(0, modalLocksRef.current - 1)
+      modalLocksRef.current = newLockCountAfter
+      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', modalLocksRef.current, '->', newLockCountAfter)
+      setModalLocks(newLockCountAfter)
     }
   }
 
@@ -1045,20 +1062,37 @@ export function useTurnEngine({
       
       console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
       
+      // ✅ CORREÇÃO: Verifica se uma modal está sendo aberta (evita race condition)
+      if (openingModalRef.current) {
+        console.log('[DEBUG] ⚠️ tick - modal está sendo aberta, aguardando...')
+        setTimeout(tick, 100)
+        return
+      }
+      
+      // ✅ CORREÇÃO: Só muda turno se realmente não houver modais abertas
       if (currentModalLocks === 0) {
         // libera apenas se EU for o dono do cadeado
         if (isLockOwner) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
           if (turnData) {
-            console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
-            setTurnIdx(turnData.nextTurnIdx)
-            broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
-            pendingTurnDataRef.current = null // Limpa os dados após usar
+            // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
+            if (modalLocksRef.current === 0 && !openingModalRef.current) {
+              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+              setTurnIdx(turnData.nextTurnIdx)
+              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
+              pendingTurnDataRef.current = null // Limpa os dados após usar
+              setTurnLockBroadcast(false)
+            } else {
+              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação, não mudando turno')
+              // Continua verificando
+              setTimeout(tick, 100)
+              return
+            }
           } else {
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
+            setTurnLockBroadcast(false)
           }
-          setTurnLockBroadcast(false)
         } else {
           console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
         }
@@ -1074,10 +1108,12 @@ export function useTurnEngine({
         return
       }
       
-      // Continua verificando a cada 80ms
-      setTimeout(tick, 80)
+      // Continua verificando a cada 100ms (aumentado para dar mais tempo)
+      setTimeout(tick, 100)
     }
-    tick()
+    // ✅ CORREÇÃO: Adiciona um delay inicial maior para garantir que modais abertas sejam detectadas
+    // Isso evita que o tick rode antes das modais serem realmente abertas
+    setTimeout(tick, 200)
   }, [
     players, round, turnIdx, roundFlags, isMyTurn, isMine,
     myUid, myCash, gameOver,
