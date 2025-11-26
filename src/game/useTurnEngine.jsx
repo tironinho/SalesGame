@@ -98,20 +98,22 @@ export function useTurnEngine({
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
-    // ✅ CORREÇÃO: Marca que uma modal está sendo aberta
+    
+    // ✅ CORREÇÃO: Marca que uma modal está sendo aberta ANTES de qualquer coisa
     openingModalRef.current = true
     
     // ✅ CORREÇÃO: Atualiza o ref ANTES de abrir a modal para evitar race condition
     const newLockCount = modalLocksRef.current + 1
     modalLocksRef.current = newLockCount
-    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocksRef.current, '->', newLockCount)
+    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocksRef.current, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
     setModalLocks(newLockCount)
     
     try {
       pushModal(element)
       // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise(resolve => setTimeout(resolve, 100))
       openingModalRef.current = false
+      console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
       const res = await awaitTop()
       return res
     } finally {
@@ -471,9 +473,14 @@ export function useTurnEngine({
 
     // ================== Regras por casas (modais) ==================
 
+    // ✅ CORREÇÃO: Flag para indicar que uma modal será aberta (setada antes de abrir)
+    let willOpenModal = false
+
     // ERP
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
     if (isErpTile && isMyTurn && pushModal && awaitTop) {
+      willOpenModal = true
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const currentErpLevel = players[curIdx]?.erpLevel || null
         const res = await openModalAndWait(<ERPSystemsModal 
@@ -496,6 +503,7 @@ export function useTurnEngine({
     // Treinamento
     const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
     if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
         const res = await openModalAndWait(<TrainingModal
@@ -528,6 +536,7 @@ export function useTurnEngine({
     // Compra direta (menu)
     const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const cashNow = nextPlayers[curIdx]?.cash ?? myCash
 
@@ -763,6 +772,7 @@ export function useTurnEngine({
     // Inside Sales (casa específica)
     const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
     if (isInsideTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'HIRE' && res.action !== 'BUY')) return
@@ -782,6 +792,7 @@ export function useTurnEngine({
     // Clientes
     const isClientsTile = [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
@@ -810,6 +821,7 @@ export function useTurnEngine({
     // Gestor
     const isManagerTile = [18,24,29,51].includes(landedOneBased)
     if (isManagerTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
@@ -835,6 +847,7 @@ export function useTurnEngine({
     // Field Sales
     const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
     if (isFieldTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
@@ -861,6 +874,7 @@ export function useTurnEngine({
     // Vendedores Comuns
     const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
         if (!res || res.action !== 'BUY') return
@@ -886,6 +900,7 @@ export function useTurnEngine({
     // Mix de Produtos
     const isMixTile = [7,31,44].includes(landedOneBased)
     if (isMixTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const currentMixLevel = players[curIdx]?.mixProdutos || null
         const res = await openModalAndWait(<MixProductsModal 
@@ -918,6 +933,7 @@ export function useTurnEngine({
     // Sorte & Revés
     const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
     if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<SorteRevesModal />)
         if (!res || res.action !== 'APPLY_CARD') return
@@ -986,6 +1002,7 @@ export function useTurnEngine({
 
     // === AUTO-MODAIS (Faturamento / Despesas) ===
     if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       const meNow = nextPlayers[curIdx] || {}
       const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
       ;(async () => {
@@ -1000,6 +1017,7 @@ export function useTurnEngine({
     }
 
     if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
+      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
       const meNow = nextPlayers[curIdx] || {}
       const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
@@ -1057,15 +1075,16 @@ export function useTurnEngine({
     const start = Date.now()
     const tick = () => {
       const currentModalLocks = modalLocksRef.current
+      const currentOpening = openingModalRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
       
-      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'openingModalRef:', currentOpening, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
       
       // ✅ CORREÇÃO: Verifica se uma modal está sendo aberta (evita race condition)
-      if (openingModalRef.current) {
+      if (currentOpening) {
         console.log('[DEBUG] ⚠️ tick - modal está sendo aberta, aguardando...')
-        setTimeout(tick, 100)
+        setTimeout(tick, 150)
         return
       }
       
@@ -1077,16 +1096,18 @@ export function useTurnEngine({
           const turnData = pendingTurnDataRef.current
           if (turnData) {
             // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
-            if (modalLocksRef.current === 0 && !openingModalRef.current) {
-              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx)
+            const finalModalLocks = modalLocksRef.current
+            const finalOpening = openingModalRef.current
+            if (finalModalLocks === 0 && !finalOpening) {
+              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening)
               setTurnIdx(turnData.nextTurnIdx)
               broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
             } else {
-              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação, não mudando turno')
+              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação, não mudando turno', { finalModalLocks, finalOpening })
               // Continua verificando
-              setTimeout(tick, 100)
+              setTimeout(tick, 150)
               return
             }
           } else {
@@ -1113,7 +1134,22 @@ export function useTurnEngine({
     }
     // ✅ CORREÇÃO: Adiciona um delay inicial maior para garantir que modais abertas sejam detectadas
     // Isso evita que o tick rode antes das modais serem realmente abertas
-    setTimeout(tick, 200)
+    // Verifica se há modais sendo abertas antes de iniciar o tick
+    const checkBeforeTick = () => {
+      const hasOpening = openingModalRef.current
+      const hasLocks = modalLocksRef.current > 0
+      if (hasOpening || hasLocks) {
+        console.log('[DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando...', { hasOpening, hasLocks })
+        setTimeout(checkBeforeTick, 200)
+        return
+      }
+      // Só inicia o tick se não houver modais sendo abertas
+      console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
+      tick()
+    }
+    // ✅ CORREÇÃO: Delay maior para dar tempo das modais serem abertas (as modais são abertas de forma assíncrona)
+    // As modais são abertas dentro de blocos (async () => { ... })(), então precisamos aguardar
+    setTimeout(checkBeforeTick, 500)
   }, [
     players, round, turnIdx, roundFlags, isMyTurn, isMine,
     myUid, myCash, gameOver,
