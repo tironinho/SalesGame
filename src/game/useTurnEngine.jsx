@@ -87,6 +87,25 @@ export function useTurnEngine({
     }
   }, [isMyTurn, modalLocks])
 
+  // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
+  React.useEffect(() => {
+    const currentPlayer = players[turnIdx]
+    if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
+      // Se é minha vez, atualiza lockOwner para permitir que eu mude o turno
+      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
+      setLockOwner(String(myUid))
+      // Limpa pendingTurnDataRef quando o turno muda (pode ter dados antigos)
+      pendingTurnDataRef.current = null
+    } else {
+      // Se não é minha vez, limpa lockOwner e pendingTurnDataRef
+      if (lockOwner === String(myUid)) {
+        console.log('[DEBUG] Não é mais minha vez - limpando lockOwner')
+        setLockOwner(null)
+      }
+      pendingTurnDataRef.current = null
+    }
+  }, [turnIdx, players, myUid, lockOwner])
+
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   const [lockOwner, setLockOwner] = React.useState(null)
   const lockOwnerRef = React.useRef(null)
@@ -1137,22 +1156,29 @@ export function useTurnEngine({
       
       // ✅ CORREÇÃO: Só muda turno se realmente não houver modais abertas
       if (currentModalLocks === 0) {
-        // libera apenas se EU for o dono do cadeado
-        if (isLockOwner) {
+        // ✅ CORREÇÃO: Verifica se o turnIdx atual corresponde ao lockOwner
+        // Se o turno mudou via SYNC, o lockOwner pode estar desatualizado
+        const currentPlayer = players[turnIdx]
+        const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
+        
+        // libera apenas se EU for o dono do cadeado OU se é minha vez e não há lockOwner
+        if (isLockOwner || (isCurrentPlayerMe && !currentLockOwner)) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
           if (turnData) {
             // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
             const finalModalLocks = modalLocksRef.current
             const finalOpening = openingModalRef.current
-            if (finalModalLocks === 0 && !finalOpening) {
+            // ✅ CORREÇÃO: Verifica se o turnIdx ainda é o mesmo (não mudou via SYNC)
+            const finalTurnIdx = turnIdx
+            if (finalModalLocks === 0 && !finalOpening && finalTurnIdx === turnIdx) {
               console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening)
               setTurnIdx(turnData.nextTurnIdx)
               broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
             } else {
-              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação, não mudando turno', { finalModalLocks, finalOpening })
+              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação ou turnIdx mudou, não mudando turno', { finalModalLocks, finalOpening, finalTurnIdx, turnIdx })
               // Continua verificando
               setTimeout(tick, 150)
               return
@@ -1162,7 +1188,7 @@ export function useTurnEngine({
             setTurnLockBroadcast(false)
           }
         } else {
-          console.log('[DEBUG] ❌ tick - não sou o dono do cadeado, não mudando turno')
+          console.log('[DEBUG] ❌ tick - não sou o dono do cadeado e não é minha vez, não mudando turno', { isLockOwner, isCurrentPlayerMe, currentLockOwner, myUid, turnIdx })
         }
         return
       }
@@ -1729,13 +1755,27 @@ export function useTurnEngine({
 
   // ====== efeitos de destrava automática ======
 
-  // Atualiza lockOwner quando é minha vez (para permitir que eu passe o turno)
+  // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
   React.useEffect(() => {
-    if (isMyTurn && !gameOver) {
-      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
+    const currentPlayer = players[turnIdx]
+    if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
+      // Se é minha vez, atualiza lockOwner para permitir que eu mude o turno
+      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid, 'turnIdx:', turnIdx)
       setLockOwner(String(myUid))
+      // Limpa pendingTurnDataRef quando o turno muda para mim (pode ter dados antigos)
+      if (pendingTurnDataRef.current) {
+        console.log('[DEBUG] Limpando pendingTurnDataRef - turno mudou para mim')
+        pendingTurnDataRef.current = null
+      }
+    } else {
+      // Se não é minha vez, limpa lockOwner e pendingTurnDataRef
+      if (lockOwner === String(myUid)) {
+        console.log('[DEBUG] Não é mais minha vez - limpando lockOwner, turnIdx:', turnIdx, 'currentPlayer:', currentPlayer?.name)
+        setLockOwner(null)
+      }
+      // Não limpa pendingTurnDataRef aqui - pode ser necessário para o jogador da vez
     }
-  }, [isMyTurn, myUid, gameOver])
+  }, [turnIdx, players, myUid, lockOwner])
 
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
   React.useEffect(() => {
