@@ -176,39 +176,34 @@ export default function App() {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
-            // Se é o jogador local, faz merge preservando compras locais
+            // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
             const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
             if (isLocalPlayer) {
-              // Compara recursos para detectar se há compras locais não sincronizadas
+              // Compara recursos para fazer merge inteligente
               const localCash = Number(localPlayer.cash || 0)
               const remoteCash = Number(syncedPlayer.cash || 0)
               const localClients = Number(localPlayer.clients || 0)
               const remoteClients = Number(syncedPlayer.clients || 0)
               
-              // Se o local tem significativamente mais recursos, pode ter compras não sincronizadas
-              const hasLocalPurchases = localCash > remoteCash + 500 || localClients > remoteClients
-              
-              if (hasLocalPurchases) {
-                console.log('[App] SYNC - Detectadas compras locais, preservando recursos', {
-                  localCash, remoteCash, localClients, remoteClients
-                })
-              }
-              
-              // Faz merge: aceita estado sincronizado como base, mas preserva recursos locais se maiores
+              // ✅ CORREÇÃO: Sempre preserva o maior valor de recursos (evita perda de compras)
+              // Aceita estado sincronizado para propriedades críticas (pos, bankrupt, etc)
+              // Mas preserva recursos locais se forem maiores
               return {
                 ...syncedPlayer, // Aceita estado sincronizado (pos, bankrupt, etc)
-                // Preserva recursos locais se forem maiores (indica compras não sincronizadas)
-                cash: hasLocalPurchases ? Math.max(localCash, remoteCash) : syncedPlayer.cash,
-                clients: hasLocalPurchases ? Math.max(localClients, remoteClients) : syncedPlayer.clients,
+                // ✅ SEMPRE preserva o maior valor de recursos (local ou remoto)
+                cash: Math.max(localCash, remoteCash),
+                clients: Math.max(localClients, remoteClients),
+                // Preserva propriedades importantes do local se existirem
                 mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
                 erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
-                vendedoresComuns: hasLocalPurchases ? Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)) : syncedPlayer.vendedoresComuns,
-                fieldSales: hasLocalPurchases ? Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)) : syncedPlayer.fieldSales,
-                insideSales: hasLocalPurchases ? Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)) : syncedPlayer.insideSales,
-                gestores: hasLocalPurchases ? Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)) : (syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0),
-                gestoresComerciais: hasLocalPurchases ? Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)) : (syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0),
-                managers: hasLocalPurchases ? Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)) : (syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0),
-                bens: hasLocalPurchases ? Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)) : syncedPlayer.bens,
+                // Preserva o maior valor de vendedores/recursos
+                vendedoresComuns: Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)),
+                fieldSales: Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)),
+                insideSales: Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)),
+                gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
+                gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
+                managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
+                bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
                 manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
                 loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
                 // Preserva dados de progresso local (certificados e treinamentos)
@@ -326,6 +321,27 @@ export default function App() {
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
     let changed = false
+    
+    // ✅ CORREÇÃO: Sincroniza turnIdx e round primeiro (crítico para funcionamento)
+    // Mas só se não houver mudança local muito recente
+    if (nt !== null && nt !== turnIdx) {
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      // Se houve mudança local muito recente, não sincroniza turnIdx ainda
+      if (!lastLocal || (now - lastLocal.timestamp) >= 1000) {
+        setTurnIdx(nt)
+        changed = true
+      }
+    }
+    if (nr !== null && nr !== round) {
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      if (!lastLocal || (now - lastLocal.timestamp) >= 1000) {
+        setRound(nr)
+        changed = true
+      }
+    }
+    
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
       // ✅ CORREÇÃO: Ignora estado remoto se houver uma mudança local muito recente (< 1000ms)
       const now = Date.now()
@@ -362,39 +378,34 @@ export default function App() {
         const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
         if (!localPlayer) return syncedPlayer
         
-        // Se é o jogador local, faz merge preservando compras locais
+        // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
         const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
         if (isLocalPlayer) {
-          // Compara recursos para detectar se há compras locais não sincronizadas
+          // Compara recursos para fazer merge inteligente
           const localCash = Number(localPlayer.cash || 0)
           const remoteCash = Number(syncedPlayer.cash || 0)
           const localClients = Number(localPlayer.clients || 0)
           const remoteClients = Number(syncedPlayer.clients || 0)
           
-          // Se o local tem significativamente mais recursos, pode ter compras não sincronizadas
-          const hasLocalPurchases = localCash > remoteCash + 500 || localClients > remoteClients
-          
-          if (hasLocalPurchases) {
-            console.log('[NET] Detectadas compras locais, preservando recursos', {
-              localCash, remoteCash, localClients, remoteClients
-            })
-          }
-          
-          // Faz merge: aceita estado sincronizado como base, mas preserva recursos locais se maiores
+          // ✅ CORREÇÃO: Sempre preserva o maior valor de recursos (evita perda de compras)
+          // Aceita estado sincronizado para propriedades críticas (pos, bankrupt, etc)
+          // Mas preserva recursos locais se forem maiores
           return {
             ...syncedPlayer, // Aceita estado sincronizado (pos, bankrupt, etc)
-            // Preserva recursos locais se forem maiores (indica compras não sincronizadas)
-            cash: hasLocalPurchases ? Math.max(localCash, remoteCash) : syncedPlayer.cash,
-            clients: hasLocalPurchases ? Math.max(localClients, remoteClients) : syncedPlayer.clients,
+            // ✅ SEMPRE preserva o maior valor de recursos (local ou remoto)
+            cash: Math.max(localCash, remoteCash),
+            clients: Math.max(localClients, remoteClients),
+            // Preserva propriedades importantes do local se existirem
             mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
             erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
-            vendedoresComuns: hasLocalPurchases ? Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)) : syncedPlayer.vendedoresComuns,
-            fieldSales: hasLocalPurchases ? Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)) : syncedPlayer.fieldSales,
-            insideSales: hasLocalPurchases ? Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)) : syncedPlayer.insideSales,
-            gestores: hasLocalPurchases ? Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)) : (syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0),
-            gestoresComerciais: hasLocalPurchases ? Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)) : (syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0),
-            managers: hasLocalPurchases ? Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)) : (syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0),
-            bens: hasLocalPurchases ? Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)) : syncedPlayer.bens,
+            // Preserva o maior valor de vendedores/recursos
+            vendedoresComuns: Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)),
+            fieldSales: Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)),
+            insideSales: Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)),
+            gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
+            gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
+            managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
+            bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
             manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
             loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
             // Preserva dados de progresso local (certificados e treinamentos)
@@ -419,8 +430,6 @@ export default function App() {
       setPlayers(syncedPlayers); 
       changed = true 
     }
-    if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
-    if (nr !== null && nr !== round)  { setRound(nr); changed = true }
 
     if (changed) console.log('[NET] applied remote v=%d', netVersion)
   // eslint-disable-next-line react-hooks/exhaustive-deps
