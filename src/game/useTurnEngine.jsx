@@ -87,6 +87,16 @@ export function useTurnEngine({
     }
   }, [isMyTurn, modalLocks])
 
+  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
+  // ✅ CORREÇÃO: Declarado ANTES do useEffect que o usa
+  const [lockOwner, setLockOwner] = React.useState(null)
+  const lockOwnerRef = React.useRef(null)
+  React.useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
+
+  // 🔄 dados do próximo turno (para evitar stale closure)
+  // ✅ CORREÇÃO: Declarado ANTES do useEffect que o usa
+  const pendingTurnDataRef = React.useRef(null)
+
   // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
   React.useEffect(() => {
     const currentPlayer = players[turnIdx]
@@ -105,14 +115,6 @@ export function useTurnEngine({
       pendingTurnDataRef.current = null
     }
   }, [turnIdx, players, myUid, lockOwner])
-
-  // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
-  const [lockOwner, setLockOwner] = React.useState(null)
-  const lockOwnerRef = React.useRef(null)
-  React.useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
-
-  // 🔄 dados do próximo turno (para evitar stale closure)
-  const pendingTurnDataRef = React.useRef(null)
 
   // helper: abrir modal e "travar"/"destravar" o contador
   const openModalAndWait = async (element) => {
