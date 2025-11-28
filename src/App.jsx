@@ -165,9 +165,47 @@ export default function App() {
           console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
           console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
           
-          // Sincroniza turnIdx e round primeiro (crítico para funcionamento)
-          setTurnIdx(d.turnIdx)
-          setRound(d.round)
+          // ✅ CORREÇÃO: Sincroniza turnIdx e round, mas protege mudanças locais recentes
+          const now = Date.now()
+          const lastLocal = lastLocalStateRef.current
+          
+          // Sincroniza turnIdx apenas se não houver mudança local muito recente
+          if (d.turnIdx !== turnIdx) {
+            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+              // Verifica se o turnIdx local mudou recentemente
+              const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
+              if (localTurnIdxChanged) {
+                console.log('[App] SYNC - Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)', {
+                  lastLocalTurnIdx: lastLocal.turnIdx,
+                  currentLocalTurnIdx: turnIdx,
+                  remoteTurnIdx: d.turnIdx,
+                  timeSinceLocalChange: now - lastLocal.timestamp
+                })
+              } else {
+                // Se o turnIdx local não mudou, pode sincronizar
+                setTurnIdx(d.turnIdx)
+                console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
+              }
+            } else {
+              // Se não houve mudança local recente, sincroniza normalmente
+              setTurnIdx(d.turnIdx)
+              console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
+            }
+          }
+          
+          // Sincroniza round apenas se não houver mudança local muito recente
+          if (d.round !== round) {
+            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+              const localRoundChanged = lastLocal.round !== round
+              if (localRoundChanged) {
+                console.log('[App] SYNC - Ignorando round remoto - round local mudou recentemente (< 3s)')
+              } else {
+                setRound(d.round)
+              }
+            } else {
+              setRound(d.round)
+            }
+          }
           
           // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
           // IMPORTANTE: Sempre aceita propriedades críticas do estado sincronizado (pos, bankrupt, etc)
@@ -355,16 +393,38 @@ export default function App() {
     if (nt !== null && nt !== turnIdx) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      // Se houve mudança local muito recente, não sincroniza turnIdx ainda
-      if (!lastLocal || (now - lastLocal.timestamp) >= 1000) {
+      // Se houve mudança local muito recente (< 3s), não sincroniza turnIdx ainda
+      // Isso protege contra estados remotos que chegam logo após mudança local
+      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+        // Verifica se o turnIdx local mudou recentemente
+        const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
+        if (localTurnIdxChanged) {
+          console.log('[NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)', {
+            lastLocalTurnIdx: lastLocal.turnIdx,
+            currentLocalTurnIdx: turnIdx,
+            remoteTurnIdx: nt,
+            timeSinceLocalChange: now - lastLocal.timestamp
+          })
+        } else {
+          // Se o turnIdx local não mudou, pode sincronizar
+          setTurnIdx(nt)
+          changed = true
+          console.log('[NET] Sincronizando turnIdx remoto', { local: turnIdx, remote: nt })
+        }
+      } else {
+        // Se não houve mudança local recente, sincroniza normalmente
         setTurnIdx(nt)
         changed = true
+        console.log('[NET] Sincronizando turnIdx remoto', { local: turnIdx, remote: nt })
       }
     }
     if (nr !== null && nr !== round) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      if (!lastLocal || (now - lastLocal.timestamp) >= 1000) {
+      // Se houve mudança local muito recente (< 2s), não sincroniza round ainda
+      if (lastLocal && (now - lastLocal.timestamp) < 2000) {
+        console.log('[NET] Ignorando round remoto - mudança local muito recente (< 2s)')
+      } else {
         setRound(nr)
         changed = true
       }
@@ -507,6 +567,15 @@ export default function App() {
   }
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
+    // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
+    // Isso protege contra estados remotos que chegam logo após a mudança local
+    lastLocalStateRef.current = { 
+      players: nextPlayers, 
+      turnIdx: nextTurnIdx, 
+      round: nextRound, 
+      timestamp: Date.now() 
+    }
+    
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
     // 2) entre abas
