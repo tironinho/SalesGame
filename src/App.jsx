@@ -169,15 +169,66 @@ export default function App() {
           setTurnIdx(d.turnIdx)
           setRound(d.round)
           
-          // Preserva apenas certificados e treinamentos locais (dados de progresso)
+          // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
           const currentPlayers = players
           const syncedPlayers = d.players.map(syncedPlayer => {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
+            // Se é o jogador local, preserva propriedades locais que são mais recentes
+            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+            if (isLocalPlayer) {
+              // Compara recursos para determinar qual estado é mais recente
+              const localCash = Number(localPlayer.cash || 0)
+              const remoteCash = Number(syncedPlayer.cash || 0)
+              const localClients = Number(localPlayer.clients || 0)
+              const remoteClients = Number(syncedPlayer.clients || 0)
+              
+              // Se o local tem mais recursos, preserva o estado local (indica compra recente)
+              const localIsMoreRecent = localCash > remoteCash + 100 || localClients > remoteClients
+              
+              if (localIsMoreRecent) {
+                console.log('[App] SYNC - Preservando estado local (mais recente)', {
+                  localCash, remoteCash, localClients, remoteClients
+                })
+                // Preserva estado local completo
+                return {
+                  ...localPlayer,
+                  // Mas aceita posição e turno do estado sincronizado
+                  pos: syncedPlayer.pos,
+                  bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt
+                }
+              }
+              
+              // Caso contrário, faz merge preservando propriedades importantes locais
+              return {
+                ...syncedPlayer,
+                // Preserva propriedades de compras e recursos do jogador local (se não foram perdidas)
+                cash: Math.max(localCash, remoteCash), // Preserva o maior valor
+                clients: Math.max(localClients, remoteClients), // Preserva o maior valor
+                mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
+                erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
+                vendedoresComuns: Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)),
+                fieldSales: Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)),
+                insideSales: Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)),
+                gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
+                gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
+                managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
+                bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
+                manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
+                loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
+                // Preserva dados de progresso local (certificados e treinamentos)
+                az: localPlayer.az || syncedPlayer.az || 0,
+                am: localPlayer.am || syncedPlayer.am || 0,
+                rox: localPlayer.rox || syncedPlayer.rox || 0,
+                trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+                onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+              }
+            }
+            
+            // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
             return {
               ...syncedPlayer,
-              // Preserva apenas dados de progresso local (certificados e treinamentos)
               az: localPlayer.az || syncedPlayer.az || 0,
               am: localPlayer.am || syncedPlayer.am || 0,
               rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -311,14 +362,65 @@ export default function App() {
         }
       }
       
-      // Preserva apenas certificados e treinamentos locais (dados de progresso)
+      // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
       const syncedPlayers = np.map(syncedPlayer => {
         const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
         if (!localPlayer) return syncedPlayer
         
+        // Se é o jogador local, preserva propriedades locais que são mais recentes
+        const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+        if (isLocalPlayer) {
+          // Compara recursos para determinar qual estado é mais recente
+          const localCash = Number(localPlayer.cash || 0)
+          const remoteCash = Number(syncedPlayer.cash || 0)
+          const localClients = Number(localPlayer.clients || 0)
+          const remoteClients = Number(syncedPlayer.clients || 0)
+          
+          // Se o local tem mais recursos, preserva o estado local (indica compra recente)
+          const localIsMoreRecent = localCash > remoteCash + 100 || localClients > remoteClients
+          
+          if (localIsMoreRecent) {
+            console.log('[NET] Preservando estado local (mais recente)', {
+              localCash, remoteCash, localClients, remoteClients
+            })
+            // Preserva estado local completo
+            return {
+              ...localPlayer,
+              // Mas aceita posição e turno do estado sincronizado
+              pos: syncedPlayer.pos,
+              bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt
+            }
+          }
+          
+          // Caso contrário, faz merge preservando propriedades importantes locais
+          return {
+            ...syncedPlayer,
+            // Preserva propriedades de compras e recursos do jogador local (se não foram perdidas)
+            cash: Math.max(localCash, remoteCash), // Preserva o maior valor
+            clients: Math.max(localClients, remoteClients), // Preserva o maior valor
+            mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
+            erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
+            vendedoresComuns: Math.max(Number(localPlayer.vendedoresComuns || 0), Number(syncedPlayer.vendedoresComuns || 0)),
+            fieldSales: Math.max(Number(localPlayer.fieldSales || 0), Number(syncedPlayer.fieldSales || 0)),
+            insideSales: Math.max(Number(localPlayer.insideSales || 0), Number(syncedPlayer.insideSales || 0)),
+            gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
+            gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
+            managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
+            bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
+            manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
+            loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
+            // Preserva dados de progresso local (certificados e treinamentos)
+            az: localPlayer.az || syncedPlayer.az || 0,
+            am: localPlayer.am || syncedPlayer.am || 0,
+            rox: localPlayer.rox || syncedPlayer.rox || 0,
+            trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
+            onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
+          }
+        }
+        
+        // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
         return {
           ...syncedPlayer,
-          // Preserva apenas dados de progresso local (certificados e treinamentos)
           az: localPlayer.az || syncedPlayer.az || 0,
           am: localPlayer.am || syncedPlayer.am || 0,
           rox: localPlayer.rox || syncedPlayer.rox || 0,
