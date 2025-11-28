@@ -264,6 +264,15 @@ export default function App() {
   const netCommit = net?.commit
   const netVersion = net?.version
   const netState = net?.state
+  
+  // ✅ CORREÇÃO: Ref para rastrear quando uma mudança local foi feita recentemente
+  const localChangeRef = React.useRef(null)
+  const lastLocalStateRef = React.useRef(null)
+  
+  // Rastreia mudanças locais
+  React.useEffect(() => {
+    lastLocalStateRef.current = { players, turnIdx, round, timestamp: Date.now() }
+  }, [players, turnIdx, round])
 
   useEffect(() => {
     if (!netState) return
@@ -273,8 +282,36 @@ export default function App() {
 
     let changed = false
     if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
-      // Preserva apenas certificados e treinamentos locais (dados de progresso)
+      // ✅ CORREÇÃO: Ignora estado remoto se houver uma mudança local muito recente (< 1000ms)
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      if (lastLocal && (now - lastLocal.timestamp) < 1000) {
+        console.log('[NET] Ignorando estado remoto - mudança local muito recente (< 1s)')
+        return
+      }
+      
+      // ✅ CORREÇÃO: Compara valores críticos para detectar se o estado local é mais recente
       const currentPlayers = players
+      const myPlayer = currentPlayers.find(p => p.id === myUid)
+      const remoteMyPlayer = np.find(p => p.id === myUid)
+      
+      if (myPlayer && remoteMyPlayer) {
+        // Se o estado local tem mais recursos que o remoto, pode ser uma mudança local recente
+        const localCash = Number(myPlayer.cash || 0)
+        const remoteCash = Number(remoteMyPlayer.cash || 0)
+        const localClients = Number(myPlayer.clients || 0)
+        const remoteClients = Number(remoteMyPlayer.clients || 0)
+        
+        // Se o local tem significativamente mais recursos, ignora o remoto
+        if (localCash > remoteCash + 500 || localClients > remoteClients + 1) {
+          console.log('[NET] Ignorando estado remoto - estado local parece mais recente', {
+            localCash, remoteCash, localClients, remoteClients
+          })
+          return
+        }
+      }
+      
+      // Preserva apenas certificados e treinamentos locais (dados de progresso)
       const syncedPlayers = np.map(syncedPlayer => {
         const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
         if (!localPlayer) return syncedPlayer
