@@ -102,17 +102,34 @@ export function useTurnEngine({
     const currentPlayer = players[turnIdx]
     if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
       // Se é minha vez, atualiza lockOwner para permitir que eu mude o turno
-      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid)
+      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid, 'turnIdx:', turnIdx)
       setLockOwner(String(myUid))
-      // Limpa pendingTurnDataRef quando o turno muda (pode ter dados antigos)
-      pendingTurnDataRef.current = null
+      // ✅ CORREÇÃO: NÃO limpa pendingTurnDataRef aqui se há dados pendentes para um turno futuro
+      // O tick precisa usar esses dados para mudar o turno
+      // Só limpa se os dados pendentes são para o turno atual (já foi processado)
+      if (pendingTurnDataRef.current) {
+        if (pendingTurnDataRef.current.nextTurnIdx === turnIdx) {
+          // Se os dados pendentes são para o turno atual, limpa (já foi processado)
+          console.log('[DEBUG] Limpando pendingTurnDataRef - turno já foi processado (nextTurnIdx === turnIdx)')
+          pendingTurnDataRef.current = null
+        } else {
+          // Se os dados pendentes são para um turno futuro, mantém (tick ainda precisa usar)
+          console.log('[DEBUG] Mantendo pendingTurnDataRef - próximo turno:', pendingTurnDataRef.current.nextTurnIdx, 'turno atual:', turnIdx)
+        }
+      }
     } else {
       // Se não é minha vez, limpa lockOwner e pendingTurnDataRef
       if (lockOwner === String(myUid)) {
         console.log('[DEBUG] Não é mais minha vez - limpando lockOwner')
         setLockOwner(null)
       }
-      pendingTurnDataRef.current = null
+      // ✅ CORREÇÃO: Só limpa pendingTurnDataRef se não há dados pendentes para o próximo turno
+      // (pode ser que o turno esteja mudando e o tick ainda precise dos dados)
+      if (pendingTurnDataRef.current && pendingTurnDataRef.current.nextTurnIdx !== turnIdx) {
+        // Se os dados pendentes não são para o turno atual, pode limpar
+        console.log('[DEBUG] Limpando pendingTurnDataRef - não é minha vez e dados não são para turno atual')
+        pendingTurnDataRef.current = null
+      }
     }
   }, [turnIdx, players, myUid, lockOwner])
 
@@ -468,12 +485,15 @@ export function useTurnEngine({
     setPlayers(nextPlayers)
     setRound(nextRound)
     
-    // Armazena os dados do próximo turno para uso na função tick
+    // ✅ CORREÇÃO: Armazena os dados do próximo turno para uso na função tick
+    // IMPORTANTE: Não atualiza turnIdx ainda - isso será feito pelo tick quando todas as modais fecharem
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
-      nextRound
+      nextRound,
+      timestamp: Date.now() // Adiciona timestamp para rastrear quando foi criado
     }
+    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'turno atual:', turnIdx)
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
@@ -1135,7 +1155,8 @@ export function useTurnEngine({
           console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', upd[curIdx]?.name, 'Posição final:', upd[curIdx]?.pos, 'Saldo final:', upd[curIdx]?.cash)
           return upd
         })
-        try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
+        // ✅ CORREÇÃO: Não precisa fechar modal aqui - a modal de despesas já foi fechada pelo openModalAndWait
+        // O closeTop pode causar problemas com o modalLocks
       })()
     }
 
@@ -1167,6 +1188,7 @@ export function useTurnEngine({
         if (isLockOwner || (isCurrentPlayerMe && !currentLockOwner)) {
           // Agora muda o turno quando todas as modais são fechadas
           const turnData = pendingTurnDataRef.current
+          console.log('[DEBUG] 🔍 tick - verificando pendingTurnDataRef:', turnData ? `próximo turno: ${turnData.nextTurnIdx}` : 'null')
           if (turnData) {
             // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
             const finalModalLocks = modalLocksRef.current
@@ -1186,7 +1208,14 @@ export function useTurnEngine({
               return
             }
           } else {
-            console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno')
+            console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno. turnIdx atual:', turnIdx, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
+            // ✅ CORREÇÃO: Se não há turnData mas deveria haver, tenta novamente após um delay
+            // Pode ser que o pendingTurnDataRef ainda não foi preenchido
+            if (isLockOwner && currentModalLocks === 0 && !currentOpening) {
+              console.log('[DEBUG] ⚠️ tick - tentando novamente em 200ms (pode ser que pendingTurnDataRef ainda não foi preenchido)')
+              setTimeout(tick, 200)
+              return
+            }
             setTurnLockBroadcast(false)
           }
         } else {
@@ -1210,13 +1239,36 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Adiciona um delay inicial maior para garantir que modais abertas sejam detectadas
     // Isso evita que o tick rode antes das modais serem realmente abertas
     // Verifica se há modais sendo abertas antes de iniciar o tick
+    let checkAttempts = 0
+    const maxCheckAttempts = 50 // Limita a 10 segundos (50 * 200ms)
     const checkBeforeTick = () => {
+      checkAttempts++
       const hasOpening = openingModalRef.current
       const hasLocks = modalLocksRef.current > 0
-      if (hasOpening || hasLocks) {
-        console.log('[DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando...', { hasOpening, hasLocks })
+      if ((hasOpening || hasLocks) && checkAttempts < maxCheckAttempts) {
+        console.log('[DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando...', { 
+          hasOpening, 
+          hasLocks, 
+          modalLocks: modalLocksRef.current,
+          attempt: checkAttempts 
+        })
         setTimeout(checkBeforeTick, 200)
         return
+      }
+      // ✅ CORREÇÃO: Se excedeu tentativas ou não há modais, força o avanço do turno
+      if (checkAttempts >= maxCheckAttempts) {
+        console.log('[DEBUG] ⚠️ checkBeforeTick - excedeu tentativas, forçando avanço do turno', {
+          hasOpening,
+          hasLocks,
+          modalLocks: modalLocksRef.current
+        })
+        // Força o modalLocks para 0 se estiver travado
+        if (modalLocksRef.current > 0) {
+          console.log('[DEBUG] ⚠️ checkBeforeTick - forçando modalLocks para 0')
+          modalLocksRef.current = 0
+          setModalLocks(0)
+        }
+        openingModalRef.current = false
       }
       // Só inicia o tick se não houver modais sendo abertas
       console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
@@ -1757,27 +1809,9 @@ export function useTurnEngine({
 
   // ====== efeitos de destrava automática ======
 
-  // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
-  React.useEffect(() => {
-    const currentPlayer = players[turnIdx]
-    if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
-      // Se é minha vez, atualiza lockOwner para permitir que eu mude o turno
-      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid, 'turnIdx:', turnIdx)
-      setLockOwner(String(myUid))
-      // Limpa pendingTurnDataRef quando o turno muda para mim (pode ter dados antigos)
-      if (pendingTurnDataRef.current) {
-        console.log('[DEBUG] Limpando pendingTurnDataRef - turno mudou para mim')
-        pendingTurnDataRef.current = null
-      }
-    } else {
-      // Se não é minha vez, limpa lockOwner e pendingTurnDataRef
-      if (lockOwner === String(myUid)) {
-        console.log('[DEBUG] Não é mais minha vez - limpando lockOwner, turnIdx:', turnIdx, 'currentPlayer:', currentPlayer?.name)
-        setLockOwner(null)
-      }
-      // Não limpa pendingTurnDataRef aqui - pode ser necessário para o jogador da vez
-    }
-  }, [turnIdx, players, myUid, lockOwner])
+  // ✅ CORREÇÃO: Este useEffect foi removido - duplicado do anterior
+  // A lógica de atualização de lockOwner e limpeza de pendingTurnDataRef
+  // está no useEffect anterior (linhas 100-117)
 
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
   React.useEffect(() => {
