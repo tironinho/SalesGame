@@ -545,6 +545,19 @@ export default function App() {
       })
       setPlayers(syncedPlayers); 
       changed = true 
+      
+      // ✅ CORREÇÃO: Se aplicou estado remoto de players, garante que turnLock está liberado
+      // Isso evita que o botão fique travado após sincronização
+      // Verifica se é minha vez após sincronização
+      const currentPlayer = syncedPlayers[turnIdx]
+      const isMyTurnAfterSync = currentPlayer && String(currentPlayer.id) === String(myUid)
+      
+      if (turnLock) {
+        // Se turnLock está ativo após sincronização, libera
+        // O turnLock deve ser gerenciado apenas durante ações do jogador, não durante sincronização
+        console.log('[NET] Liberando turnLock após sincronização', { isMyTurnAfterSync, turnIdx })
+        setTurnLock(false)
+      }
     }
 
     if (changed) console.log('[NET] applied remote v=%d', netVersion)

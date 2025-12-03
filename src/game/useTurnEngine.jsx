@@ -1828,15 +1828,27 @@ export function useTurnEngine({
   React.useEffect(() => {
     if (modalLocks === 0 && turnLock) {
       if (String(lockOwner || '') === String(myUid)) {
+        console.log('[DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner')
+        setTurnLockBroadcast(false)
+      } else if (!isMyTurn) {
+        // ✅ CORREÇÃO: Se não é minha vez e não sou o lockOwner, libera o turnLock
+        // Isso evita que o botão fique travado após sincronização
+        console.log('[DEBUG] 🔓 Destravando turnLock - não é minha vez e não sou lockOwner')
         setTurnLockBroadcast(false)
       }
     }
-  }, [modalLocks, turnLock, lockOwner, myUid, setTurnLockBroadcast])
+  }, [modalLocks, turnLock, lockOwner, myUid, isMyTurn, setTurnLockBroadcast])
 
   // b) quando virar "minha vez" e não houver modal, garanto unlock local
   React.useEffect(() => {
     if (isMyTurn && modalLocks === 0 && turnLock) {
       if (String(lockOwner || '') === String(myUid)) {
+        console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner')
+        setTurnLockBroadcast(false)
+      } else if (!lockOwner) {
+        // ✅ CORREÇÃO: Se é minha vez mas não há lockOwner, libera o turnLock
+        // Isso garante que o botão seja habilitado quando é minha vez
+        console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez mas não há lockOwner')
         setTurnLockBroadcast(false)
       }
     }
