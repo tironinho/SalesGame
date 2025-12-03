@@ -70,6 +70,14 @@ export function useGameSync({
   }
 
   // ===== BroadcastChannel entre abas =====
+  // ✅ CORREÇÃO: Ref para rastrear mudanças locais recentes
+  const lastLocalStateRef = useRef(null)
+  
+  // Rastreia mudanças locais
+  useEffect(() => {
+    lastLocalStateRef.current = { players, turnIdx, round, timestamp: Date.now() }
+  }, [players, turnIdx, round])
+  
   useEffect(() => {
     try {
       bcRef.current?.close?.()
@@ -112,9 +120,40 @@ export function useGameSync({
 
         if (d.type === 'SYNC' && phase === 'game') {
           console.log('[SG][BC] SYNC <- turnIdx=%d round=%d', d.turnIdx, d.round)
+          
+          // ✅ CORREÇÃO: Protege mudanças locais recentes
+          const now = Date.now()
+          const lastLocal = lastLocalStateRef.current
+          
+          // Sincroniza turnIdx apenas se não houver mudança local muito recente
+          if (d.turnIdx !== turnIdx) {
+            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+              const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
+              if (localTurnIdxChanged) {
+                console.log('[SG][BC] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)')
+              } else {
+                setTurnIdx(d.turnIdx)
+              }
+            } else {
+              setTurnIdx(d.turnIdx)
+            }
+          }
+          
+          // Sincroniza round apenas se não houver mudança local muito recente
+          if (d.round !== round) {
+            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+              const localRoundChanged = lastLocal.round !== round
+              if (localRoundChanged) {
+                console.log('[SG][BC] Ignorando round remoto - round local mudou recentemente (< 3s)')
+              } else {
+                setRound(d.round)
+              }
+            } else {
+              setRound(d.round)
+            }
+          }
+          
           setPlayers(d.players)
-          setTurnIdx(d.turnIdx)
-          setRound(d.round)
         }
       }
       bcRef.current = bc
@@ -122,7 +161,7 @@ export function useGameSync({
     } catch (e) {
       console.warn('[SG][App] BroadcastChannel init failed:', e)
     }
-  }, [syncKey, meId, myName, phase, applyStarterKit, setPlayers, setTurnIdx, setRound]) // eslint-disable-line
+  }, [syncKey, meId, myName, phase, applyStarterKit, setPlayers, setTurnIdx, setRound, turnIdx, round]) // eslint-disable-line
 
   // ===== Estado remoto (espelha local quando muda) =====
   useEffect(() => {
@@ -132,9 +171,53 @@ export function useGameSync({
     const nr = Number.isInteger(netState.round)   ? netState.round   : null
 
     let changed = false
-    if (np && JSON.stringify(np) !== JSON.stringify(players)) { setPlayers(np); changed = true }
-    if (nt !== null && nt !== turnIdx) { setTurnIdx(nt); changed = true }
-    if (nr !== null && nr !== round)  { setRound(nr); changed = true }
+    
+    // ✅ CORREÇÃO: Protege mudanças locais recentes para turnIdx e round
+    if (nt !== null && nt !== turnIdx) {
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+        const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
+        if (localTurnIdxChanged) {
+          console.log('[SG][NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)')
+        } else {
+          setTurnIdx(nt)
+          changed = true
+        }
+      } else {
+        setTurnIdx(nt)
+        changed = true
+      }
+    }
+    
+    if (nr !== null && nr !== round) {
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+        const localRoundChanged = lastLocal.round !== round
+        if (localRoundChanged) {
+          console.log('[SG][NET] Ignorando round remoto - round local mudou recentemente (< 3s)')
+        } else {
+          setRound(nr)
+          changed = true
+        }
+      } else {
+        setRound(nr)
+        changed = true
+      }
+    }
+    
+    // ✅ CORREÇÃO: Ignora estado remoto de players se houver mudança local muito recente
+    if (np && JSON.stringify(np) !== JSON.stringify(players)) {
+      const now = Date.now()
+      const lastLocal = lastLocalStateRef.current
+      if (lastLocal && (now - lastLocal.timestamp) < 1000) {
+        console.log('[SG][NET] Ignorando estado remoto de players - mudança local muito recente (< 1s)')
+      } else {
+        setPlayers(np)
+        changed = true
+      }
+    }
 
     if (changed) console.log('[SG][NET] applied remote state v=%d', netVersion)
     // eslint-disable-next-line react-hooks/exhaustive-deps

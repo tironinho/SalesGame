@@ -467,11 +467,18 @@ export function useTurnEngine({
       // Verifica se todos os jogadores vivos passaram pela casa 0
       const allAliveDone = aliveIndices.length > 0 && aliveIndices.every(idx => nextFlags[idx] === true)
       
+      console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', round)
+      console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => `${nextPlayers[i]?.name}:${nextFlags[i]}`).join(', '))
+      console.log('[DEBUG] 🔍 Todos passaram pela casa 0?', allAliveDone)
+      
       if (allAliveDone) {
         nextRound = round + 1
         // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos
         nextFlags = nextFlags.map((_, idx) => nextPlayers[idx]?.bankrupt ? nextFlags[idx] : false)
         console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Jogadores vivos:', alivePlayers.length)
+        console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
+      } else {
+        console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0')
       }
     }
     setRoundFlags(nextFlags)
@@ -483,17 +490,21 @@ export function useTurnEngine({
     if (note) appendLog(note)
 
     setPlayers(nextPlayers)
+    // ✅ CORREÇÃO: Atualiza a rodada imediatamente quando todos os jogadores passam pela casa 0
+    // Isso garante que a rodada está correta antes de fazer broadcast
     setRound(nextRound)
+    console.log('[DEBUG] 🔄 RODADA ATUALIZADA - Rodada atual:', round, 'Nova rodada:', nextRound)
     
     // ✅ CORREÇÃO: Armazena os dados do próximo turno para uso na função tick
     // IMPORTANTE: Não atualiza turnIdx ainda - isso será feito pelo tick quando todas as modais fecharem
+    // IMPORTANTE: Usa nextRound calculado acima (pode ser diferente de round se todos passaram pela casa 0)
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
-      nextRound,
+      nextRound, // Usa o nextRound calculado (pode ser round + 1 se todos passaram pela casa 0)
       timestamp: Date.now() // Adiciona timestamp para rastrear quando foi criado
     }
-    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'turno atual:', turnIdx)
+    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', nextRound)
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
