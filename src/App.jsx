@@ -171,11 +171,13 @@ export default function App() {
           
           // Sincroniza turnIdx apenas se não houver mudança local muito recente
           if (d.turnIdx !== turnIdx) {
-            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               // Verifica se o turnIdx local mudou recentemente
               const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
               if (localTurnIdxChanged) {
-                console.log('[App] SYNC - Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)', {
+                // ✅ CORREÇÃO: Se o turnIdx local mudou recentemente, NUNCA aceita um turnIdx remoto diferente
+                // Isso evita que estados remotos antigos revertam mudanças locais recentes
+                console.log('[App] SYNC - Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
                   lastLocalTurnIdx: lastLocal.turnIdx,
                   currentLocalTurnIdx: turnIdx,
                   remoteTurnIdx: d.turnIdx,
@@ -376,8 +378,36 @@ export default function App() {
   const lastLocalStateRef = React.useRef(null)
   
   // Rastreia mudanças locais
+  // ✅ CORREÇÃO: Atualiza lastLocalStateRef quando turnIdx, round ou players mudam
+  // Mas só atualiza o timestamp se realmente mudou E se não foi atualizado recentemente pelo broadcastState
   React.useEffect(() => {
-    lastLocalStateRef.current = { players, turnIdx, round, timestamp: Date.now() }
+    const current = lastLocalStateRef.current
+    const turnIdxChanged = !current || current.turnIdx !== turnIdx
+    const roundChanged = !current || current.round !== round
+    const playersChanged = !current || JSON.stringify(current.players) !== JSON.stringify(players)
+    
+    // Só atualiza timestamp se realmente mudou algo crítico
+    // E só atualiza se não foi atualizado muito recentemente (< 100ms) pelo broadcastState
+    if (turnIdxChanged || roundChanged || playersChanged) {
+      const now = Date.now()
+      const timeSinceLastUpdate = current ? (now - current.timestamp) : Infinity
+      
+      // Se foi atualizado muito recentemente pelo broadcastState, não sobrescreve
+      if (timeSinceLastUpdate > 100) {
+        lastLocalStateRef.current = { players, turnIdx, round, timestamp: now }
+        if (turnIdxChanged) {
+          console.log('[App] lastLocalStateRef atualizado via useEffect - turnIdx mudou:', current?.turnIdx, '->', turnIdx)
+        }
+      } else {
+        // Atualiza apenas os valores, mantém o timestamp do broadcastState
+        lastLocalStateRef.current = { 
+          ...lastLocalStateRef.current, 
+          players, 
+          turnIdx, 
+          round 
+        }
+      }
+    }
   }, [players, turnIdx, round])
 
   useEffect(() => {
@@ -393,13 +423,15 @@ export default function App() {
     if (nt !== null && nt !== turnIdx) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      // Se houve mudança local muito recente (< 3s), não sincroniza turnIdx ainda
+      // Se houve mudança local muito recente (< 5s), não sincroniza turnIdx ainda
       // Isso protege contra estados remotos que chegam logo após mudança local
-      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+      if (lastLocal && (now - lastLocal.timestamp) < 5000) {
         // Verifica se o turnIdx local mudou recentemente
         const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
         if (localTurnIdxChanged) {
-          console.log('[NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)', {
+          // ✅ CORREÇÃO: Se o turnIdx local mudou recentemente, NUNCA aceita um turnIdx remoto diferente
+          // Isso evita que estados remotos antigos revertam mudanças locais recentes
+          console.log('[NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
             lastLocalTurnIdx: lastLocal.turnIdx,
             currentLocalTurnIdx: turnIdx,
             remoteTurnIdx: nt,
@@ -582,12 +614,18 @@ export default function App() {
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
+    const now = Date.now()
     lastLocalStateRef.current = { 
       players: nextPlayers, 
       turnIdx: nextTurnIdx, 
       round: nextRound, 
-      timestamp: Date.now() 
+      timestamp: now
     }
+    console.log('[App] broadcastState - atualizando lastLocalStateRef', { 
+      turnIdx: nextTurnIdx, 
+      round: nextRound, 
+      timestamp: now 
+    })
     
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)

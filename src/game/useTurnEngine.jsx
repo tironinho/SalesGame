@@ -1208,6 +1208,8 @@ export function useTurnEngine({
             const finalTurnIdx = turnIdx
             if (finalModalLocks === 0 && !finalOpening && finalTurnIdx === turnIdx) {
               console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening)
+              // ✅ CORREÇÃO: Atualiza turnIdx primeiro, depois faz broadcast
+              // O broadcastState atualiza lastLocalStateRef com o novo turnIdx, protegendo contra estados remotos antigos
               setTurnIdx(turnData.nextTurnIdx)
               broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
               pendingTurnDataRef.current = null // Limpa os dados após usar
