@@ -1,10 +1,19 @@
 // src/components/DebugPanel.jsx
 import React, { useState, useEffect, useRef } from 'react'
-import { debugMode, getDebugStats, exportDebugReport } from '../game/debugMode.js'
+import { 
+  debugMode, 
+  getDebugStats, 
+  exportDebugReport,
+  exportFullDebugReport,
+  getLogStats,
+  clearLogs as clearLogCapture,
+  logCapture
+} from '../game/debugMode.js'
 
 export default function DebugPanel({ players, turnIdx, round, gameOver, winner }) {
   const [isVisible, setIsVisible] = useState(false)
   const [stats, setStats] = useState({ total: 0, errors: 0, warnings: 0, errorRate: 0, warningRate: 0 })
+  const [logStats, setLogStats] = useState({ total: 0, byLevel: {}, enabled: false })
   const [isDragging, setIsDragging] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
@@ -13,6 +22,7 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
   useEffect(() => {
     const updateStats = () => {
       setStats(getDebugStats())
+      setLogStats(getLogStats())
     }
 
     updateStats()
@@ -34,6 +44,38 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
     a.download = `debug-report-${new Date().toISOString().slice(0, 19)}.json`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleExportFullReport = () => {
+    const fullReport = exportFullDebugReport()
+    
+    // Exporta como arquivo de texto (mais fácil de compartilhar)
+    const textBlob = new Blob([fullReport.text], { type: 'text/plain;charset=utf-8' })
+    const textUrl = URL.createObjectURL(textBlob)
+    const textA = document.createElement('a')
+    textA.href = textUrl
+    textA.download = `debug-logs-completo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+    textA.click()
+    URL.revokeObjectURL(textUrl)
+    
+    // Também exporta como JSON (para análise programática)
+    const jsonBlob = new Blob([JSON.stringify(fullReport, null, 2)], { type: 'application/json' })
+    const jsonUrl = URL.createObjectURL(jsonBlob)
+    const jsonA = document.createElement('a')
+    jsonA.href = jsonUrl
+    jsonA.download = `debug-logs-completo-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`
+    jsonA.click()
+    URL.revokeObjectURL(jsonUrl)
+    
+    console.log('[DebugPanel] ✅ Relatório completo exportado (texto + JSON)')
+  }
+
+  const handleClearAll = () => {
+    debugMode.clearHistory()
+    clearLogCapture()
+    setStats(getDebugStats())
+    setLogStats(getLogStats())
+    console.log('[DebugPanel] 🗑️ Todos os logs foram limpos')
   }
 
   const handleMouseDown = (e) => {
@@ -134,7 +176,7 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
 
       {/* Estatísticas */}
       <div style={{ marginBottom: '12px' }}>
-        <h4 style={{ margin: '0 0 8px 0', color: '#FFC107' }}>📊 Estatísticas</h4>
+        <h4 style={{ margin: '0 0 8px 0', color: '#FFC107' }}>📊 Estatísticas de Validação</h4>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
           <div>Total: {stats.total}</div>
           <div style={{ color: stats.errors > 0 ? '#ff4444' : '#4CAF50' }}>
@@ -144,6 +186,25 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
             Avisos: {stats.warnings}
           </div>
           <div>Taxa Erro: {stats.errorRate.toFixed(1)}%</div>
+        </div>
+      </div>
+
+      {/* Estatísticas de Logs */}
+      <div style={{ marginBottom: '12px' }}>
+        <h4 style={{ margin: '0 0 8px 0', color: '#FFC107' }}>📝 Estatísticas de Logs</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          <div>Total: {logStats.total}</div>
+          <div style={{ color: logStats.enabled ? '#4CAF50' : '#ff4444' }}>
+            Status: {logStats.enabled ? '✅ Ativo' : '❌ Inativo'}
+          </div>
+          {logStats.byLevel && (
+            <>
+              <div>Logs: {logStats.byLevel.log || 0}</div>
+              <div style={{ color: '#FFC107' }}>Warns: {logStats.byLevel.warn || 0}</div>
+              <div style={{ color: '#ff4444' }}>Errors: {logStats.byLevel.error || 0}</div>
+              <div>Debug: {logStats.byLevel.debug || 0}</div>
+            </>
+          )}
         </div>
       </div>
 
@@ -187,7 +248,7 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
       {/* Ações */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <button
-          onClick={handleExportReport}
+          onClick={handleExportFullReport}
           style={{
             background: '#2196F3',
             color: '#fff',
@@ -195,13 +256,30 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
             borderRadius: '4px',
             padding: '6px 12px',
             cursor: 'pointer',
-            fontSize: '10px'
+            fontSize: '10px',
+            fontWeight: 'bold'
           }}
+          title="Exporta relatório completo com todos os logs (texto + JSON)"
         >
-          📥 Exportar
+          📥 Exportar Logs Completos
         </button>
         <button
-          onClick={() => debugMode.clearHistory()}
+          onClick={handleExportReport}
+          style={{
+            background: '#4CAF50',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '6px 12px',
+            cursor: 'pointer',
+            fontSize: '10px'
+          }}
+          title="Exporta apenas relatório de validação (JSON)"
+        >
+          📊 Exportar Validação
+        </button>
+        <button
+          onClick={handleClearAll}
           style={{
             background: '#FF9800',
             color: '#fff',
@@ -211,8 +289,9 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
             cursor: 'pointer',
             fontSize: '10px'
           }}
+          title="Limpa todos os logs e histórico de validação"
         >
-          🗑️ Limpar
+          🗑️ Limpar Tudo
         </button>
       </div>
 
@@ -220,8 +299,10 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
       <div style={{ marginTop: '12px', padding: '8px', background: '#333', borderRadius: '4px', fontSize: '10px' }}>
         <div style={{ color: '#FFC107', marginBottom: '4px' }}>💡 Instruções:</div>
         <div>• Clique em "🐛 Debug" para ativar/desativar</div>
-        <div>• Erros aparecem no console</div>
-        <div>• Exporte relatório para análise</div>
+        <div>• Logs são capturados automaticamente quando debug está ativo</div>
+        <div>• "📥 Exportar Logs Completos" gera arquivo .txt e .json</div>
+        <div>• Compartilhe o arquivo .txt para análise de problemas</div>
+        <div>• Todos os console.log com prefixos [DEBUG], [NET], [App], etc. são capturados</div>
       </div>
     </div>
   )

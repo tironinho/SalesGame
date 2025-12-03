@@ -43,6 +43,15 @@ export function useGameSync({
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound) {
     console.log('[SG][BC] SYNC -> turnIdx=%d round=%d', nextTurnIdx, nextRound)
+    // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
+    // Isso protege contra estados remotos que chegam logo após a mudança local
+    const now = Date.now()
+    lastLocalStateRef.current = { 
+      players: nextPlayers, 
+      turnIdx: nextTurnIdx, 
+      round: nextRound, 
+      timestamp: now
+    }
     // 1) rede (outros computadores)
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
     // 2) entre abas (mesma máquina)
@@ -127,10 +136,22 @@ export function useGameSync({
           
           // Sincroniza turnIdx apenas se não houver mudança local muito recente
           if (d.turnIdx !== turnIdx) {
-            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
               if (localTurnIdxChanged) {
-                console.log('[SG][BC] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)')
+                // ✅ CORREÇÃO: Se o turnIdx remoto está tentando reverter para um valor anterior, ignora
+                const isReverting = d.turnIdx === lastLocal.turnIdx
+                if (isReverting) {
+                  console.log('[SG][BC] ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente', {
+                    lastLocalTurnIdx: lastLocal.turnIdx,
+                    currentLocalTurnIdx: turnIdx,
+                    remoteTurnIdx: d.turnIdx,
+                    timeSinceLocalChange: now - lastLocal.timestamp,
+                    isReverting: true
+                  })
+                } else {
+                  console.log('[SG][BC] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)')
+                }
               } else {
                 setTurnIdx(d.turnIdx)
               }
@@ -141,10 +162,10 @@ export function useGameSync({
           
           // Sincroniza round apenas se não houver mudança local muito recente
           if (d.round !== round) {
-            if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
-                console.log('[SG][BC] Ignorando round remoto - round local mudou recentemente (< 3s)')
+                console.log('[SG][BC] Ignorando round remoto - round local mudou recentemente (< 5s)')
               } else {
                 setRound(d.round)
               }
@@ -176,10 +197,22 @@ export function useGameSync({
     if (nt !== null && nt !== turnIdx) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+      if (lastLocal && (now - lastLocal.timestamp) < 5000) {
         const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
         if (localTurnIdxChanged) {
-          console.log('[SG][NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 3s)')
+          // ✅ CORREÇÃO: Se o turnIdx remoto está tentando reverter para um valor anterior, ignora
+          const isReverting = nt === lastLocal.turnIdx
+          if (isReverting) {
+            console.log('[SG][NET] ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente', {
+              lastLocalTurnIdx: lastLocal.turnIdx,
+              currentLocalTurnIdx: turnIdx,
+              remoteTurnIdx: nt,
+              timeSinceLocalChange: now - lastLocal.timestamp,
+              isReverting: true
+            })
+          } else {
+            console.log('[SG][NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)')
+          }
         } else {
           setTurnIdx(nt)
           changed = true
@@ -193,10 +226,10 @@ export function useGameSync({
     if (nr !== null && nr !== round) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      if (lastLocal && (now - lastLocal.timestamp) < 3000) {
+      if (lastLocal && (now - lastLocal.timestamp) < 5000) {
         const localRoundChanged = lastLocal.round !== round
         if (localRoundChanged) {
-          console.log('[SG][NET] Ignorando round remoto - round local mudou recentemente (< 3s)')
+          console.log('[SG][NET] Ignorando round remoto - round local mudou recentemente (< 5s)')
         } else {
           setRound(nr)
           changed = true

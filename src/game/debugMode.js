@@ -1,6 +1,7 @@
 // src/game/debugMode.js
 import { validateGame, validateAction } from './gameValidator.js'
 import { computeFaturamentoFor, computeDespesasFor, capacityAndAttendance } from './gameMath.js'
+import { logCapture } from './logCapture.js'
 
 /**
  * Modo debug para validação em tempo real das regras de negócio
@@ -18,6 +19,14 @@ class DebugMode {
    */
   toggle() {
     this.enabled = !this.enabled
+    
+    // Ativa/desativa captura de logs junto com o debug
+    if (this.enabled) {
+      logCapture.enable()
+    } else {
+      // Não desativa logCapture automaticamente - pode ser usado independentemente
+    }
+    
     console.log(`[DEBUG MODE] ${this.enabled ? 'ATIVADO' : 'DESATIVADO'}`)
     return this.enabled
   }
@@ -273,6 +282,55 @@ class DebugMode {
     console.log('[DEBUG MODE] 📊 Relatório de validação:', report)
     return report
   }
+
+  /**
+   * Exporta relatório completo (validação + logs)
+   */
+  exportFullReport() {
+    const validationReport = this.exportReport()
+    const logReport = logCapture.exportFull()
+    
+    return {
+      timestamp: new Date().toISOString(),
+      validation: validationReport,
+      logs: logReport,
+      // Versão texto completa para compartilhar
+      text: this.exportFullReportAsText(validationReport, logReport)
+    }
+  }
+
+  /**
+   * Exporta relatório completo em formato texto
+   */
+  exportFullReportAsText(validationReport, logReport) {
+    const lines = [
+      '='.repeat(80),
+      'RELATÓRIO COMPLETO DE DEBUG - Sales Game',
+      '='.repeat(80),
+      `Data/Hora: ${new Date().toISOString()}`,
+      '',
+      '--- VALIDAÇÕES ---',
+      `Total de validações: ${validationReport.stats.total}`,
+      `Erros: ${validationReport.stats.errors}`,
+      `Avisos: ${validationReport.stats.warnings}`,
+      `Taxa de erro: ${validationReport.stats.errorRate.toFixed(2)}%`,
+      '',
+      '--- LOGS CAPTURADOS ---',
+      `Total de logs: ${logReport.stats.total}`,
+      `Logs por nível: ${JSON.stringify(logReport.stats.byLevel, null, 2)}`,
+      '',
+      '--- HISTÓRICO DE VALIDAÇÕES ---',
+      ...validationReport.history.map(h => {
+        return `[${new Date(h.timestamp).toISOString()}] ${h.type} - ${h.context || ''} - ${JSON.stringify(h.result, null, 2)}`
+      }),
+      '',
+      '--- LOGS DETALHADOS ---',
+      logReport.text,
+      '='.repeat(80)
+    ]
+    
+    return lines.join('\n')
+  }
 }
 
 // Instância global do modo debug
@@ -290,3 +348,17 @@ export const validateCalculations = (player, context) =>
   debugMode.validateCalculations(player, context)
 export const getDebugStats = () => debugMode.getStats()
 export const exportDebugReport = () => debugMode.exportReport()
+export const exportFullDebugReport = () => debugMode.exportFullReport()
+
+// Re-exporta funções de logCapture para conveniência
+export { 
+  logCapture,
+  enableLogCapture,
+  disableLogCapture,
+  clearLogs,
+  getLogs,
+  getLogStats,
+  exportLogsAsText,
+  exportLogsAsJSON,
+  exportLogsFull
+} from './logCapture.js'
