@@ -156,10 +156,12 @@ export function useTurnEngine({
       return res
     } finally {
       openingModalRef.current = false
+      // ✅ CORREÇÃO: Captura o valor ANTES de decrementar para o log
+      const currentLockCount = modalLocksRef.current
       // ✅ CORREÇÃO: Atualiza o ref ANTES de fechar a modal
-      const newLockCountAfter = Math.max(0, modalLocksRef.current - 1)
+      const newLockCountAfter = Math.max(0, currentLockCount - 1)
       modalLocksRef.current = newLockCountAfter
-      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', modalLocksRef.current, '->', newLockCountAfter)
+      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', currentLockCount, '->', newLockCountAfter)
       setModalLocks(newLockCountAfter)
     }
   }

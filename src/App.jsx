@@ -254,11 +254,17 @@ export default function App() {
                 console.log('[App] SYNC - Detectadas compras locais, preservando estado local completo', {
                   localClients, remoteClients, localVendedores, remoteVendedores
                 })
+                // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
+                // Verifica se a posição local é maior que a remota (indica movimento recente)
+                const localPos = Number(localPlayer.pos || 0)
+                const remotePos = Number(syncedPlayer.pos || 0)
+                const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
+                
                 // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
                 return {
                   ...localPlayer, // Preserva estado local completo
-                  // Aceita propriedades críticas do estado sincronizado
-                  pos: syncedPlayer.pos,
+                  // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
+                  pos: shouldPreservePos ? localPos : syncedPlayer.pos,
                   bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
                   // Preserva dados de progresso local
                   az: localPlayer.az || syncedPlayer.az || 0,
@@ -270,8 +276,15 @@ export default function App() {
               }
               
               // Se não há compras locais, faz merge preservando o maior valor de recursos
+              // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
+              const localPos = Number(localPlayer.pos || 0)
+              const remotePos = Number(syncedPlayer.pos || 0)
+              const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
+              
               return {
-                ...syncedPlayer, // Aceita estado sincronizado (pos, bankrupt, etc)
+                ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
+                // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
+                pos: shouldPreservePos ? localPos : syncedPlayer.pos,
                 // Preserva o maior valor de recursos
                 cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
                 clients: Math.max(localClients, remoteClients),
@@ -548,11 +561,16 @@ export default function App() {
             console.log('[NET] Detectadas compras locais, preservando estado local completo', {
               localClients, remoteClients, localVendedores, remoteVendedores
             })
+            // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
+            const localPos = Number(localPlayer.pos || 0)
+            const remotePos = Number(syncedPlayer.pos || 0)
+            const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
+            
             // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
             return {
               ...localPlayer, // Preserva estado local completo
-              // Aceita propriedades críticas do estado sincronizado
-              pos: syncedPlayer.pos,
+              // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
+              pos: shouldPreservePos ? localPos : syncedPlayer.pos,
               bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
               // Preserva dados de progresso local
               az: localPlayer.az || syncedPlayer.az || 0,
@@ -564,8 +582,15 @@ export default function App() {
           }
           
           // Se não há compras locais, faz merge preservando o maior valor de recursos
+          // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
+          const localPos = Number(localPlayer.pos || 0)
+          const remotePos = Number(syncedPlayer.pos || 0)
+          const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
+          
           return {
-            ...syncedPlayer, // Aceita estado sincronizado (pos, bankrupt, etc)
+            ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
+            // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
+            pos: shouldPreservePos ? localPos : syncedPlayer.pos,
             // Preserva o maior valor de recursos
             cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
             clients: Math.max(localClients, remoteClients),
