@@ -140,11 +140,15 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Marca que uma modal está sendo aberta ANTES de qualquer coisa
     openingModalRef.current = true
     
-    // ✅ CORREÇÃO: Atualiza o ref ANTES de abrir a modal para evitar race condition
-    const newLockCount = modalLocksRef.current + 1
-    modalLocksRef.current = newLockCount
-    console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', modalLocksRef.current, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
-    setModalLocks(newLockCount)
+    // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
+    let currentLockCount = 0
+    setModalLocks(prev => {
+      currentLockCount = prev
+      const newLockCount = prev + 1
+      modalLocksRef.current = newLockCount
+      console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
+      return newLockCount
+    })
     
     try {
       pushModal(element)
@@ -156,13 +160,13 @@ export function useTurnEngine({
       return res
     } finally {
       openingModalRef.current = false
-      // ✅ CORREÇÃO: Captura o valor ANTES de decrementar para o log
-      const currentLockCount = modalLocksRef.current
-      // ✅ CORREÇÃO: Atualiza o ref ANTES de fechar a modal
-      const newLockCountAfter = Math.max(0, currentLockCount - 1)
-      modalLocksRef.current = newLockCountAfter
-      console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', currentLockCount, '->', newLockCountAfter)
-      setModalLocks(newLockCountAfter)
+      // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
+      setModalLocks(prev => {
+        const newLockCountAfter = Math.max(0, prev - 1)
+        modalLocksRef.current = newLockCountAfter
+        console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
+        return newLockCountAfter
+      })
     }
   }
 
