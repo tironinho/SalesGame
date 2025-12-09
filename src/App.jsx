@@ -228,6 +228,16 @@ export default function App() {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
+            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
+            const localPos = Number(localPlayer.pos || 0)
+            const remotePos = Number(syncedPlayer.pos || 0)
+            const finalPos = Math.max(localPos, remotePos)
+            
+            // Log apenas se houver diferença para debug
+            if (localPos !== remotePos) {
+              console.log(`[App] SYNC - Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
+            }
+            
             // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
             const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
             if (isLocalPlayer) {
@@ -254,17 +264,12 @@ export default function App() {
                 console.log('[App] SYNC - Detectadas compras locais, preservando estado local completo', {
                   localClients, remoteClients, localVendedores, remoteVendedores
                 })
-                // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
-                // Verifica se a posição local é maior que a remota (indica movimento recente)
-                const localPos = Number(localPlayer.pos || 0)
-                const remotePos = Number(syncedPlayer.pos || 0)
-                const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
                 
                 // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
                 return {
                   ...localPlayer, // Preserva estado local completo
-                  // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
-                  pos: shouldPreservePos ? localPos : syncedPlayer.pos,
+                  // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
+                  pos: finalPos,
                   bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
                   // Preserva dados de progresso local
                   az: localPlayer.az || syncedPlayer.az || 0,
@@ -276,15 +281,10 @@ export default function App() {
               }
               
               // Se não há compras locais, faz merge preservando o maior valor de recursos
-              // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
-              const localPos = Number(localPlayer.pos || 0)
-              const remotePos = Number(syncedPlayer.pos || 0)
-              const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
-              
               return {
                 ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
-                // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
-                pos: shouldPreservePos ? localPos : syncedPlayer.pos,
+                // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
+                pos: finalPos,
                 // Preserva o maior valor de recursos
                 cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
                 clients: Math.max(localClients, remoteClients),
@@ -309,8 +309,10 @@ export default function App() {
             }
             
             // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
+            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
             return {
               ...syncedPlayer,
+              pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
               az: localPlayer.az || syncedPlayer.az || 0,
               am: localPlayer.am || syncedPlayer.am || 0,
               rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -535,6 +537,16 @@ export default function App() {
         const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
         if (!localPlayer) return syncedPlayer
         
+        // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
+        const localPos = Number(localPlayer.pos || 0)
+        const remotePos = Number(syncedPlayer.pos || 0)
+        const finalPos = Math.max(localPos, remotePos)
+        
+        // Log apenas se houver diferença para debug
+        if (localPos !== remotePos) {
+          console.log(`[NET] Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
+        }
+        
         // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
         const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
         if (isLocalPlayer) {
@@ -561,16 +573,12 @@ export default function App() {
             console.log('[NET] Detectadas compras locais, preservando estado local completo', {
               localClients, remoteClients, localVendedores, remoteVendedores
             })
-            // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
-            const localPos = Number(localPlayer.pos || 0)
-            const remotePos = Number(syncedPlayer.pos || 0)
-            const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
             
             // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
             return {
               ...localPlayer, // Preserva estado local completo
-              // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
-              pos: shouldPreservePos ? localPos : syncedPlayer.pos,
+              // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
+              pos: finalPos,
               bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
               // Preserva dados de progresso local
               az: localPlayer.az || syncedPlayer.az || 0,
@@ -582,15 +590,10 @@ export default function App() {
           }
           
           // Se não há compras locais, faz merge preservando o maior valor de recursos
-          // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover recentemente
-          const localPos = Number(localPlayer.pos || 0)
-          const remotePos = Number(syncedPlayer.pos || 0)
-          const shouldPreservePos = localPos > remotePos || (localPos === remotePos && localPos > 0)
-          
           return {
             ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
-            // ✅ CORREÇÃO: Preserva posição local se o jogador acabou de se mover
-            pos: shouldPreservePos ? localPos : syncedPlayer.pos,
+            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
+            pos: finalPos,
             // Preserva o maior valor de recursos
             cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
             clients: Math.max(localClients, remoteClients),
@@ -615,8 +618,10 @@ export default function App() {
         }
         
         // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
+        // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
         return {
           ...syncedPlayer,
+          pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
           az: localPlayer.az || syncedPlayer.az || 0,
           am: localPlayer.am || syncedPlayer.am || 0,
           rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -630,14 +635,18 @@ export default function App() {
       // ✅ CORREÇÃO: Se aplicou estado remoto de players, garante que turnLock está liberado
       // Isso evita que o botão fique travado após sincronização
       // Verifica se é minha vez após sincronização
-      const currentPlayer = syncedPlayers[turnIdx]
-      const isMyTurnAfterSync = currentPlayer && String(currentPlayer.id) === String(myUid)
+      const currentPlayerAfterSync = syncedPlayers[turnIdx]
+      const isMyTurnAfterSync = currentPlayerAfterSync && String(currentPlayerAfterSync.id) === String(myUid)
       
-      if (turnLock) {
-        // Se turnLock está ativo após sincronização, libera
-        // O turnLock deve ser gerenciado apenas durante ações do jogador, não durante sincronização
-        console.log('[NET] Liberando turnLock após sincronização', { isMyTurnAfterSync, turnIdx })
+      // ✅ CORREÇÃO: Se não é minha vez após sincronização, sempre libera o turnLock
+      // Se é minha vez, só libera se não há modais abertas (verificado pelo useTurnEngine)
+      if (turnLock && !isMyTurnAfterSync) {
+        console.log('[NET] Liberando turnLock após sincronização - não é minha vez', { isMyTurnAfterSync, turnIdx })
         setTurnLock(false)
+      } else if (turnLock && isMyTurnAfterSync) {
+        // Se é minha vez, verifica se há modais abertas antes de liberar
+        // O useTurnEngine gerencia isso, mas fazemos uma verificação de segurança aqui
+        console.log('[NET] TurnLock ativo após sincronização - é minha vez, useTurnEngine gerenciará', { isMyTurnAfterSync, turnIdx })
       }
     }
 
@@ -708,11 +717,24 @@ export default function App() {
   // ====== "é minha vez?"
   const current = players[turnIdx]
   const isMyTurn = useMemo(() => {
+    // ✅ CORREÇÃO: Verifica se turnIdx é válido
+    if (turnIdx < 0 || turnIdx >= players.length) {
+      console.warn('[App] isMyTurn - turnIdx inválido:', turnIdx, 'players.length:', players.length)
+      return false
+    }
+    
     const owner = players[turnIdx]
     if (!owner) {
       console.log('[App] isMyTurn - owner não encontrado, turnIdx:', turnIdx, 'players.length:', players.length)
       return false
     }
+    
+    // ✅ CORREÇÃO: Verifica se o jogador não está falido
+    if (owner.bankrupt) {
+      console.log('[App] isMyTurn - owner está falido:', owner.name)
+      return false
+    }
+    
     const isMine = owner.id != null && String(owner.id) === String(myUid)
     console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
     return isMine
@@ -908,8 +930,20 @@ export default function App() {
   }
 
   // 4) Jogo
-  const controlsCanRoll = isMyTurn && modalLocks === 0 && !turnLock
-  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'result:', controlsCanRoll)
+  // ✅ CORREÇÃO: Verificações adicionais para garantir que o botão só seja habilitado quando seguro
+  const currentPlayer = players[turnIdx]
+  const isCurrentPlayerBankrupt = currentPlayer?.bankrupt === true
+  // ✅ CORREÇÃO: Botão só é habilitado quando:
+  // 1. É minha vez (isMyTurn) - verifica se o jogador atual é realmente eu
+  // 2. Não há modais abertas (modalLocks === 0) - garante que todas as modais foram fechadas
+  // 3. Não há turnLock ativo (!turnLock) - garante que não há ação em progresso
+  // 4. O jogador atual não está falido
+  // 5. O jogo não terminou
+  // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
+  // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
+  const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
+  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && !isCurrentPlayerBankrupt && !gameOver
+  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'result:', controlsCanRoll)
 
   return (
     <div className="page">

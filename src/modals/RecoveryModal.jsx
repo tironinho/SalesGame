@@ -130,20 +130,31 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
   // --------- conjunto de posses reais (D só se nada detectado) ---------
   const ownedMix = useMemo(() => {
     const p = snapshot.raw || {}
-    const set = setFromOwned(p.mixOwned ?? p.mixLevels ?? p.mixLevel)
-    if (mixLetter) set.add(mixLetter)
+    const mixOwnedObj = p.mixOwned ?? p.mix ?? {}
+    // ✅ CORREÇÃO: Só adiciona níveis que estão explicitamente true (não false ou undefined)
+    const set = new Set()
+    if (mixOwnedObj.A === true) set.add('A')
+    if (mixOwnedObj.B === true) set.add('B')
+    if (mixOwnedObj.C === true) set.add('C')
+    if (mixOwnedObj.D === true) set.add('D')
     // Se não detectamos nada, considera o D como base inicial
     if (set.size === 0) set.add('D')
     return set
-  }, [snapshot.raw, mixLetter])
+  }, [snapshot.raw])
 
   const ownedErp = useMemo(() => {
     const p = snapshot.raw || {}
-    const set = setFromOwned(p.erpOwned ?? p.erpLevels ?? p.erpLevel)
-    if (erpLetter) set.add(erpLetter)
+    const erpOwnedObj = p.erpOwned ?? p.erp ?? {}
+    // ✅ CORREÇÃO: Só adiciona níveis que estão explicitamente true (não false ou undefined)
+    const set = new Set()
+    if (erpOwnedObj.A === true) set.add('A')
+    if (erpOwnedObj.B === true) set.add('B')
+    if (erpOwnedObj.C === true) set.add('C')
+    if (erpOwnedObj.D === true) set.add('D')
+    // Se não detectamos nada, considera o D como base inicial
     if (set.size === 0) set.add('D')
     return set
-  }, [snapshot.raw, erpLetter])
+  }, [snapshot.raw])
 
   useEffect(() => {
     console.group('[RecoveryModal] owned detect')

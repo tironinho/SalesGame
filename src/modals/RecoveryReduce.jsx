@@ -81,7 +81,8 @@ export default function RecoveryReduce(props) {
   const toggle = (card) => {
     // ✅ CORREÇÃO: Não permite reduzir nível D (básico)
     if (card.level === 'D') return
-    if (!card.owned) return
+    // ✅ CORREÇÃO: Verifica se o nível está realmente disponível (não zerado)
+    if (!card.owned || card.owned === false) return
     if (soldKeys.has(card.key)) return
     // ✅ CORREÇÃO: Verifica se o nível já foi reduzido anteriormente
     if (card.alreadyReduced) return
@@ -101,9 +102,10 @@ export default function RecoveryReduce(props) {
 
   const renderCard = (card) => {
     const isSel = isSelected(card)
-    // ✅ CORREÇÃO: Desabilita nível D e níveis já reduzidos
+    // ✅ CORREÇÃO: Desabilita nível D, níveis zerados (não owned) e níveis já reduzidos
     const isLevelD = card.level === 'D'
-    const disabled = isLevelD || !card.owned || soldKeys.has(card.key) || card.alreadyReduced || confirming
+    const isOwned = card.owned === true // ✅ CORREÇÃO: Verifica se está explicitamente true (não false ou undefined)
+    const disabled = isLevelD || !isOwned || soldKeys.has(card.key) || card.alreadyReduced || confirming
     const pal = GROUP_PALETTE[card.group] || GROUP_PALETTE.MIX
 
     const cardStyle = {
@@ -137,11 +139,13 @@ export default function RecoveryReduce(props) {
         title={
           isLevelD
             ? 'Nível D é o básico e não pode ser reduzido.'
+            : !isOwned
+            ? 'Este nível não está disponível. Compre o nível novamente para poder reduzir.'
             : soldKeys.has(card.key)
             ? 'Nível já reduzido nesta sessão.'
             : card.alreadyReduced
-            ? 'Este nível já foi reduzido anteriormente.'
-            : (card.owned ? '' : 'Só é possível selecionar níveis adquiridos.')
+            ? 'Este nível já foi reduzido anteriormente. Compre o nível novamente para poder reduzir.'
+            : ''
         }
         onMouseDown={(e) => !disabled && (e.currentTarget.style.transform = 'translateY(1px)')}
         onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
@@ -150,11 +154,13 @@ export default function RecoveryReduce(props) {
         <span style={pillStyle}>
           {isLevelD 
             ? 'básico' 
+            : !isOwned
+            ? 'zerado'
             : soldKeys.has(card.key) 
             ? 'vendido' 
             : card.alreadyReduced
             ? 'já reduzido'
-            : (card.owned ? 'adquirido' : 'não adquirido')}
+            : 'adquirido'}
         </span>
 
         <div style={labelStyle}>{card.label}</div>

@@ -72,6 +72,16 @@ export function useTurnEngine({
   
   // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
   const openingModalRef = React.useRef(false)
+  
+  // ✅ CORREÇÃO: Ref para rastrear se há uma mudança de turno em progresso
+  const turnChangeInProgressRef = React.useRef(false)
+  
+  // ✅ CORREÇÃO: Ref para timeout de segurança do turnLock
+  const turnLockTimeoutRef = React.useRef(null)
+  
+  // ✅ CORREÇÃO: Ref para rastrear quando a última modal foi fechada
+  // Isso garante que há um delay antes de mudar o turno, dando tempo para todas as modais serem fechadas
+  const lastModalClosedTimeRef = React.useRef(null)
 
   // 🔄 Sincronização de modalLocks entre jogadores
   React.useEffect(() => {
@@ -83,9 +93,56 @@ export function useTurnEngine({
       if (modalLocks > 0) {
         console.log('[DEBUG] modalLocks sync - resetando modalLocks para 0 (não é minha vez)')
         setModalLocks(0)
+        modalLocksRef.current = 0
+        openingModalRef.current = false
       }
     }
   }, [isMyTurn, modalLocks])
+  
+  // ✅ CORREÇÃO: Timeout de segurança para turnLock (evita travamento infinito)
+  React.useEffect(() => {
+    if (turnLock) {
+      // Limpa timeout anterior se existir
+      if (turnLockTimeoutRef.current) {
+        clearTimeout(turnLockTimeoutRef.current)
+      }
+      
+      // Define timeout de segurança (30 segundos)
+      turnLockTimeoutRef.current = setTimeout(() => {
+        const currentLockOwner = lockOwnerRef.current
+        const isLockOwner = String(currentLockOwner || '') === String(myUid)
+        const currentModalLocks = modalLocksRef.current
+        const currentOpening = openingModalRef.current
+        
+        console.warn('[DEBUG] ⚠️ TIMEOUT DE SEGURANÇA - turnLock ativo há mais de 30s', {
+          isLockOwner,
+          currentModalLocks,
+          currentOpening,
+          lockOwner: currentLockOwner
+        })
+        
+        // Se sou o dono do lock e não há modais, força liberação
+        if (isLockOwner && currentModalLocks === 0 && !currentOpening) {
+          console.warn('[DEBUG] 🔓 FORÇANDO LIBERAÇÃO DO TURNLOCK (timeout de segurança)')
+          setTurnLockBroadcast(false)
+          turnChangeInProgressRef.current = false
+        }
+      }, 30000) // 30 segundos
+    } else {
+      // Limpa timeout quando turnLock é liberado
+      if (turnLockTimeoutRef.current) {
+        clearTimeout(turnLockTimeoutRef.current)
+        turnLockTimeoutRef.current = null
+      }
+    }
+    
+    return () => {
+      if (turnLockTimeoutRef.current) {
+        clearTimeout(turnLockTimeoutRef.current)
+        turnLockTimeoutRef.current = null
+      }
+    }
+  }, [turnLock, myUid, setTurnLockBroadcast])
 
   // 🔒 dono do cadeado de turno (garante que só o iniciador destrava)
   // ✅ CORREÇÃO: Declarado ANTES do useEffect que o usa
@@ -146,10 +203,12 @@ export function useTurnEngine({
       currentLockCount = prev
       const newLockCount = prev + 1
       modalLocksRef.current = newLockCount
+      lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
       console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
       return newLockCount
     })
     
+    let modalResolved = false
     try {
       pushModal(element)
       // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
@@ -157,16 +216,46 @@ export function useTurnEngine({
       openingModalRef.current = false
       console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
       const res = await awaitTop()
+      modalResolved = true
+      // ✅ CORREÇÃO: Pequeno delay após resolver para garantir que a modal foi completamente fechada
+      await new Promise(resolve => setTimeout(resolve, 50))
       return res
-    } finally {
+    } catch (error) {
+      console.error('[DEBUG] ❌ ERRO ao abrir/aguardar modal:', error)
+      modalResolved = true
+      // ✅ CORREÇÃO: Em caso de erro, garante que o contador seja decrementado
       openingModalRef.current = false
-      // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
       setModalLocks(prev => {
         const newLockCountAfter = Math.max(0, prev - 1)
         modalLocksRef.current = newLockCountAfter
-        console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
+        // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
+        if (newLockCountAfter === 0) {
+          lastModalClosedTimeRef.current = Date.now()
+        }
+        console.log('[DEBUG] openModalAndWait - ERRO, decrementando modalLocks:', prev, '->', newLockCountAfter)
         return newLockCountAfter
       })
+      return null
+    } finally {
+      // ✅ CORREÇÃO: Garante que openingModalRef seja sempre resetado
+      if (!modalResolved) {
+        openingModalRef.current = false
+      }
+      // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
+      // Só decrementa se a modal foi realmente resolvida (não decrementa duas vezes)
+      if (modalResolved) {
+        setModalLocks(prev => {
+          const newLockCountAfter = Math.max(0, prev - 1)
+          modalLocksRef.current = newLockCountAfter
+          // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
+          if (newLockCountAfter === 0) {
+            lastModalClosedTimeRef.current = Date.now()
+            console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
+          }
+          console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
+          return newLockCountAfter
+        })
+      }
     }
   }
 
@@ -218,7 +307,29 @@ export function useTurnEngine({
     console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
     if (gameOver || !players.length) return
 
+    // ✅ CORREÇÃO: Verifica se já há uma mudança de turno em progresso
+    if (turnChangeInProgressRef.current) {
+      console.warn('[DEBUG] ⚠️ advanceAndMaybeLap - mudança de turno já em progresso, ignorando')
+      return
+    }
+
+    // ✅ CORREÇÃO: Verifica se há modais abertas antes de iniciar
+    if (modalLocksRef.current > 0 || openingModalRef.current) {
+      console.warn('[DEBUG] ⚠️ advanceAndMaybeLap - há modais abertas, aguardando...', {
+        modalLocks: modalLocksRef.current,
+        opening: openingModalRef.current
+      })
+      // Aguarda um pouco e tenta novamente
+      setTimeout(() => {
+        if (modalLocksRef.current === 0 && !openingModalRef.current) {
+          advanceAndMaybeLap(steps, deltaCash, note)
+        }
+      }, 200)
+      return
+    }
+
     // Bloqueia os próximos jogadores até esta ação (e todas as modais) terminar
+    turnChangeInProgressRef.current = true
     setTurnLockBroadcast(true)
     setLockOwner(String(myUid))
 
@@ -339,11 +450,18 @@ export function useTurnEngine({
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[curIdx]?.cash)
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
+            // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
+            // Não usa dueRound baseado em rodada, mas sim uma flag para indicar que deve ser cobrado na próxima passagem
             updatedPlayers = currentPlayers.map((p, i) =>
               i !== curIdx ? p : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: { amount: amt, dueRound: round + 1, charged: false },
+                loanPending: { 
+                  amount: amt, 
+                  charged: false,
+                  // ✅ CORREÇÃO: Marca que o empréstimo deve ser cobrado na próxima passagem pela casa de despesas
+                  shouldChargeOnNextExpenses: true
+                },
                 pos: p.pos // ✅ CORREÇÃO: Preserva a posição
               }
             )
@@ -470,23 +588,42 @@ export function useTurnEngine({
       const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
       const aliveIndices = nextPlayers.map((p, i) => !p?.bankrupt ? i : -1).filter(i => i >= 0)
       
-      // Verifica se todos os jogadores vivos passaram pela casa 0
-      const allAliveDone = aliveIndices.length > 0 && aliveIndices.every(idx => nextFlags[idx] === true)
+      // ✅ CORREÇÃO: Verifica se todos os jogadores vivos passaram pela casa 0
+      // IMPORTANTE: Verifica se há pelo menos um jogador vivo e se todos eles têm flag = true
+      const allAliveDone = aliveIndices.length > 0 && aliveIndices.every(idx => {
+        const hasFlag = nextFlags[idx] === true
+        console.log('[DEBUG] 🔍 Verificando jogador:', nextPlayers[idx]?.name, 'flag:', hasFlag, 'índice:', idx)
+        return hasFlag
+      })
       
       console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', round)
       console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => `${nextPlayers[i]?.name}:${nextFlags[i]}`).join(', '))
+      console.log('[DEBUG] 🔍 Total de jogadores vivos:', aliveIndices.length)
       console.log('[DEBUG] 🔍 Todos passaram pela casa 0?', allAliveDone)
       
       if (allAliveDone) {
+        // ✅ CORREÇÃO: Incrementa a rodada quando TODOS os jogadores vivos passaram pela casa 0
         nextRound = round + 1
-        // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos
-        nextFlags = nextFlags.map((_, idx) => nextPlayers[idx]?.bankrupt ? nextFlags[idx] : false)
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Jogadores vivos:', alivePlayers.length)
+        // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
+        nextFlags = nextFlags.map((_, idx) => {
+          if (nextPlayers[idx]?.bankrupt) {
+            // Mantém a flag do jogador falido (não reseta)
+            return nextFlags[idx]
+          } else {
+            // Reseta a flag do jogador vivo
+            return false
+          }
+        })
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior:', round, 'Jogadores vivos:', alivePlayers.length)
         console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
+        appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
       } else {
-        console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0')
+        const missingPlayers = aliveIndices.filter(idx => !nextFlags[idx]).map(idx => nextPlayers[idx]?.name)
+        console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0:', missingPlayers.join(', '))
       }
     }
+    
+    // ✅ CORREÇÃO: Atualiza as flags ANTES de atualizar a rodada
     setRoundFlags(nextFlags)
 
     // >>> pular jogadores falidos ao decidir o próximo turno
@@ -496,21 +633,37 @@ export function useTurnEngine({
     if (note) appendLog(note)
 
     setPlayers(nextPlayers)
+    
     // ✅ CORREÇÃO: Atualiza a rodada imediatamente quando todos os jogadores passam pela casa 0
     // Isso garante que a rodada está correta antes de fazer broadcast
-    setRound(nextRound)
-    console.log('[DEBUG] 🔄 RODADA ATUALIZADA - Rodada atual:', round, 'Nova rodada:', nextRound)
+    // IMPORTANTE: Usa função de atualização para garantir que sempre pega o valor mais recente
+    if (nextRound > round) {
+      // ✅ CORREÇÃO: Só atualiza se nextRound foi realmente incrementado
+      setRound(prevRound => {
+        // ✅ CORREÇÃO: Garante que sempre use o maior valor (protege contra race conditions)
+        const finalRound = Math.max(nextRound, prevRound)
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
+        if (finalRound > prevRound) {
+          console.log('[DEBUG] ✅ Rodada incrementada com sucesso!')
+        }
+        return finalRound
+      })
+    } else {
+      console.log('[DEBUG] 🔄 Rodada NÃO incrementada - nextRound:', nextRound, 'rodada atual:', round)
+    }
     
     // ✅ CORREÇÃO: Armazena os dados do próximo turno para uso na função tick
     // IMPORTANTE: Não atualiza turnIdx ainda - isso será feito pelo tick quando todas as modais fecharem
     // IMPORTANTE: Usa nextRound calculado acima (pode ser diferente de round se todos passaram pela casa 0)
+    // ✅ CORREÇÃO: Garante que nextRound seja sempre >= round atual
+    const finalNextRound = Math.max(nextRound, round)
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
-      nextRound, // Usa o nextRound calculado (pode ser round + 1 se todos passaram pela casa 0)
+      nextRound: finalNextRound, // ✅ CORREÇÃO: Garante que sempre use o maior valor (round incrementado se aplicável)
       timestamp: Date.now() // Adiciona timestamp para rastrear quando foi criado
     }
-    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', nextRound)
+    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound)
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
@@ -556,9 +709,11 @@ export function useTurnEngine({
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const currentErpLevel = players[curIdx]?.erpLevel || null
+        const erpOwned = players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
         const res = await openModalAndWait(<ERPSystemsModal 
           currentCash={nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
+          erpOwned={erpOwned}
         />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.values?.compra || 0)
@@ -623,9 +778,11 @@ export function useTurnEngine({
 
           if (open === 'MIX') {
             const currentMixLevel = players[curIdx]?.mixProdutos || null
+            const mixOwned = players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
             const r2 = await openModalAndWait(<MixProductsModal 
               currentCash={nextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentMixLevel}
+              mixOwned={mixOwned}
             />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.compra || 0)
@@ -733,9 +890,11 @@ export function useTurnEngine({
 
           if (open === 'ERP') {
             const currentErpLevel = players[curIdx]?.erpLevel || null
+            const erpOwned = players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
             const r2 = await openModalAndWait(<ERPSystemsModal 
               currentCash={nextPlayers[curIdx]?.cash ?? myCash}
               currentLevel={currentErpLevel}
+              erpOwned={erpOwned}
             />)
             if (r2 && r2.action === 'BUY') {
               const price = Number(r2.values?.compra || 0)
@@ -993,9 +1152,11 @@ export function useTurnEngine({
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const currentMixLevel = players[curIdx]?.mixProdutos || null
+        const mixOwned = players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
         const res = await openModalAndWait(<MixProductsModal 
           currentCash={nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
+          mixOwned={mixOwned}
         />)
         if (!res || res.action !== 'BUY') return
         const price = Number(res.compra || 0)
@@ -1117,14 +1278,16 @@ export function useTurnEngine({
       const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
 
       const lp = meNow.loanPending || {}
-      const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (round >= Math.max(1, Number(lp.dueRound || 0)))
+      // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
+      // Verifica se há empréstimo pendente e se deve ser cobrado nesta passagem
+      const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
       const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
 
       console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
       console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
         amount: Number(lp.amount),
         charged: lp.charged,
-        dueRound: Number(lp.dueRound || 0),
+        shouldChargeOnNextExpenses: lp.shouldChargeOnNextExpenses,
         currentRound: round,
         shouldCharge: shouldChargeLoan
       })
@@ -1151,7 +1314,13 @@ export function useTurnEngine({
             const upd = ps.map((p,i)=>{
               if (i!==curIdx) return p
               const next = { ...p }
-              next.loanPending = { ...(p.loanPending||{}), charged:true, chargedAtRound: round }
+              // ✅ CORREÇÃO: Marca o empréstimo como cobrado e remove a flag de cobrança
+              next.loanPending = { 
+                ...(p.loanPending||{}), 
+                charged: true, 
+                chargedAtRound: round,
+                shouldChargeOnNextExpenses: false // ✅ CORREÇÃO: Remove flag após cobrar
+              }
               // ✅ CORREÇÃO: Preserva a posição original do nextPlayers
               next.pos = nextPlayers[curIdx]?.pos ?? p.pos
               return next
@@ -1179,13 +1348,37 @@ export function useTurnEngine({
 
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
+    let tickAttempts = 0
+    const maxTickAttempts = 200 // Limita a 20 segundos (200 * 100ms)
+    
     const tick = () => {
+      tickAttempts++
+      
+      // ✅ CORREÇÃO: Limite de tentativas para evitar loop infinito
+      if (tickAttempts > maxTickAttempts) {
+        console.warn('[DEBUG] ⏰ TIMEOUT - excedeu tentativas máximas, forçando desbloqueio')
+        const currentLockOwner = lockOwnerRef.current
+        const isLockOwner = String(currentLockOwner || '') === String(myUid)
+        if (isLockOwner) {
+          setTurnLockBroadcast(false)
+          turnChangeInProgressRef.current = false
+          // ✅ CORREÇÃO: Força limpeza de modalLocks se estiver travado
+          if (modalLocksRef.current > 0) {
+            console.warn('[DEBUG] ⚠️ Forçando modalLocks para 0 (timeout)')
+            modalLocksRef.current = 0
+            setModalLocks(0)
+          }
+          openingModalRef.current = false
+        }
+        return
+      }
+      
       const currentModalLocks = modalLocksRef.current
       const currentOpening = openingModalRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
       
-      console.log('[DEBUG] tick - modalLocks:', currentModalLocks, 'openingModalRef:', currentOpening, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
+      console.log('[DEBUG] tick - tentativa:', tickAttempts, 'modalLocks:', currentModalLocks, 'openingModalRef:', currentOpening, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
       
       // ✅ CORREÇÃO: Verifica se uma modal está sendo aberta (evita race condition)
       if (currentOpening) {
@@ -1195,7 +1388,13 @@ export function useTurnEngine({
       }
       
       // ✅ CORREÇÃO: Só muda turno se realmente não houver modais abertas
-      if (currentModalLocks === 0) {
+      // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
+      // Isso garante que todas as modais (incluindo aninhadas) foram completamente fechadas
+      const timeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
+      const minTimeAfterModalClose = 200 // ✅ CORREÇÃO: Aguarda 200ms após fechar a última modal antes de mudar turno
+      const canChangeTurn = currentModalLocks === 0 && (timeSinceLastModalClosed >= minTimeAfterModalClose || !lastModalClosedTimeRef.current)
+      
+      if (canChangeTurn) {
         // ✅ CORREÇÃO: Verifica se o turnIdx atual corresponde ao lockOwner
         // Se o turno mudou via SYNC, o lockOwner pode estar desatualizado
         const currentPlayer = players[turnIdx]
@@ -1212,16 +1411,56 @@ export function useTurnEngine({
             const finalOpening = openingModalRef.current
             // ✅ CORREÇÃO: Verifica se o turnIdx ainda é o mesmo (não mudou via SYNC)
             const finalTurnIdx = turnIdx
-            if (finalModalLocks === 0 && !finalOpening && finalTurnIdx === turnIdx) {
-              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening)
-              // ✅ CORREÇÃO: Atualiza turnIdx primeiro, depois faz broadcast
-              // O broadcastState atualiza lastLocalStateRef com o novo turnIdx, protegendo contra estados remotos antigos
+            const finalLockOwner = lockOwnerRef.current
+            const finalIsLockOwner = String(finalLockOwner || '') === String(myUid)
+            
+            // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
+            const finalTimeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
+            const finalCanChangeTurn = finalModalLocks === 0 && !finalOpening && (finalTimeSinceLastModalClosed >= 200 || !lastModalClosedTimeRef.current)
+            
+            // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
+            if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
+              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
+              // ✅ CORREÇÃO: Marca que mudança de turno está em progresso
+              turnChangeInProgressRef.current = true
+              
+              // ✅ CORREÇÃO: Garante que a rodada seja atualizada antes do broadcast
+              // Isso garante que o broadcast sempre use o valor correto da rodada
+              const roundToBroadcast = turnData.nextRound
+              console.log('[DEBUG] 🔄 Broadcast - Rodada a ser transmitida:', roundToBroadcast, 'Rodada atual no estado:', round)
+              
+              // ✅ CORREÇÃO: Atualiza turnIdx e rodada antes de fazer broadcast
+              // O broadcastState atualiza lastLocalStateRef com o novo turnIdx e rodada, protegendo contra estados remotos antigos
               setTurnIdx(turnData.nextTurnIdx)
-              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, turnData.nextRound)
+              // ✅ CORREÇÃO: Garante que a rodada seja atualizada se nextRound foi incrementado
+              if (roundToBroadcast > round) {
+                setRound(roundToBroadcast)
+                console.log('[DEBUG] 🔄 Rodada atualizada no broadcast - de:', round, 'para:', roundToBroadcast)
+              }
+              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
+              turnChangeInProgressRef.current = false
+              console.log('[DEBUG] ✅ Turno mudado com sucesso - Rodada:', roundToBroadcast)
             } else {
-              console.log('[DEBUG] ⚠️ tick - modal foi aberta durante verificação ou turnIdx mudou, não mudando turno', { finalModalLocks, finalOpening, finalTurnIdx, turnIdx })
+              console.log('[DEBUG] ⚠️ tick - condições não atendidas, não mudando turno', { 
+                finalModalLocks, 
+                finalOpening, 
+                finalCanChangeTurn,
+                timeSinceLastModalClosed: finalTimeSinceLastModalClosed,
+                finalTurnIdx, 
+                turnIdx,
+                finalIsLockOwner,
+                isLockOwner
+              })
+              console.log('[DEBUG] ⚠️ tick - condições não atendidas, não mudando turno', { 
+                finalModalLocks, 
+                finalOpening, 
+                finalTurnIdx, 
+                turnIdx,
+                finalIsLockOwner,
+                isLockOwner
+              })
               // Continua verificando
               setTimeout(tick, 150)
               return
@@ -1230,29 +1469,38 @@ export function useTurnEngine({
             console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno. turnIdx atual:', turnIdx, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
             // ✅ CORREÇÃO: Se não há turnData mas deveria haver, tenta novamente após um delay
             // Pode ser que o pendingTurnDataRef ainda não foi preenchido
-            if (isLockOwner && currentModalLocks === 0 && !currentOpening) {
-              console.log('[DEBUG] ⚠️ tick - tentando novamente em 200ms (pode ser que pendingTurnDataRef ainda não foi preenchido)')
-              setTimeout(tick, 200)
-              return
+            // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
+            const retryTimeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
+            const retryCanChangeTurn = currentModalLocks === 0 && (retryTimeSinceLastModalClosed >= 200 || !lastModalClosedTimeRef.current)
+            
+            if (isLockOwner && retryCanChangeTurn && !currentOpening) {
+              // ✅ CORREÇÃO: Limita tentativas de retry
+              if (tickAttempts < 10) {
+                console.log('[DEBUG] ⚠️ tick - tentando novamente em 200ms (pode ser que pendingTurnDataRef ainda não foi preenchido)')
+                setTimeout(tick, 200)
+                return
+              } else {
+                console.warn('[DEBUG] ⚠️ tick - excedeu tentativas de retry, liberando turnLock')
+                setTurnLockBroadcast(false)
+                turnChangeInProgressRef.current = false
+              }
+            } else {
+              setTurnLockBroadcast(false)
+              turnChangeInProgressRef.current = false
             }
-            setTurnLockBroadcast(false)
           }
         } else {
           console.log('[DEBUG] ❌ tick - não sou o dono do cadeado e não é minha vez, não mudando turno', { isLockOwner, isCurrentPlayerMe, currentLockOwner, myUid, turnIdx })
+          // ✅ CORREÇÃO: Se não sou o dono e não é minha vez, libera o lock
+          if (!isCurrentPlayerMe) {
+            setTurnLockBroadcast(false)
+            turnChangeInProgressRef.current = false
+          }
         }
         return
       }
       
-      if (Date.now() - start > 20000) {
-        // força desbloqueio em caso extremo
-        console.log('[DEBUG] ⏰ TIMEOUT - forçando desbloqueio após 20s')
-        if (isLockOwner) {
-          setTurnLockBroadcast(false)
-        }
-        return
-      }
-      
-      // Continua verificando a cada 100ms (aumentado para dar mais tempo)
+      // Continua verificando a cada 100ms
       setTimeout(tick, 100)
     }
     // ✅ CORREÇÃO: Adiciona um delay inicial maior para garantir que modais abertas sejam detectadas
@@ -1276,14 +1524,14 @@ export function useTurnEngine({
       }
       // ✅ CORREÇÃO: Se excedeu tentativas ou não há modais, força o avanço do turno
       if (checkAttempts >= maxCheckAttempts) {
-        console.log('[DEBUG] ⚠️ checkBeforeTick - excedeu tentativas, forçando avanço do turno', {
+        console.warn('[DEBUG] ⚠️ checkBeforeTick - excedeu tentativas, forçando avanço do turno', {
           hasOpening,
           hasLocks,
           modalLocks: modalLocksRef.current
         })
         // Força o modalLocks para 0 se estiver travado
         if (modalLocksRef.current > 0) {
-          console.log('[DEBUG] ⚠️ checkBeforeTick - forçando modalLocks para 0')
+          console.warn('[DEBUG] ⚠️ checkBeforeTick - forçando modalLocks para 0')
           modalLocksRef.current = 0
           setModalLocks(0)
         }
@@ -1506,7 +1754,7 @@ export function useTurnEngine({
         return;
       }
 
-      const dueRound = round + 1;
+      // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
       setPlayers(ps => {
         const upd = ps.map((p, i) =>
           i !== curIdx
@@ -1514,7 +1762,12 @@ export function useTurnEngine({
             : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: { amount: amt, dueRound, charged: false },
+                loanPending: { 
+                  amount: amt, 
+                  charged: false,
+                  // ✅ CORREÇÃO: Marca que o empréstimo deve ser cobrado na próxima passagem pela casa de despesas
+                  shouldChargeOnNextExpenses: true
+                },
               }
         );
         broadcastState(upd, turnIdx, round);
@@ -1699,44 +1952,46 @@ export function useTurnEngine({
           for (const s of selections) {
             totalCredit += Math.max(0, Number(s.credit || 0));
             if (s.group === 'MIX') {
-              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de marcar como false
+              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de remover
               if (s.level === currentMixLevel) {
                 // Encontra o próximo nível disponível (B, C ou D)
                 const levels = ['A', 'B', 'C', 'D'];
                 const currentIdx = levels.indexOf(currentMixLevel);
                 for (let idx = currentIdx + 1; idx < levels.length; idx++) {
                   const nextLevel = levels[idx];
-                  // Verifica se o próximo nível está disponível (antes de marcar o atual como false)
+                  // Verifica se o próximo nível está disponível (antes de remover o atual)
                   if (mixOwned[nextLevel] || nextLevel === 'D') {
                     currentMixLevel = nextLevel;
                     break;
                   }
                 }
               }
-              // Agora marca como false
-              mixOwned[s.level] = false;
-              // ✅ CORREÇÃO: Adiciona à lista de reduzidos
+              // ✅ CORREÇÃO: Remove completamente do owned (zera a variável)
+              delete mixOwned[s.level];
+              mixOwned[s.level] = false; // Garante que está explicitamente false
+              // ✅ CORREÇÃO: Adiciona à lista de reduzidos (só uma vez por nível)
               if (!newReducedMix.includes(s.level)) {
                 newReducedMix.push(s.level);
               }
             } else if (s.group === 'ERP') {
-              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de marcar como false
+              // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade ANTES de remover
               if (s.level === currentErpLevel) {
                 // Encontra o próximo nível disponível (B, C ou D)
                 const levels = ['A', 'B', 'C', 'D'];
                 const currentIdx = levels.indexOf(currentErpLevel);
                 for (let idx = currentIdx + 1; idx < levels.length; idx++) {
                   const nextLevel = levels[idx];
-                  // Verifica se o próximo nível está disponível (antes de marcar o atual como false)
+                  // Verifica se o próximo nível está disponível (antes de remover o atual)
                   if (erpOwned[nextLevel] || nextLevel === 'D') {
                     currentErpLevel = nextLevel;
                     break;
                   }
                 }
               }
-              // Agora marca como false
-              erpOwned[s.level] = false;
-              // ✅ CORREÇÃO: Adiciona à lista de reduzidos
+              // ✅ CORREÇÃO: Remove completamente do owned (zera a variável)
+              delete erpOwned[s.level];
+              erpOwned[s.level] = false; // Garante que está explicitamente false
+              // ✅ CORREÇÃO: Adiciona à lista de reduzidos (só uma vez por nível)
               if (!newReducedErp.includes(s.level)) {
                 newReducedErp.push(s.level);
               }
@@ -1745,9 +2000,21 @@ export function useTurnEngine({
 
           // ✅ CORREÇÃO: Garante que D sempre esteja disponível se não houver outros níveis
           const hasAnyMix = mixOwned.A || mixOwned.B || mixOwned.C;
-          if (!hasAnyMix) mixOwned.D = true;
+          if (!hasAnyMix) {
+            mixOwned.D = true;
+            // ✅ CORREÇÃO: Se só tem D, garante que está explicitamente true
+            mixOwned.A = false;
+            mixOwned.B = false;
+            mixOwned.C = false;
+          }
           const hasAnyErp = erpOwned.A || erpOwned.B || erpOwned.C;
-          if (!hasAnyErp) erpOwned.D = true;
+          if (!hasAnyErp) {
+            erpOwned.D = true;
+            // ✅ CORREÇÃO: Se só tem D, garante que está explicitamente true
+            erpOwned.A = false;
+            erpOwned.B = false;
+            erpOwned.C = false;
+          }
 
           const mixLetter = letterFromOwned(mixOwned);
           const erpLetter = letterFromOwned(erpOwned);
@@ -1756,11 +2023,17 @@ export function useTurnEngine({
           const finalMixLevel = mixLetter !== '-' ? mixLetter : (currentMixLevel || 'D');
           const finalErpLevel = erpLetter !== '-' ? erpLetter : (currentErpLevel || 'D');
 
+          // ✅ CORREÇÃO: Cria novos objetos para garantir que o React detecte a mudança
+          const newMixOwned = { ...mixOwned };
+          const newErpOwned = { ...erpOwned };
+
           return {
             ...p,
             cash: (Number(p.cash) || 0) + totalCredit,
-            mixOwned, erpOwned,
-            mix: mixOwned, erp: erpOwned,
+            mixOwned: newMixOwned,
+            erpOwned: newErpOwned,
+            mix: newMixOwned,
+            erp: newErpOwned,
             mixProdutos: finalMixLevel,
             erpLevel: finalErpLevel,
             erpSistemas: finalErpLevel,
@@ -1834,33 +2107,56 @@ export function useTurnEngine({
 
   // a) quando não houver modal aberta e ainda houver lock, tenta destravar
   React.useEffect(() => {
-    if (modalLocks === 0 && turnLock) {
-      if (String(lockOwner || '') === String(myUid)) {
+    if (modalLocks === 0 && turnLock && !openingModalRef.current) {
+      const currentLockOwner = lockOwnerRef.current
+      const isLockOwner = String(currentLockOwner || '') === String(myUid)
+      
+      if (isLockOwner) {
         console.log('[DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner')
         setTurnLockBroadcast(false)
+        turnChangeInProgressRef.current = false
       } else if (!isMyTurn) {
         // ✅ CORREÇÃO: Se não é minha vez e não sou o lockOwner, libera o turnLock
         // Isso evita que o botão fique travado após sincronização
         console.log('[DEBUG] 🔓 Destravando turnLock - não é minha vez e não sou lockOwner')
         setTurnLockBroadcast(false)
+        turnChangeInProgressRef.current = false
       }
     }
   }, [modalLocks, turnLock, lockOwner, myUid, isMyTurn, setTurnLockBroadcast])
 
   // b) quando virar "minha vez" e não houver modal, garanto unlock local
   React.useEffect(() => {
-    if (isMyTurn && modalLocks === 0 && turnLock) {
-      if (String(lockOwner || '') === String(myUid)) {
+    if (isMyTurn && modalLocks === 0 && turnLock && !openingModalRef.current) {
+      const currentLockOwner = lockOwnerRef.current
+      const isLockOwner = String(currentLockOwner || '') === String(myUid)
+      
+      if (isLockOwner) {
         console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner')
         setTurnLockBroadcast(false)
-      } else if (!lockOwner) {
+        turnChangeInProgressRef.current = false
+      } else if (!currentLockOwner) {
         // ✅ CORREÇÃO: Se é minha vez mas não há lockOwner, libera o turnLock
         // Isso garante que o botão seja habilitado quando é minha vez
         console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez mas não há lockOwner')
         setTurnLockBroadcast(false)
+        turnChangeInProgressRef.current = false
       }
     }
   }, [isMyTurn, modalLocks, turnLock, lockOwner, myUid, setTurnLockBroadcast])
+  
+  // ✅ CORREÇÃO: Cleanup ao desmontar componente
+  React.useEffect(() => {
+    return () => {
+      // Limpa timeouts e refs ao desmontar
+      if (turnLockTimeoutRef.current) {
+        clearTimeout(turnLockTimeoutRef.current)
+        turnLockTimeoutRef.current = null
+      }
+      turnChangeInProgressRef.current = false
+      openingModalRef.current = false
+    }
+  }, [])
 
   return {
     advanceAndMaybeLap,

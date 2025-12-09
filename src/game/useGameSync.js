@@ -122,8 +122,13 @@ export function useGameSync({
 
         if (d.type === 'TURNLOCK') {
           console.log('[SG][BC] TURNLOCK <-', d.value, 'owner=', d.owner)
-          setTurnLock?.(!!d.value)
-          setLockOwner?.(d.owner || null)
+          // ✅ CORREÇÃO: Só aceita TURNLOCK se não for de mim mesmo
+          if (String(d.source) !== String(meId)) {
+            setTurnLock?.(!!d.value)
+            setLockOwner?.(d.owner || null)
+          } else {
+            console.log('[SG][BC] TURNLOCK ignorado - veio de mim mesmo')
+          }
           return
         }
 
@@ -133,6 +138,12 @@ export function useGameSync({
           // ✅ CORREÇÃO: Protege mudanças locais recentes
           const now = Date.now()
           const lastLocal = lastLocalStateRef.current
+          
+          // ✅ CORREÇÃO: Verifica se o turnIdx remoto é válido
+          if (d.turnIdx < 0 || !Number.isInteger(d.turnIdx)) {
+            console.warn('[SG][BC] ❌ IGNORANDO turnIdx remoto inválido:', d.turnIdx)
+            return
+          }
           
           // Sincroniza turnIdx apenas se não houver mudança local muito recente
           if (d.turnIdx !== turnIdx) {
@@ -153,16 +164,29 @@ export function useGameSync({
                   console.log('[SG][BC] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)')
                 }
               } else {
-                setTurnIdx(d.turnIdx)
+                // ✅ CORREÇÃO: Verifica se o turnIdx remoto está dentro dos limites válidos
+                if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
+                  setTurnIdx(d.turnIdx)
+                } else {
+                  console.warn('[SG][BC] ❌ IGNORANDO turnIdx remoto fora dos limites:', d.turnIdx, 'players.length:', d.players?.length || players.length)
+                }
               }
             } else {
-              setTurnIdx(d.turnIdx)
+              // ✅ CORREÇÃO: Verifica se o turnIdx remoto está dentro dos limites válidos
+              if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
+                setTurnIdx(d.turnIdx)
+              } else {
+                console.warn('[SG][BC] ❌ IGNORANDO turnIdx remoto fora dos limites:', d.turnIdx, 'players.length:', d.players?.length || players.length)
+              }
             }
           }
           
           // Sincroniza round apenas se não houver mudança local muito recente
           if (d.round !== round) {
-            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
+            // ✅ CORREÇÃO: Verifica se o round remoto é válido
+            if (d.round < 1 || !Number.isInteger(d.round)) {
+              console.warn('[SG][BC] ❌ IGNORANDO round remoto inválido:', d.round)
+            } else if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
                 console.log('[SG][BC] Ignorando round remoto - round local mudou recentemente (< 5s)')
@@ -174,7 +198,28 @@ export function useGameSync({
             }
           }
           
-          setPlayers(d.players)
+          // ✅ CORREÇÃO: Verifica se players é um array válido antes de sincronizar
+          // ✅ CORREÇÃO: Faz merge inteligente preservando posições (sempre usa o maior valor)
+          if (Array.isArray(d.players) && d.players.length > 0) {
+            setPlayers(prevPlayers => {
+              return d.players.map(syncedPlayer => {
+                const localPlayer = prevPlayers.find(p => p.id === syncedPlayer.id)
+                if (!localPlayer) return syncedPlayer
+                
+                // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
+                const localPos = Number(localPlayer.pos || 0)
+                const remotePos = Number(syncedPlayer.pos || 0)
+                const finalPos = Math.max(localPos, remotePos)
+                
+                return {
+                  ...syncedPlayer,
+                  pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
+                }
+              })
+            })
+          } else {
+            console.warn('[SG][BC] ❌ IGNORANDO players remoto inválido:', d.players)
+          }
         }
       }
       bcRef.current = bc
@@ -241,13 +286,29 @@ export function useGameSync({
     }
     
     // ✅ CORREÇÃO: Ignora estado remoto de players se houver mudança local muito recente
+    // ✅ CORREÇÃO: Faz merge inteligente preservando posições (sempre usa o maior valor)
     if (np && JSON.stringify(np) !== JSON.stringify(players)) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
       if (lastLocal && (now - lastLocal.timestamp) < 1000) {
         console.log('[SG][NET] Ignorando estado remoto de players - mudança local muito recente (< 1s)')
       } else {
-        setPlayers(np)
+        setPlayers(prevPlayers => {
+          return np.map(syncedPlayer => {
+            const localPlayer = prevPlayers.find(p => p.id === syncedPlayer.id)
+            if (!localPlayer) return syncedPlayer
+            
+            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
+            const localPos = Number(localPlayer.pos || 0)
+            const remotePos = Number(syncedPlayer.pos || 0)
+            const finalPos = Math.max(localPos, remotePos)
+            
+            return {
+              ...syncedPlayer,
+              pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
+            }
+          })
+        })
         changed = true
       }
     }

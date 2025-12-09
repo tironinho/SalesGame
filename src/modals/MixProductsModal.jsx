@@ -15,8 +15,9 @@ import InsufficientFundsModal from './InsufficientFundsModal'
  * Props:
  *  - currentCash?: number (saldo atual do jogador; usado para validar compra)
  *  - currentLevel?: string (nível atual do Mix: 'A', 'B', 'C', 'D' ou null)
+ *  - mixOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
  */
-export default function MixProductsModal({ onResolve, currentCash, currentLevel = null }) {
+export default function MixProductsModal({ onResolve, currentCash, currentLevel = null, mixOwned = null }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
@@ -29,9 +30,15 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
   }
 
   async function resolveBuy(level){
-    // Verifica se o nível já foi adquirido
-    if (currentLevel === level) {
-      return // Não permite comprar o mesmo nível
+    // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
+    // Se mixOwned foi fornecido, verifica se o nível está possuído
+    // Se não foi fornecido, usa currentLevel como fallback
+    const isOwned = mixOwned 
+      ? (mixOwned[level] === true)
+      : (currentLevel === level)
+    
+    if (isOwned) {
+      return // Não permite comprar o mesmo nível que já está possuído
     }
 
     const row = LEVELS[level]
@@ -85,7 +92,10 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
-            const isOwned = currentLevel === k
+            // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
+            const isOwned = mixOwned 
+              ? (mixOwned[k] === true)
+              : (currentLevel === k)
             const isDisabled = isOwned
             
             return (

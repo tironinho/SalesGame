@@ -147,9 +147,37 @@ export function applyDeltas(player, deltas = {}) {
 
   if (Number.isFinite(deltas.revenueDelta)) add('revenue', Number(deltas.revenueDelta))
 
-  if (typeof deltas.mixProdutosSet !== 'undefined') next.mixProdutos = deltas.mixProdutosSet
+  if (typeof deltas.mixProdutosSet !== 'undefined') {
+    next.mixProdutos = deltas.mixProdutosSet
+    // ✅ CORREÇÃO: Quando compra um nível, adiciona ao mixOwned e remove da lista de reduzidos
+    const level = String(deltas.mixProdutosSet).toUpperCase()
+    if (['A','B','C','D'].includes(level)) {
+      next.mixOwned = { ...(next.mixOwned || {}), [level]: true }
+      // Remove da lista de reduzidos se estava lá
+      if (next.reducedLevels?.MIX) {
+        next.reducedLevels = {
+          ...next.reducedLevels,
+          MIX: next.reducedLevels.MIX.filter(l => l !== level)
+        }
+      }
+    }
+  }
   if (deltas.mixBaseSet) next.mixBase = { ...(next.mixBase || {}), ...deltas.mixBaseSet }
-  if (typeof deltas.erpLevelSet !== 'undefined') next.erpLevel = deltas.erpLevelSet
+  if (typeof deltas.erpLevelSet !== 'undefined') {
+    next.erpLevel = deltas.erpLevelSet
+    // ✅ CORREÇÃO: Quando compra um nível, adiciona ao erpOwned e remove da lista de reduzidos
+    const level = String(deltas.erpLevelSet).toUpperCase()
+    if (['A','B','C','D'].includes(level)) {
+      next.erpOwned = { ...(next.erpOwned || {}), [level]: true }
+      // Remove da lista de reduzidos se estava lá
+      if (next.reducedLevels?.ERP) {
+        next.reducedLevels = {
+          ...next.reducedLevels,
+          ERP: next.reducedLevels.ERP.filter(l => l !== level)
+        }
+      }
+    }
+  }
 
   if (Array.isArray(deltas.trainingsPush) && deltas.trainingsPush.length) {
     next.trainings = [ ...(next.trainings || []), ...deltas.trainingsPush ]
