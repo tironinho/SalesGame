@@ -7,8 +7,8 @@ export function useGameSync({
   meId,
   myUid,
   phase,
-  players, round, turnIdx,
-  setPlayers, setTurnIdx, setRound,
+  players, round, turnIdx, roundFlags,
+  setPlayers, setTurnIdx, setRound, setRoundFlags,
   setTurnLock,          // (opcional) setter do cadeado
   setLockOwner,         // (opcional) dono do cadeado
   applyStarterKit,
@@ -61,6 +61,7 @@ export function useGameSync({
         players: nextPlayers,
         turnIdx: nextTurnIdx,
         round:   nextRound,
+        roundFlags: roundFlags, // ✅ CORREÇÃO: Sincroniza roundFlags
         source:  meId,
       })
     } catch (e) { console.warn('[SG][App] broadcastState failed:', e) }
@@ -181,7 +182,24 @@ export function useGameSync({
             }
           }
           
-          // Sincroniza round apenas se não houver mudança local muito recente
+          // ✅ CORREÇÃO: Sincroniza roundFlags se presente na mensagem
+          if (Array.isArray(d.roundFlags) && d.roundFlags.length > 0) {
+            setRoundFlags?.(prevFlags => {
+              // Faz merge: preserva flags locais e aceita flags remotas (OR lógico)
+              const merged = d.roundFlags.map((remoteFlag, idx) => {
+                const localFlag = prevFlags[idx] || false
+                return localFlag || remoteFlag // Se qualquer um passou, marca como true
+              })
+              // Garante que o array tem o tamanho correto
+              while (merged.length < prevFlags.length) {
+                merged.push(prevFlags[merged.length] || false)
+              }
+              console.log('[SG][BC] roundFlags sincronizado:', merged.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+              return merged
+            })
+          }
+          
+          // ✅ CORREÇÃO: Sincroniza round usando Math.max para proteger incrementos locais
           if (d.round !== round) {
             // ✅ CORREÇÃO: Verifica se o round remoto é válido
             if (d.round < 1 || !Number.isInteger(d.round)) {
@@ -189,12 +207,20 @@ export function useGameSync({
             } else if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
-                console.log('[SG][BC] Ignorando round remoto - round local mudou recentemente (< 5s)')
+                // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
+                setRound(prevRound => {
+                  const finalRound = Math.max(prevRound, d.round)
+                  if (finalRound > prevRound) {
+                    console.log('[SG][BC] Rodada incrementada via sincronização:', prevRound, '->', finalRound)
+                  }
+                  return finalRound
+                })
               } else {
                 setRound(d.round)
               }
             } else {
-              setRound(d.round)
+              // Sempre usa Math.max para proteger contra reversão
+              setRound(prevRound => Math.max(prevRound, d.round))
             }
           }
           
@@ -209,7 +235,25 @@ export function useGameSync({
                 // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
                 const localPos = Number(localPlayer.pos || 0)
                 const remotePos = Number(syncedPlayer.pos || 0)
-                const finalPos = Math.max(localPos, remotePos)
+                
+                // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
+                // e houve mudança local recente, NUNCA aceita posição remota menor
+                const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+                let finalPos = Math.max(localPos, remotePos)
+                
+                if (isLocalPlayer && localPos > remotePos) {
+                  // Verifica se houve mudança local recente (movimento do jogador)
+                  const now = Date.now()
+                  const lastLocal = lastLocalStateRef.current
+                  if (lastLocal && (now - lastLocal.timestamp) < 5000) {
+                    // Se houve mudança local recente e a posição local é maior, preserva a posição local
+                    // Isso evita que estados remotos antigos revertam movimentos recentes
+                    if (localPos > remotePos) {
+                      console.log(`[SG][BC] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
+                      finalPos = localPos
+                    }
+                  }
+                }
                 
                 return {
                   ...syncedPlayer,
@@ -274,13 +318,22 @@ export function useGameSync({
       if (lastLocal && (now - lastLocal.timestamp) < 5000) {
         const localRoundChanged = lastLocal.round !== round
         if (localRoundChanged) {
-          console.log('[SG][NET] Ignorando round remoto - round local mudou recentemente (< 5s)')
+          // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
+          setRound(prevRound => {
+            const finalRound = Math.max(prevRound, nr)
+            if (finalRound > prevRound) {
+              console.log('[SG][NET] Rodada incrementada via sincronização:', prevRound, '->', finalRound)
+            }
+            return finalRound
+          })
+          changed = true
         } else {
           setRound(nr)
           changed = true
         }
       } else {
-        setRound(nr)
+        // Sempre usa Math.max para proteger contra reversão
+        setRound(prevRound => Math.max(prevRound, nr))
         changed = true
       }
     }
@@ -301,7 +354,25 @@ export function useGameSync({
             // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
             const localPos = Number(localPlayer.pos || 0)
             const remotePos = Number(syncedPlayer.pos || 0)
-            const finalPos = Math.max(localPos, remotePos)
+            
+            // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
+            // e houve mudança local recente, NUNCA aceita posição remota menor
+            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+            let finalPos = Math.max(localPos, remotePos)
+            
+            if (isLocalPlayer && localPos > remotePos) {
+              // Verifica se houve mudança local recente (movimento do jogador)
+              const now = Date.now()
+              const lastLocal = lastLocalStateRef.current
+              if (lastLocal && (now - lastLocal.timestamp) < 5000) {
+                // Se houve mudança local recente e a posição local é maior, preserva a posição local
+                // Isso evita que estados remotos antigos revertam movimentos recentes
+                if (localPos > remotePos) {
+                  console.log(`[SG][NET] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
+                  finalPos = localPos
+                }
+              }
+            }
             
             return {
               ...syncedPlayer,

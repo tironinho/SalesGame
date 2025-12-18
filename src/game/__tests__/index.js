@@ -11,9 +11,13 @@ import './regressionTests.js'
 import './integrationTests.js'
 import './realTimeValidator.js'
 import './testControlPanel.js'
+import TurnAlternationTester from './turnAlternationTest.js'
 
 // ====== INICIALIZAÇÃO ======
 if (typeof window !== 'undefined') {
+  // Disponibiliza TurnAlternationTester globalmente
+  window.TurnAlternationTester = TurnAlternationTester
+  
   console.log('🧪 Sistema de Testes Sales Game carregado!')
   console.log('')
   console.log('📋 COMANDOS DISPONÍVEIS:')
@@ -27,6 +31,13 @@ if (typeof window !== 'undefined') {
   console.log('  generateReport()       - Gera relatório completo')
   console.log('  getStatus()            - Mostra status atual')
   console.log('  reset()                - Reseta painel de testes')
+  console.log('')
+  console.log('🔄 TESTES DE ALTERNÂNCIA DE TURNOS:')
+  console.log('  const turnTester = new TurnAlternationTester()')
+  console.log('  turnTester.runAllTests() - Executa todos os testes de turnos')
+  console.log('  turnTester.testBasicTurnAlternation() - Testa alternância básica')
+  console.log('  turnTester.testAllBoardSpaces() - Verifica todas as casas')
+  console.log('  turnTester.testButtonNotLockedForBothPlayers() - Testa botão')
   console.log('')
   console.log('🎮 SIMULADOR INTERATIVO:')
   console.log('  createSimulator(2)     - Cria simulador com 2 jogadores')

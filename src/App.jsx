@@ -207,17 +207,42 @@ export default function App() {
             }
           }
           
-          // Sincroniza round apenas se não houver mudança local muito recente
+          // ✅ CORREÇÃO: Sincroniza roundFlags se presente na mensagem
+          if (Array.isArray(d.roundFlags) && d.roundFlags.length > 0) {
+            setRoundFlags(prevFlags => {
+              // Faz merge: preserva flags locais e aceita flags remotas (OR lógico)
+              const merged = d.roundFlags.map((remoteFlag, idx) => {
+                const localFlag = prevFlags[idx] || false
+                return localFlag || remoteFlag // Se qualquer um passou, marca como true
+              })
+              // Garante que o array tem o tamanho correto
+              while (merged.length < prevFlags.length) {
+                merged.push(prevFlags[merged.length] || false)
+              }
+              console.log('[App] SYNC - roundFlags sincronizado:', merged.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+              return merged
+            })
+          }
+          
+          // ✅ CORREÇÃO: Sincroniza round usando Math.max para proteger incrementos locais
           if (d.round !== round) {
             if (lastLocal && (now - lastLocal.timestamp) < 3000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
-                console.log('[App] SYNC - Ignorando round remoto - round local mudou recentemente (< 3s)')
+                // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
+                setRound(prevRound => {
+                  const finalRound = Math.max(prevRound, d.round)
+                  if (finalRound > prevRound) {
+                    console.log('[App] SYNC - Rodada incrementada via sincronização:', prevRound, '->', finalRound)
+                  }
+                  return finalRound
+                })
               } else {
                 setRound(d.round)
               }
             } else {
-              setRound(d.round)
+              // Sempre usa Math.max para proteger contra reversão
+              setRound(prevRound => Math.max(prevRound, d.round))
             }
           }
           
@@ -231,15 +256,30 @@ export default function App() {
             // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
             const localPos = Number(localPlayer.pos || 0)
             const remotePos = Number(syncedPlayer.pos || 0)
-            const finalPos = Math.max(localPos, remotePos)
+            
+            // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
+            // e houve mudança local recente, NUNCA aceita posição remota menor
+            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+            let finalPos = Math.max(localPos, remotePos)
+            
+            if (isLocalPlayer && localPos > remotePos) {
+              // Verifica se houve mudança local recente (movimento do jogador)
+              const now = Date.now()
+              const lastLocal = lastLocalStateRef.current
+              if (lastLocal && (now - lastLocal.timestamp) < 5000) {
+                // Se houve mudança local recente e a posição local é maior, preserva a posição local
+                // Isso evita que estados remotos antigos revertam movimentos recentes
+                if (localPos > remotePos) {
+                  console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
+                  finalPos = localPos
+                }
+              }
+            }
             
             // Log apenas se houver diferença para debug
             if (localPos !== remotePos) {
               console.log(`[App] SYNC - Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
             }
-            
-            // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
-            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
             if (isLocalPlayer) {
               // Compara recursos para detectar se há compras locais
               const localClients = Number(localPlayer.clients || 0)
@@ -492,11 +532,25 @@ export default function App() {
     if (nr !== null && nr !== round) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
-      // Se houve mudança local muito recente (< 2s), não sincroniza round ainda
+      // Se houve mudança local muito recente (< 2s), usa Math.max para proteger incrementos
       if (lastLocal && (now - lastLocal.timestamp) < 2000) {
-        console.log('[NET] Ignorando round remoto - mudança local muito recente (< 2s)')
+        const localRoundChanged = lastLocal.round !== round
+        if (localRoundChanged) {
+          // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
+          setRound(prevRound => {
+            const finalRound = Math.max(prevRound, nr)
+            if (finalRound > prevRound) {
+              console.log('[NET] Rodada incrementada via sincronização:', prevRound, '->', finalRound)
+            }
+            return finalRound
+          })
+          changed = true
+        } else {
+          console.log('[NET] Ignorando round remoto - mudança local muito recente (< 2s)')
+        }
       } else {
-        setRound(nr)
+        // Sempre usa Math.max para proteger contra reversão
+        setRound(prevRound => Math.max(prevRound, nr))
         changed = true
       }
     }
@@ -540,15 +594,30 @@ export default function App() {
         // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
         const localPos = Number(localPlayer.pos || 0)
         const remotePos = Number(syncedPlayer.pos || 0)
-        const finalPos = Math.max(localPos, remotePos)
+        
+        // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
+        // e houve mudança local recente, NUNCA aceita posição remota menor
+        const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+        let finalPos = Math.max(localPos, remotePos)
+        
+        if (isLocalPlayer && localPos > remotePos) {
+          // Verifica se houve mudança local recente (movimento do jogador)
+          const now = Date.now()
+          const lastLocal = lastLocalStateRef.current
+          if (lastLocal && (now - lastLocal.timestamp) < 5000) {
+            // Se houve mudança local recente e a posição local é maior, preserva a posição local
+            // Isso evita que estados remotos antigos revertam movimentos recentes
+            if (localPos > remotePos) {
+              console.log(`[NET] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
+              finalPos = localPos
+            }
+          }
+        }
         
         // Log apenas se houver diferença para debug
         if (localPos !== remotePos) {
           console.log(`[NET] Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
         }
-        
-        // Se é o jogador local, SEMPRE preserva recursos locais (compras não devem ser perdidas)
-        const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
         if (isLocalPlayer) {
           // Compara recursos para detectar se há compras locais
           const localClients = Number(localPlayer.clients || 0)
@@ -694,6 +763,7 @@ export default function App() {
         players: nextPlayers,
         turnIdx: nextTurnIdx,
         round: nextRound,
+        roundFlags: roundFlags, // ✅ CORREÇÃO: Sincroniza roundFlags para que todos os jogadores saibam quem passou pela casa 0
         gameOver: gameOverState,
         winner: winnerState,
         source: meId,

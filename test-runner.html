@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Game - Test Runner</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #4CAF50;
+            margin-top: 0;
+        }
+        h2 {
+            color: #81C784;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .button:hover {
+            background: #45a049;
+        }
+        .button.secondary {
+            background: #2196F3;
+        }
+        .button.secondary:hover {
+            background: #1976D2;
+        }
+        .button.danger {
+            background: #f44336;
+        }
+        .button.danger:hover {
+            background: #d32f2f;
+        }
+        .output {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.error {
+            background: #f44336;
+            color: white;
+        }
+        .status.warning {
+            background: #ff9800;
+            color: white;
+        }
+        .info {
+            background: #333;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        code {
+            background: #1a1a1a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Sales Game - Test Runner</h1>
+        <p>Execute os testes de alternância de turnos diretamente do navegador.</p>
+        
+        <div class="info">
+            <strong>⚠️ Importante:</strong> Este arquivo deve ser aberto enquanto o jogo está rodando em outra aba.
+            Os testes precisam do contexto do jogo carregado.
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🚀 Execução Rápida</h2>
+        <button class="button" onclick="runAllTests()">Executar Todos os Testes</button>
+        <button class="button secondary" onclick="runTurnTests()">Testes de Alternância de Turnos</button>
+        <button class="button secondary" onclick="checkStatus()">Verificar Status</button>
+        <button class="button danger" onclick="clearOutput()">Limpar Saída</button>
+    </div>
+
+    <div class="container">
+        <h2>🔄 Testes Individuais</h2>
+        <button class="button secondary" onclick="testBasic()">Alternância Básica</button>
+        <button class="button secondary" onclick="testBoardSpaces()">Verificar Casas</button>
+        <button class="button secondary" onclick="testButton()">Teste do Botão</button>
+        <button class="button secondary" onclick="testModals()">Teste de Modais</button>
+        <button class="button secondary" onclick="testBankrupt()">Jogadores Falidos</button>
+        <button class="button secondary" onclick="testSync()">Sincronização</button>
+        <button class="button secondary" onclick="testTimeout()">Timeout de Segurança</button>
+    </div>
+
+    <div class="container">
+        <h2>📊 Saída dos Testes</h2>
+        <div id="output" class="output">Aguardando execução de testes...\n\nExecute um teste acima ou use o console do navegador:\n\n  runAllTests()\n  testTurnAlternation()\n  const turnTester = new TurnAlternationTester()</div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            output.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            output.textContent = '';
+            log('Saída limpa', 'success');
+        }
+
+        function checkStatus() {
+            log('Verificando status do sistema de testes...', 'info');
+            
+            if (typeof window.runAllTests === 'function') {
+                log('✅ Sistema de testes carregado', 'success');
+            } else {
+                log('❌ Sistema de testes não encontrado. Certifique-se de que o jogo está rodando em outra aba.', 'error');
+                log('💡 Abra o jogo em http://localhost:5173 (ou a porta configurada) e recarregue esta página.', 'info');
+            }
+            
+            if (typeof window.TurnAlternationTester !== 'undefined') {
+                log('✅ TurnAlternationTester disponível', 'success');
+            } else {
+                log('⚠️ TurnAlternationTester não encontrado', 'warning');
+            }
+        }
+
+        async function runAllTests() {
+            clearOutput();
+            log('🚀 Iniciando execução de todos os testes...', 'info');
+            
+            if (typeof window.runAllTests !== 'function') {
+                log('❌ Sistema de testes não carregado. Abra o jogo primeiro!', 'error');
+                return;
+            }
+            
+            try {
+                await window.runAllTests();
+                log('✅ Todos os testes concluídos!', 'success');
+            } catch (error) {
+                log(`❌ Erro ao executar testes: ${error.message}`, 'error');
+            }
+        }
+
+        async function runTurnTests() {
+            clearOutput();
+            log('🔄 Iniciando testes de alternância de turnos...', 'info');
+            
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado. Certifique-se de que o jogo está rodando.', 'error');
+                return;
+            }
+            
+            try {
+                const tester = new window.TurnAlternationTester();
+                const result = await tester.runAllTests();
+                
+                if (result.success) {
+                    log(`✅ Testes concluídos com sucesso!`, 'success');
+                    log(`   - Total de testes: ${result.results?.length || 0}`, 'info');
+                    log(`   - Erros: ${result.errors?.length || 0}`, result.errors?.length > 0 ? 'error' : 'info');
+                    log(`   - Avisos: ${result.warnings?.length || 0}`, result.warnings?.length > 0 ? 'warning' : 'info');
+                } else {
+                    log(`❌ Testes falharam!`, 'error');
+                    log(`   - Erros: ${result.errors?.length || 0}`, 'error');
+                    result.errors?.forEach(err => {
+                        log(`   - ${err.message}`, 'error');
+                    });
+                }
+            } catch (error) {
+                log(`❌ Erro ao executar testes: ${error.message}`, 'error');
+            }
+        }
+
+        function testBasic() {
+            clearOutput();
+            log('🧪 Executando teste de alternância básica...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testBasicTurnAlternation();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testBoardSpaces() {
+            clearOutput();
+            log('🧪 Executando verificação de todas as casas...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testAllBoardSpaces();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testButton() {
+            clearOutput();
+            log('🧪 Executando teste do botão...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testButtonNotLockedForBothPlayers();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testModals() {
+            clearOutput();
+            log('🧪 Executando teste de modais...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testModalsDontBlockTurnIndefinitely();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testBankrupt() {
+            clearOutput();
+            log('🧪 Executando teste de jogadores falidos...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testBankruptPlayersSkipped();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testSync() {
+            clearOutput();
+            log('🧪 Executando teste de sincronização...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testMultiplayerSync();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        function testTimeout() {
+            clearOutput();
+            log('🧪 Executando teste de timeout...', 'info');
+            if (typeof window.TurnAlternationTester === 'undefined') {
+                log('❌ TurnAlternationTester não encontrado', 'error');
+                return;
+            }
+            const tester = new window.TurnAlternationTester();
+            tester.testSafetyTimeout();
+            log('✅ Teste concluído. Verifique o console para detalhes.', 'success');
+        }
+
+        // Verificar status ao carregar
+        window.addEventListener('load', () => {
+            setTimeout(checkStatus, 1000);
+        });
+    </script>
+</body>
+</html>
+

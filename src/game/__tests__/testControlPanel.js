@@ -14,6 +14,7 @@ import {
   clearValidationLogs, 
   getValidationStats as getValidatorStats 
 } from './realTimeValidator.js'
+import TurnAlternationTester from './turnAlternationTest.js'
 
 class TestControlPanel {
   constructor() {
@@ -63,6 +64,29 @@ class TestControlPanel {
       const issuesTime = Date.now() - issuesStart
       this.testResults.push({ name: 'Problemas Reportados', time: issuesTime, status: 'PASS' })
       console.log(`✅ Testes de problemas reportados concluídos em ${issuesTime}ms`)
+      console.groupEnd()
+
+      // 4. Testes de Alternância de Turnos
+      console.group('🔄 4. Testes de Alternância de Turnos')
+      const turnStart = Date.now()
+      const turnTester = new TurnAlternationTester()
+      const turnResult = await turnTester.runAllTests()
+      const turnTime = Date.now() - turnStart
+      this.testResults.push({ 
+        name: 'Alternância de Turnos', 
+        time: turnTime, 
+        status: turnResult.success ? 'PASS' : 'FAIL',
+        errors: turnResult.errors?.length || 0,
+        warnings: turnResult.warnings?.length || 0
+      })
+      if (turnResult.success) {
+        console.log(`✅ Testes de alternância de turnos concluídos em ${turnTime}ms`)
+        console.log(`   - Erros: ${turnResult.errors?.length || 0}`)
+        console.log(`   - Avisos: ${turnResult.warnings?.length || 0}`)
+      } else {
+        console.log(`❌ Testes de alternância de turnos falharam em ${turnTime}ms`)
+        console.log(`   - Erros: ${turnResult.errors?.length || 0}`)
+      }
       console.groupEnd()
 
       const totalTime = Date.now() - startTime
@@ -180,6 +204,30 @@ class TestControlPanel {
     console.groupEnd()
   }
 
+  // ====== TESTES DE ALTERNÂNCIA DE TURNOS ======
+  async testTurnAlternation() {
+    console.group('🔄 Teste Específico: Alternância de Turnos')
+    
+    const turnTester = new TurnAlternationTester()
+    const result = await turnTester.runAllTests()
+    
+    if (result.success) {
+      console.log('✅ Todos os testes de alternância de turnos passaram!')
+      console.log(`   - Total de testes: ${result.results?.length || 0}`)
+      console.log(`   - Erros: ${result.errors?.length || 0}`)
+      console.log(`   - Avisos: ${result.warnings?.length || 0}`)
+    } else {
+      console.log('❌ Alguns testes de alternância de turnos falharam')
+      console.log(`   - Erros: ${result.errors?.length || 0}`)
+      result.errors?.forEach(err => {
+        console.error(`   - ${err.message}`)
+      })
+    }
+    
+    console.groupEnd()
+    return result
+  }
+
   // ====== RELATÓRIOS ======
   printSummary(totalTime) {
     console.group('📋 RESUMO DOS TESTES')
@@ -248,6 +296,7 @@ export const testTurnPassing = () => testControlPanel.testTurnPassing()
 export const testBankruptcySystem = () => testControlPanel.testBankruptcySystem()
 export const testResourceUpdates = () => testControlPanel.testResourceUpdates()
 export const testLevelRestrictions = () => testControlPanel.testLevelRestrictions()
+export const testTurnAlternation = () => testControlPanel.testTurnAlternation()
 export const generateReport = () => testControlPanel.generateReport()
 export const getStatus = () => testControlPanel.getStatus()
 export const reset = () => testControlPanel.reset()
@@ -265,6 +314,7 @@ if (typeof window !== 'undefined') {
   window.testBankruptcySystem = testBankruptcySystem
   window.testResourceUpdates = testResourceUpdates
   window.testLevelRestrictions = testLevelRestrictions
+  window.testTurnAlternation = testTurnAlternation
   window.generateReport = generateReport
   window.getStatus = getStatus
   window.reset = reset
