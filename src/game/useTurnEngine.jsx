@@ -153,6 +153,13 @@ export function useTurnEngine({
   // 🔄 dados do próximo turno (para evitar stale closure)
   // ✅ CORREÇÃO: Declarado ANTES do useEffect que o usa
   const pendingTurnDataRef = React.useRef(null)
+  
+  // ✅ CORREÇÃO CRÍTICA: Ref para pegar valor atualizado de round (evita stale closure)
+  const currentRoundRef = React.useRef(round)
+  React.useEffect(() => { 
+    currentRoundRef.current = round
+    console.log('[DEBUG] 🔄 currentRoundRef atualizado para:', round)
+  }, [round])
 
   // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
   React.useEffect(() => {
@@ -570,8 +577,10 @@ export function useTurnEngine({
     const crossedStart1ForRound = crossedTile(oldPos, newPos, 0)
 
     // >>> controle de rodada: só vira quando TODOS os jogadores VIVOS cruzarem a casa 0
-    let nextRound = round
+    // ✅ CORREÇÃO CRÍTICA: Usa ref para pegar valor atualizado de round (evita stale closure)
+    let nextRound = currentRoundRef.current
     let nextFlags = [...roundFlags]
+    let shouldIncrementRound = false
     
     // ✅ CORREÇÃO: Usa crossedStart1ForRound em vez de lap para detectar passagem pela casa 0
     if (crossedStart1ForRound) {
@@ -596,15 +605,19 @@ export function useTurnEngine({
         return hasFlag
       })
       
-      console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', round)
+      console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', currentRoundRef.current, 'round do closure:', round)
       console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => `${nextPlayers[i]?.name}:${nextFlags[i]}`).join(', '))
       console.log('[DEBUG] 🔍 Total de jogadores vivos:', aliveIndices.length)
       console.log('[DEBUG] 🔍 Flags completas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f ? '✓' : '✗'}`).join(', '))
       console.log('[DEBUG] 🔍 Todos passaram pela casa 0?', allAliveDone)
       
       if (allAliveDone) {
-        // ✅ CORREÇÃO: Incrementa a rodada quando TODOS os jogadores vivos passaram pela casa 0
-        nextRound = round + 1
+        // ✅ CORREÇÃO CRÍTICA: Usa valor atualizado de round via ref, não do closure
+        const currentRoundValue = currentRoundRef.current
+        nextRound = currentRoundValue + 1
+        shouldIncrementRound = true
+        console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
+        
         // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
         nextFlags = nextFlags.map((_, idx) => {
           if (nextPlayers[idx]?.bankrupt) {
@@ -615,7 +628,7 @@ export function useTurnEngine({
             return false
           }
         })
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior:', round, 'Jogadores vivos:', alivePlayers.length)
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior (ref):', currentRoundValue, 'Rodada anterior (closure):', round, 'Jogadores vivos:', alivePlayers.length)
         console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
         appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
       } else {
@@ -635,21 +648,38 @@ export function useTurnEngine({
 
     setPlayers(nextPlayers)
     
-    // ✅ CORREÇÃO: Atualiza a rodada sempre usando Math.max para garantir sincronização
-    // Isso garante que a rodada está correta antes de fazer broadcast
-    // IMPORTANTE: Usa função de atualização para garantir que sempre pega o valor mais recente
-    // ✅ CORREÇÃO: Sempre atualiza usando Math.max, não apenas quando nextRound > round
-    // Isso evita problemas com valores capturados em closures que podem estar desatualizados
+    // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
+    // Usa função de atualização para sempre pegar o valor mais recente do estado
+    // Se shouldIncrementRound é true, força o incremento mesmo se houver sincronização
     setRound(prevRound => {
-      // ✅ CORREÇÃO: Garante que sempre use o maior valor (protege contra race conditions)
-      const finalRound = Math.max(nextRound, prevRound)
-      if (finalRound > prevRound) {
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
-        console.log('[DEBUG] ✅ Rodada incrementada com sucesso!')
-        appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
-      } else if (nextRound !== prevRound) {
-        console.log('[DEBUG] 🔄 Rodada NÃO incrementada - nextRound:', nextRound, 'rodada atual (prevRound):', prevRound, 'finalRound:', finalRound)
+      let finalRound = prevRound
+      
+      // ✅ CORREÇÃO: Se todos passaram pela casa 0, incrementa a rodada
+      if (shouldIncrementRound) {
+        // Se nextRound foi calculado corretamente e é maior que prevRound, usa nextRound
+        if (nextRound > prevRound) {
+          finalRound = nextRound
+          console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
+          console.log('[DEBUG] ✅ Rodada incrementada com sucesso!')
+          appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+        } else {
+          // Se nextRound não é maior (pode ter sido calculado com round desatualizado), incrementa manualmente
+          finalRound = prevRound + 1
+          console.log('[DEBUG] 🔄 RODADA INCREMENTADA (forçado) - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
+          console.log('[DEBUG] ✅ Rodada incrementada com sucesso (forçado devido a sincronização)!')
+          appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+        }
+      } else {
+        // Se não deve incrementar, usa Math.max para proteger contra reversão
+        finalRound = Math.max(nextRound, prevRound)
+        if (finalRound !== prevRound) {
+          console.log('[DEBUG] 🔄 Rodada atualizada via Math.max - prevRound:', prevRound, 'nextRound:', nextRound, 'finalRound:', finalRound)
+        }
       }
+      
+      // ✅ CORREÇÃO: Atualiza o ref com o valor final para uso futuro
+      currentRoundRef.current = finalRound
+      
       return finalRound
     })
     
