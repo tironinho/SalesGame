@@ -1,0 +1,60 @@
+================================================================================
+RELATÓRIO COMPLETO DE DEBUG - Sales Game
+================================================================================
+Data/Hora: 2025-12-23T20:05:09.291Z
+
+--- VALIDAÇÕES ---
+Total de validações: 0
+Erros: 0
+Avisos: 0
+Taxa de erro: 0.00%
+
+--- LOGS CAPTURADOS ---
+Total de logs: 2
+Logs por nível: {
+  "log": 2,
+  "warn": 0,
+  "error": 0,
+  "debug": 0,
+  "info": 0
+}
+
+--- HISTÓRICO DE VALIDAÇÕES ---
+
+--- LOGS DETALHADOS ---
+================================================================================
+RELATÓRIO DE LOGS - Sales Game
+================================================================================
+Data/Hora: 2025-12-23T20:05:09.291Z
+Total de logs: 2
+Estatísticas: {
+  "total": 2,
+  "byLevel": {
+    "log": 2,
+    "warn": 0,
+    "error": 0,
+    "debug": 0,
+    "info": 0
+  },
+  "enabled": true
+}
+================================================================================
+
+[2025-12-23T20:05:06.758Z] 📝 [LOG]
+  Arg 1: [DEBUG MODE] ATIVADO
+
+[2025-12-23T20:05:09.249Z] 📝 [LOG]
+  Arg 1: [DEBUG MODE] 📊 Relatório de validação:
+  Arg 2: {
+  "timestamp": "2025-12-23T20:05:09.249Z",
+  "stats": {
+    "total": 0,
+    "errors": 0,
+    "warnings": 0,
+    "errorRate": 0,
+    "warningRate": 0
+  },
+  "history": []
+}
+
+================================================================================

@@ -1,0 +1,740 @@
+RealtimeClient.js:185 WebSocket connection to 'wss://wjylzxsfevdlhqunvfqc.supabase.co/realtime/v1/websocket?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqeWx6eHNmZXZkbGhxdW52ZnFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2ODMwOTEsImV4cCI6MjA3NDI1OTA5MX0.SuB0gd7-gefwpUHFnKsupDgo8P2VeLuMbdlsU6AMrLw&eventsPerSecond=10&vsn=1.0.0' failed: WebSocket is closed before the connection is established.
+disconnect @ RealtimeClient.js:185
+wjylzxsfevdlhqunvfqc.supabase.co/rest/v1/lobbies?select=id%2Cname%2Chost_id&id=eq.236f2d86-3233-4162-96a9-a15af48d9522:1  Failed to load resource: the server responded with a status of 406 ()
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=2 cashDelta=0 note=Dado: 2
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 2 deltaCash: 0 note: Dado: 2
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 9 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 9 Para posição: 11 Steps: 2 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 11 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766519974868
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 3 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 302
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 6 turnIdx: 1 round: 1 timestamp: 1766519975170
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=6, remoto=12, final=12
+App.jsx:756 [NET] applied remote v=12
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=5 cashDelta=0 note=Dado: 5
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 5 deltaCash: 0 note: Dado: 5
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 11 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 11 Para posição: 16 Steps: 5 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 16 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766519982993
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 267
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 7 turnIdx: 1 round: 1 timestamp: 1766519983260
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=12, remoto=13, final=13
+App.jsx:756 [NET] applied remote v=15
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=6 cashDelta=0 note=Dado: 6
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 6 deltaCash: 0 note: Dado: 6
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 16 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 16 Para posição: 22 Steps: 6 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 22 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+useTurnEngine.jsx:1339 [DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador: jog1 Posição atual: 22
+useTurnEngine.jsx:1349 [DEBUG] 💰 DESPESAS - Valor: 1450 Empréstimo a cobrar: 0 Total: 1450
+useTurnEngine.jsx:1350 [DEBUG] 💰 EMPRÉSTIMO - Detalhes: Object
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766519988648
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+useTurnEngine.jsx:1362 [DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual: 17000 Total a pagar: 1450 Posição: 22
+useTurnEngine.jsx:355 [DEBUG] ✅ Saldo suficiente! Processando pagamento de: 1450
+App.jsx:792 [App] broadcastState - versão: 8 turnIdx: 0 round: 1 timestamp: 1766519988652
+useTurnEngine.jsx:1365 [DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses: true Posição atual: 22
+useTurnEngine.jsx:1404 [DEBUG] 💰 DESPESAS FINALIZADAS - Jogador: jog1 Posição final: 22 Saldo final: 15550
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 3 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 241
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 9 turnIdx: 1 round: 1 timestamp: 1766519988889
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:597 [NET] Ignorando estado remoto - mudança local muito recente (< 1s)
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:645 [NET] ⚠️ PRESERVANDO posição local (movimento recente): local=22, remoto=16, final=22
+App.jsx:653 [NET] Sincronizando posição do jogador jog1: local=22, remoto=16, final=22
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=13, remoto=18, final=18
+App.jsx:756 [NET] applied remote v=19
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=5 cashDelta=0 note=Dado: 5
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 5 deltaCash: 0 note: Dado: 5
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 22 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 22 Para posição: 27 Steps: 5 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 27 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766519995273
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 233
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 10 turnIdx: 1 round: 1 timestamp: 1766519995506
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=18, remoto=20, final=20
+App.jsx:756 [NET] applied remote v=21
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=5 cashDelta=0 note=Dado: 5
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 5 deltaCash: 0 note: Dado: 5
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 27 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 27 Para posição: 32 Steps: 5 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 32 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766520001555
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 243
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 11 turnIdx: 1 round: 1 timestamp: 1766520001799
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=20, remoto=23, final=23
+App.jsx:756 [NET] applied remote v=23
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:563 [NET] Sincronizando turnIdx remoto Object
+App.jsx:756 [NET] applied remote v=24
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=4 cashDelta=0 note=Dado: 4
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 4 deltaCash: 0 note: Dado: 4
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 32 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 32 Para posição: 36 Steps: 4 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 36 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 18826
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 12 turnIdx: 1 round: 1 timestamp: 1766520020381
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=23, remoto=28, final=28
+App.jsx:756 [NET] applied remote v=26
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=3 cashDelta=0 note=Dado: 3
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 3 deltaCash: 0 note: Dado: 3
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 36 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 36 Para posição: 39 Steps: 3 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 39 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766520028306
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 202
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 13 turnIdx: 1 round: 1 timestamp: 1766520028508
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:557 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=28, remoto=32, final=32
+App.jsx:756 [NET] applied remote v=28
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=5 cashDelta=0 note=Dado: 5
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 5 deltaCash: 0 note: Dado: 5
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 39 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 39 Para posição: 44 Steps: 5 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 44 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766520035981
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 206
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 14 turnIdx: 1 round: 1 timestamp: 1766520036187
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:563 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=32, remoto=33, final=33
+App.jsx:756 [NET] applied remote v=31
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=6 cashDelta=0 note=Dado: 6
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 6 deltaCash: 0 note: Dado: 6
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 44 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 44 Para posição: 50 Steps: 6 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 50 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766520044830
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 3 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 304
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 15 turnIdx: 1 round: 1 timestamp: 1766520045134
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:563 [NET] Sincronizando turnIdx remoto Object
+App.jsx:653 [NET] Sincronizando posição do jogador jog2: local=33, remoto=36, final=36
+App.jsx:756 [NET] applied remote v=33
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=3 cashDelta=0 note=Dado: 3
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 3 deltaCash: 0 note: Dado: 3
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 50 Saldo: 17000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 50 Para posição: 53 Steps: 3 Lap: false CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 53 Saldo: 17000
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:260 [DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp: 1766520055583
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 1 -> 0
+App.jsx:792 [App] broadcastState - versão: 16 turnIdx: 0 round: 1 timestamp: 1766520055584
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+useTurnEngine.jsx:2193 [DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner
+useTurnEngine.jsx:2213 [DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 2 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: 236
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 17 turnIdx: 1 round: 1 timestamp: 1766520055820
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:597 [NET] Ignorando estado remoto - mudança local muito recente (< 1s)
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:563 [NET] Sincronizando turnIdx remoto Object
+App.jsx:615 [NET] Ignorando estado remoto - estado local parece mais recente Object
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:11 [Controls] render
+App.jsx:500 [App] lastLocalStateRef atualizado via useEffect - turnIdx mudou: 1 -> 0
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 0
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: true
+Controls.jsx:20 [Controls] click => Rolar Dado & Andar (canRoll=true)
+Controls.jsx:29 [Controls] onAction ROLL => steps=6 cashDelta=0 note=Dado: 6
+useTurnEngine.jsx:314 [DEBUG] 🎯 advanceAndMaybeLap chamada - steps: 6 deltaCash: 0 note: Dado: 6
+useTurnEngine.jsx:347 [DEBUG] 📍 POSIÇÃO INICIAL - Jogador: jog1 Posição: 53 Saldo: 24000
+useTurnEngine.jsx:568 [DEBUG] 🚶 MOVIMENTO - De posição: 53 Para posição: 4 Steps: 6 Lap: true CompletedLap: false
+useTurnEngine.jsx:577 [DEBUG] 📍 APÓS MOVIMENTO - Jogador: jog1 Posição: 4 Saldo: 24000
+useTurnEngine.jsx:592 [DEBUG] 🏁 VOLTA COMPLETA DETECTADA (lap=true) - Jogador completou uma volta completa! Object
+useTurnEngine.jsx:606 [DEBUG] 🏁 Flag marcada por volta completa (lap) - Flags: jog1:true, jog2:false
+useTurnEngine.jsx:622 [DEBUG] 🏁 Jogador já tinha flag marcada (por lap) - Flags: jog1:true, jog2:false
+useTurnEngine.jsx:633 [DEBUG] 🔍 Verificando jogador: jog1 flag: true índice: 0 pos: 4
+useTurnEngine.jsx:633 [DEBUG] 🔍 Verificando jogador: jog2 flag: false índice: 1 pos: 36
+useTurnEngine.jsx:637 [DEBUG] 🔍 Verificação de rodada - Jogador: jog1 Rodada atual: 1 round do closure: 1
+useTurnEngine.jsx:638 [DEBUG] 🔍 Jogadores vivos: jog1:true, jog2:false
+useTurnEngine.jsx:639 [DEBUG] 🔍 Total de jogadores vivos: 2
+useTurnEngine.jsx:640 [DEBUG] 🔍 Flags completas: jog1:✓, jog2:✗
+useTurnEngine.jsx:641 [DEBUG] 🔍 Todos passaram pela casa 0? false
+useTurnEngine.jsx:665 [DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0: jog2
+useTurnEngine.jsx:729 [DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno: 1 rodada atual: 1 próxima rodada: 1 nextRound calculado: 1 shouldIncrementRound: false rodada foi incrementada? false
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 0 -> 1 openingModalRef: true
+useTurnEngine.jsx:214 [DEBUG] openModalAndWait - ABRINDO modal, modalLocks: 1 -> 2 openingModalRef: true
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 2 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 2
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 2 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:224 [DEBUG] openModalAndWait - Modal renderizada, openingModalRef: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:262 [DEBUG] openModalAndWait - FECHANDO modal, modalLocks: 2 -> 1
+App.jsx:792 [App] broadcastState - versão: 18 turnIdx: 0 round: 1 timestamp: 1766520064051
+App.jsx:848 [App] isMyTurn - owner: jog1 id: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: true
+App.jsx:878 [App] Totals recalculado - me: jog1 clients: 2 faturamento: 1070 manutencao: 1450 vendedoresComuns: 1 fieldSales: 0 insideSales: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+HUD.jsx:5 [HUD] totals
+useTurnEngine.jsx:90 [DEBUG] modalLocks sync - isMyTurn: true modalLocks: 1
+useTurnEngine.jsx:169 [DEBUG] É minha vez - atualizando lockOwner para: 7f28a7ee-e411-41b3-b5a4-60efac446356 turnIdx: 0
+useTurnEngine.jsx:181 [DEBUG] Mantendo pendingTurnDataRef - próximo turno: 1 turno atual: 0
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: true isCurrentPlayerMe: true modalLocks: 1 turnLock: true isBankrupt: false gameOver: false result: false
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1594 [DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando... Object
+useTurnEngine.jsx:1605 [DEBUG] ⚠️ checkBeforeTick - excedeu tentativas, forçando avanço do turno Object
+an @ useTurnEngine.jsx:1605
+useTurnEngine.jsx:1612 [DEBUG] ⚠️ checkBeforeTick - forçando modalLocks para 0
+an @ useTurnEngine.jsx:1612
+useTurnEngine.jsx:1619 [DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas
+useTurnEngine.jsx:1444 [DEBUG] tick - tentativa: 1 modalLocks: 0 openingModalRef: false lockOwner: 7f28a7ee-e411-41b3-b5a4-60efac446356 myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isLockOwner: true
+useTurnEngine.jsx:1470 [DEBUG] 🔍 tick - verificando pendingTurnDataRef: próximo turno: 1
+useTurnEngine.jsx:1486 [DEBUG] ✅ Mudando turno - de: 0 para: 1 finalModalLocks: 0 finalOpening: false timeSinceLastModalClosed: Infinity
+useTurnEngine.jsx:1494 [DEBUG] 🔄 Broadcast - Rodada a ser transmitida: 1 Rodada atual no estado: 1 shouldIncrement: false
+App.jsx:792 [App] broadcastState - versão: 19 turnIdx: 1 round: 1 timestamp: 1766520075306
+useTurnEngine.jsx:1522 [DEBUG] ✅ Turno mudado com sucesso - Rodada: 1
+App.jsx:848 [App] isMyTurn - owner: jog2 id: e55807b9-6f1e-4120-881a-3351166734fc myUid: 7f28a7ee-e411-41b3-b5a4-60efac446356 isMine: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+Controls.jsx:11 [Controls] render
+useTurnEngine.jsx:187 [DEBUG] Não é mais minha vez - limpando lockOwner
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:1055 [App] controlsCanRoll - isMyTurn: false isCurrentPlayerMe: false modalLocks: 0 turnLock: false isBankrupt: false gameOver: false result: false
+App.jsx:597 [NET] Ignorando estado remoto - mudança local muito recente (< 1s)

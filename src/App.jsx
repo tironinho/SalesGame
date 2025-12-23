@@ -185,7 +185,8 @@ export default function App() {
             console.log('[App] SYNC - ✅ Aceitando versão remota:', remoteVersion, '> versão local:', localVersion)
           }
           
-          // Sincroniza turnIdx apenas se não houver mudança local muito recente
+          // ✅ CORREÇÃO CRÍTICA: Sincroniza turnIdx apenas se não houver mudança local muito recente
+          // E NUNCA aceita um turnIdx remoto que está revertendo uma mudança local
           if (d.turnIdx !== turnIdx) {
             if (lastLocal && (now - lastLocal.timestamp) < 5000) {
               // Verifica se o turnIdx local mudou recentemente
@@ -203,23 +204,46 @@ export default function App() {
                     timeSinceLocalChange: now - lastLocal.timestamp,
                     isReverting: true
                   })
+                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
                 } else {
-                  console.log('[App] SYNC - Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
+                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
                     lastLocalTurnIdx: lastLocal.turnIdx,
                     currentLocalTurnIdx: turnIdx,
                     remoteTurnIdx: d.turnIdx,
                     timeSinceLocalChange: now - lastLocal.timestamp
                   })
+                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
                 }
               } else {
+                // ✅ CORREÇÃO: Se o turnIdx local não mudou, mas há uma mudança local recente,
+                // verifica se o turnIdx remoto está tentando reverter
+                // Se o turnIdx remoto é igual ao lastLocal.turnIdx, está tentando reverter
+                if (d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
+                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior', {
+                    lastLocalTurnIdx: lastLocal.turnIdx,
+                    currentLocalTurnIdx: turnIdx,
+                    remoteTurnIdx: d.turnIdx
+                  })
+                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+                }
                 // Se o turnIdx local não mudou, pode sincronizar
                 setTurnIdx(d.turnIdx)
                 console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
               }
             } else {
+              // ✅ CORREÇÃO: Se não houve mudança local recente, mas há lastLocal,
+              // verifica se o turnIdx remoto está tentando reverter
+              if (lastLocal && d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
+                console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente)', {
+                  lastLocalTurnIdx: lastLocal.turnIdx,
+                  currentLocalTurnIdx: turnIdx,
+                  remoteTurnIdx: d.turnIdx
+                })
+                return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+              }
               // Se não houve mudança local recente, sincroniza normalmente
               setTurnIdx(d.turnIdx)
-              console.log('[App] SYNC - Sincronizing turnIdx', { local: turnIdx, remote: d.turnIdx })
+              console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
             }
           }
           
@@ -519,8 +543,9 @@ export default function App() {
 
     let changed = false
     
-    // ✅ CORREÇÃO: Sincroniza turnIdx e round primeiro (crítico para funcionamento)
+    // ✅ CORREÇÃO CRÍTICA: Sincroniza turnIdx e round primeiro (crítico para funcionamento)
     // Mas só se não houver mudança local muito recente
+    // E NUNCA aceita um turnIdx remoto que está revertendo uma mudança local
     if (nt !== null && nt !== turnIdx) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
@@ -542,21 +567,44 @@ export default function App() {
               timeSinceLocalChange: now - lastLocal.timestamp,
               isReverting: true
             })
+            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
           } else {
-            console.log('[NET] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
+            console.log('[NET] ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
               lastLocalTurnIdx: lastLocal.turnIdx,
               currentLocalTurnIdx: turnIdx,
               remoteTurnIdx: nt,
               timeSinceLocalChange: now - lastLocal.timestamp
             })
+            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
           }
         } else {
+          // ✅ CORREÇÃO: Se o turnIdx local não mudou, mas há uma mudança local recente,
+          // verifica se o turnIdx remoto está tentando reverter
+          // Se o turnIdx remoto é igual ao lastLocal.turnIdx, está tentando reverter
+          if (nt === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
+            console.log('[NET] ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior', {
+              lastLocalTurnIdx: lastLocal.turnIdx,
+              currentLocalTurnIdx: turnIdx,
+              remoteTurnIdx: nt
+            })
+            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+          }
           // Se o turnIdx local não mudou, pode sincronizar
           setTurnIdx(nt)
           changed = true
           console.log('[NET] Sincronizando turnIdx remoto', { local: turnIdx, remote: nt })
         }
       } else {
+        // ✅ CORREÇÃO: Se não houve mudança local recente, mas há lastLocal,
+        // verifica se o turnIdx remoto está tentando reverter
+        if (lastLocal && nt === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
+          console.log('[NET] ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente)', {
+            lastLocalTurnIdx: lastLocal.turnIdx,
+            currentLocalTurnIdx: turnIdx,
+            remoteTurnIdx: nt
+          })
+          return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+        }
         // Se não houve mudança local recente, sincroniza normalmente
         setTurnIdx(nt)
         changed = true
