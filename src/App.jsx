@@ -162,12 +162,28 @@ export default function App() {
         }
 
         if (d.type === 'SYNC' && phase === 'game') {
-          console.log('[App] SYNC recebido - turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
+          const remoteVersion = Number(d.version || 0)
+          const remoteTimestamp = Number(d.timestamp || 0)
+          const localVersion = lastAcceptedVersionRef.current
+          
+          console.log('[App] SYNC recebido - versão remota:', remoteVersion, 'versão local:', localVersion, 'turnIdx:', d.turnIdx, 'round:', d.round, 'source:', d.source)
           console.log('[App] SYNC - meu turnIdx atual:', turnIdx, 'meu myUid:', myUid)
+          
+          // ✅ MELHORIA: Rejeita estados com versão menor que a última aceita (fora de ordem)
+          if (remoteVersion > 0 && localVersion > 0 && remoteVersion < localVersion) {
+            console.log('[App] SYNC - ❌ REJEITANDO estado remoto - versão antiga:', remoteVersion, '< versão local:', localVersion)
+            return
+          }
           
           // ✅ CORREÇÃO: Sincroniza turnIdx e round, mas protege mudanças locais recentes
           const now = Date.now()
           const lastLocal = lastLocalStateRef.current
+          
+          // ✅ MELHORIA: Atualiza versão aceita se a remota for maior
+          if (remoteVersion > localVersion) {
+            lastAcceptedVersionRef.current = remoteVersion
+            console.log('[App] SYNC - ✅ Aceitando versão remota:', remoteVersion, '> versão local:', localVersion)
+          }
           
           // Sincroniza turnIdx apenas se não houver mudança local muito recente
           if (d.turnIdx !== turnIdx) {
@@ -253,32 +269,46 @@ export default function App() {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
-            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
+            // ✅ MELHORIA: Valida e sincroniza posição com versionamento
             const localPos = Number(localPlayer.pos || 0)
             const remotePos = Number(syncedPlayer.pos || 0)
             
-            // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
-            // e houve mudança local recente, NUNCA aceita posição remota menor
-            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
-            let finalPos = Math.max(localPos, remotePos)
+            // ✅ MELHORIA: Valida posição (deve estar entre 0 e TRACK_LEN * 10 para permitir múltiplas voltas)
+            const MAX_POS = TRACK_LEN * 10
+            const validLocalPos = Math.max(0, Math.min(localPos, MAX_POS))
+            const validRemotePos = Math.max(0, Math.min(remotePos, MAX_POS))
             
-            if (isLocalPlayer && localPos > remotePos) {
-              // Verifica se houve mudança local recente (movimento do jogador)
+            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
+            let finalPos = Math.max(validLocalPos, validRemotePos)
+            
+            // ✅ MELHORIA: Se versão remota é mais recente, prioriza posição remota
+            // Mas se é jogador local e houve movimento recente, preserva local
+            if (isLocalPlayer && validLocalPos > validRemotePos) {
               const now = Date.now()
               const lastLocal = lastLocalStateRef.current
-              if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-                // Se houve mudança local recente e a posição local é maior, preserva a posição local
-                // Isso evita que estados remotos antigos revertam movimentos recentes
-                if (localPos > remotePos) {
-                  console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
-                  finalPos = localPos
-                }
+              const timeSinceLocalChange = lastLocal ? (now - lastLocal.timestamp) : Infinity
+              
+              // ✅ MELHORIA: Se versão remota é mais antiga E movimento local foi recente, preserva local
+              if (remoteVersion > 0 && localVersion > 0 && remoteVersion < localVersion && timeSinceLocalChange < 5000) {
+                console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (versão antiga + movimento recente): local=${validLocalPos}, remoto=${validRemotePos}, versão remota=${remoteVersion}, versão local=${localVersion}, final=${validLocalPos}`)
+                finalPos = validLocalPos
+              } else if (timeSinceLocalChange < 5000 && validLocalPos > validRemotePos) {
+                // Se movimento local foi muito recente (< 5s), preserva local mesmo com versão mais nova
+                console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (movimento muito recente): local=${validLocalPos}, remoto=${validRemotePos}, final=${validLocalPos}, tempo desde mudança=${timeSinceLocalChange}ms`)
+                finalPos = validLocalPos
+              } else if (remoteVersion > localVersion) {
+                // Se versão remota é mais nova, aceita posição remota
+                console.log(`[App] SYNC - ✅ Aceitando posição remota (versão mais nova): local=${validLocalPos}, remoto=${validRemotePos}, versão remota=${remoteVersion}, versão local=${localVersion}, final=${validRemotePos}`)
+                finalPos = validRemotePos
               }
+            } else if (!isLocalPlayer && remoteVersion > localVersion) {
+              // Para outros jogadores, se versão remota é mais nova, aceita
+              finalPos = validRemotePos
             }
             
-            // Log apenas se houver diferença para debug
-            if (localPos !== remotePos) {
-              console.log(`[App] SYNC - Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
+            // ✅ MELHORIA: Log detalhado de sincronização
+            if (validLocalPos !== validRemotePos || localPos !== validLocalPos || remotePos !== validRemotePos) {
+              console.log(`[App] SYNC - Posição sincronizada: jogador=${syncedPlayer.name}, local=${localPos}→${validLocalPos}, remoto=${remotePos}→${validRemotePos}, final=${finalPos}, versão remota=${remoteVersion}, versão local=${localVersion}`)
             }
             if (isLocalPlayer) {
               // Compara recursos para detectar se há compras locais
@@ -443,6 +473,10 @@ export default function App() {
   // ✅ CORREÇÃO: Ref para rastrear quando uma mudança local foi feita recentemente
   const localChangeRef = React.useRef(null)
   const lastLocalStateRef = React.useRef(null)
+  
+  // ✅ MELHORIA: Versionamento sequencial para garantir ordem de sincronização
+  const stateVersionRef = React.useRef(0)
+  const lastAcceptedVersionRef = React.useRef(0)
   
   // Rastreia mudanças locais
   // ✅ CORREÇÃO: Atualiza lastLocalStateRef quando turnIdx, round ou players mudam
@@ -739,6 +773,10 @@ export default function App() {
   }
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
+    // ✅ MELHORIA: Incrementa versão sequencial
+    stateVersionRef.current = stateVersionRef.current + 1
+    const currentVersion = stateVersionRef.current
+    
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
@@ -746,13 +784,12 @@ export default function App() {
       players: nextPlayers, 
       turnIdx: nextTurnIdx, 
       round: nextRound, 
-      timestamp: now
+      timestamp: now,
+      version: currentVersion  // ✅ MELHORIA: Inclui versão
     }
-    console.log('[App] broadcastState - atualizando lastLocalStateRef', { 
-      turnIdx: nextTurnIdx, 
-      round: nextRound, 
-      timestamp: now 
-    })
+    lastAcceptedVersionRef.current = currentVersion
+    
+    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round:', nextRound, 'timestamp:', now)
     
     // 1) rede
     commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
@@ -760,6 +797,7 @@ export default function App() {
     try {
       bcRef.current?.postMessage?.({
         type: 'SYNC',
+        version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
         players: nextPlayers,
         turnIdx: nextTurnIdx,
         round: nextRound,
@@ -767,6 +805,7 @@ export default function App() {
         gameOver: gameOverState,
         winner: winnerState,
         source: meId,
+        timestamp: now,  // ✅ MELHORIA: Inclui timestamp
       })
     } catch (e) { console.warn('[App] broadcastState failed:', e) }
   }

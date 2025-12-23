@@ -560,8 +560,12 @@ export function useTurnEngine({
     const oldPos = cur.pos
     const newPos = (oldPos + steps) % TRACK_LEN
     const lap = newPos < oldPos
+    
+    // ✅ CORREÇÃO CRÍTICA: Detecta volta completa e incrementa rodada individual do jogador
+    // NOTA: A rodada geral só incrementa quando TODOS passam pela casa 0, mas aqui detectamos volta completa
+    const completedLap = lap && oldPos >= TRACK_LEN - 1  // Se estava na última casa e deu volta
 
-    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap)
+    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap, 'CompletedLap:', completedLap)
 
     // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
     const nextPlayers = players.map((p, i) => {
@@ -582,16 +586,41 @@ export function useTurnEngine({
     let nextFlags = [...roundFlags]
     let shouldIncrementRound = false
     
-    // ✅ CORREÇÃO: Usa crossedStart1ForRound em vez de lap para detectar passagem pela casa 0
+    // ✅ CORREÇÃO CRÍTICA: Se jogador completou volta completa (lap), marca flag imediatamente
+    // Isso garante que a flag seja marcada mesmo se crossedStart1ForRound não detectar corretamente
+    if (lap) {
+      console.log('[DEBUG] 🏁 VOLTA COMPLETA DETECTADA (lap=true) - Jogador completou uma volta completa!', {
+        jogador: cur.name,
+        posicaoAnterior: oldPos,
+        posicaoNova: newPos,
+        rodadaAtual: currentRoundRef.current
+      })
+      
+      // Garante que o array de flags tem o tamanho correto
+      if (nextFlags.length < players.length) {
+        nextFlags = [...nextFlags, ...new Array(players.length - nextFlags.length).fill(false)]
+      }
+      
+      // Marca que este jogador passou pela casa 0 (completou volta)
+      nextFlags[curIdx] = true
+      console.log('[DEBUG] 🏁 Flag marcada por volta completa (lap) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+    }
+    
+    // ✅ CORREÇÃO: Usa crossedStart1ForRound para detectar passagem pela casa 0 (pode ser sem dar volta completa)
+    // Se lap já marcou a flag, isso garante que não perde a marcação
     if (crossedStart1ForRound) {
       // Garante que o array de flags tem o tamanho correto
       if (nextFlags.length < players.length) {
         nextFlags = [...nextFlags, ...new Array(players.length - nextFlags.length).fill(false)]
       }
       
-      // Marca que este jogador passou pela casa 0
-      nextFlags[curIdx] = true
-      console.log('[DEBUG] 🏁 Jogador passou pela casa 0 - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      // Marca que este jogador passou pela casa 0 (se ainda não foi marcado por lap)
+      if (!nextFlags[curIdx]) {
+        nextFlags[curIdx] = true
+        console.log('[DEBUG] 🏁 Jogador passou pela casa 0 (crossedStart1ForRound) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      } else {
+        console.log('[DEBUG] 🏁 Jogador já tinha flag marcada (por lap) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      }
       
       // ✅ CORREÇÃO: Conta apenas jogadores vivos para verificar se todos passaram
       const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
@@ -688,14 +717,16 @@ export function useTurnEngine({
     // IMPORTANTE: Usa nextRound calculado acima (pode ser diferente de round se todos passaram pela casa 0)
     // ✅ CORREÇÃO: Garante que nextRound seja sempre >= round atual
     // ✅ CORREÇÃO CRÍTICA: Usa nextRound diretamente (não round) para garantir que o incremento seja preservado
-    const finalNextRound = nextRound // ✅ CORREÇÃO: Usa nextRound diretamente (já foi calculado corretamente acima)
+    // ✅ MELHORIA: Usa o valor atualizado do estado após setRound (via ref)
+    const finalNextRound = shouldIncrementRound ? currentRoundRef.current + 1 : nextRound
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
       nextRound: finalNextRound, // ✅ CORREÇÃO: Usa nextRound calculado (pode ser round + 1 se todos passaram pela casa 0)
-      timestamp: Date.now() // Adiciona timestamp para rastrear quando foi criado
+      timestamp: Date.now(), // Adiciona timestamp para rastrear quando foi criado
+      shouldIncrementRound // ✅ MELHORIA: Inclui flag para garantir incremento no tick
     }
-    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound, 'rodada foi incrementada?', nextRound > round)
+    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound, 'shouldIncrementRound:', shouldIncrementRound, 'rodada foi incrementada?', nextRound > round)
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
@@ -1459,18 +1490,29 @@ export function useTurnEngine({
               // ✅ CORREÇÃO: Garante que a rodada seja atualizada antes do broadcast
               // Isso garante que o broadcast sempre use o valor correto da rodada
               const roundToBroadcast = turnData.nextRound
-              console.log('[DEBUG] 🔄 Broadcast - Rodada a ser transmitida:', roundToBroadcast, 'Rodada atual no estado:', round)
+              const shouldIncrement = turnData.shouldIncrementRound || false
+              console.log('[DEBUG] 🔄 Broadcast - Rodada a ser transmitida:', roundToBroadcast, 'Rodada atual no estado:', round, 'shouldIncrement:', shouldIncrement)
               
               // ✅ CORREÇÃO: Atualiza turnIdx e rodada antes de fazer broadcast
               // O broadcastState atualiza lastLocalStateRef com o novo turnIdx e rodada, protegendo contra estados remotos antigos
               setTurnIdx(turnData.nextTurnIdx)
               // ✅ CORREÇÃO CRÍTICA: Sempre atualiza a rodada usando Math.max para proteger incrementos
-              // Isso garante que se a rodada foi incrementada, ela não será revertida
+              // Se shouldIncrement é true, força o incremento mesmo se houver sincronização
               setRound(prevRound => {
-                const finalRound = Math.max(roundToBroadcast, prevRound)
-                if (finalRound > prevRound) {
-                  console.log('[DEBUG] 🔄 Rodada atualizada no broadcast - de:', prevRound, 'para:', finalRound)
+                let finalRound = prevRound
+                if (shouldIncrement) {
+                  // Se deve incrementar, força o incremento
+                  finalRound = Math.max(roundToBroadcast, prevRound + 1)
+                  console.log('[DEBUG] 🔄 Rodada incrementada no broadcast (forçado) - de:', prevRound, 'para:', finalRound, 'roundToBroadcast:', roundToBroadcast)
+                } else {
+                  // Caso contrário, usa Math.max para proteger
+                  finalRound = Math.max(roundToBroadcast, prevRound)
+                  if (finalRound > prevRound) {
+                    console.log('[DEBUG] 🔄 Rodada atualizada no broadcast - de:', prevRound, 'para:', finalRound)
+                  }
                 }
+                // ✅ MELHORIA: Atualiza ref com valor final
+                currentRoundRef.current = finalRound
                 return finalRound
               })
               broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast)
