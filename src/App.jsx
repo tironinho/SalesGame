@@ -162,6 +162,13 @@ export default function App() {
         }
 
         if (d.type === 'SYNC' && phase === 'game') {
+          // ✅ CORREÇÃO: Se netState estiver ativo, ignora SYNC do BroadcastChannel
+          // O Supabase (netState) é a fonte autoritativa para multiplayer em rede
+          if (net?.enabled && net?.ready && netState) {
+            console.log('[App] SYNC ignorado - netState ativo, usando Supabase como autoridade única')
+            return
+          }
+          
           const remoteVersion = Number(d.version || 0)
           const remoteTimestamp = Number(d.timestamp || 0)
           const localVersion = lastAcceptedVersionRef.current
@@ -539,6 +546,8 @@ export default function App() {
   }, [players, turnIdx, round])
 
   useEffect(() => {
+    // ✅ CORREÇÃO: Verifica se net está habilitado e pronto
+    if (!net?.enabled || !net?.ready) return
     if (!netState) return
 
     // ✅ CORREÇÃO: Garante monotonicidade do que você aplica
@@ -565,8 +574,7 @@ export default function App() {
     if (netState.winner !== undefined) setWinner(netState.winner)
 
     console.log('[NET] applied remote v=%d', netVersion)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [netVersion])
+  }, [netVersion, netState, net?.enabled, net?.ready])
 
   async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
     if (typeof netCommit === 'function') {
