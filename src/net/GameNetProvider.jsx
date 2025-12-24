@@ -69,9 +69,12 @@ function GameNetProvider({ roomCode, hostId, children }) {
         { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => {
           const row = payload.new || payload.old || {}
-          if (typeof row.version === 'number' && row.version !== versionRef.current) setVersion(row.version)
-          if (row.state && JSON.stringify(row.state) !== JSON.stringify(stateRef.current)) setState(row.state)
-          lastEvtRef.current = Date.now()
+          // ✅ CORREÇÃO: Só aceita versão maior (evita regressão)
+          if (typeof row.version === 'number' && row.version > versionRef.current) {
+            setVersion(row.version)
+            if (row.state) setState(row.state)
+            lastEvtRef.current = Date.now()
+          }
         }
       )
       .subscribe()
@@ -99,17 +102,40 @@ function GameNetProvider({ roomCode, hostId, children }) {
   // commit
   const commit = async (updater) => {
     if (!enabled || !ready) return
+
     const prev = stateRef.current || {}
     const next = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
-    const newVersion = (versionRef.current || 0) + 1
+
+    const expectedVersion = (versionRef.current || 0)
+    const newVersion = expectedVersion + 1
+
     const { data, error } = await supabase
       .from('rooms')
       .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
       .eq('code', code)
+      .eq('version', expectedVersion) // <-- CRÍTICO: optimistic locking
       .select('state, version')
       .single()
-    if (error) { console.warn('[NET] commit:', error.message || error); return }
-    setState(data?.state || next); setVersion(data?.version ?? newVersion)
+
+    if (error) {
+      console.warn('[NET] commit failed (version conflict?)', error.message || error)
+
+      // estratégia simples: re-sync do banco e não sobrescreve
+      const { data: row } = await supabase
+        .from('rooms')
+        .select('state, version')
+        .eq('code', code)
+        .single()
+
+      if (row) {
+        setState(row.state || {})
+        setVersion(row.version ?? 0)
+      }
+      return
+    }
+
+    setState(data?.state || {})
+    setVersion(data?.version ?? newVersion)
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])

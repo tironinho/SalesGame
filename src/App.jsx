@@ -502,6 +502,9 @@ export default function App() {
   const stateVersionRef = React.useRef(0)
   const lastAcceptedVersionRef = React.useRef(0)
   
+  // ✅ CORREÇÃO: Ref para garantir monotonicidade do estado remoto aplicado
+  const lastAppliedNetVersionRef = React.useRef(0)
+  
   // Rastreia mudanças locais
   // ✅ CORREÇÃO: Atualiza lastLocalStateRef quando turnIdx, round ou players mudam
   // Mas só atualiza o timestamp se realmente mudou E se não foi atualizado recentemente pelo broadcastState
@@ -537,272 +540,32 @@ export default function App() {
 
   useEffect(() => {
     if (!netState) return
+
+    // ✅ CORREÇÃO: Garante monotonicidade do que você aplica
+    if (typeof netVersion === 'number') {
+      if (netVersion <= lastAppliedNetVersionRef.current) return
+      lastAppliedNetVersionRef.current = netVersion
+    }
+
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
-    let changed = false
-    
-    // ✅ CORREÇÃO CRÍTICA: Sincroniza turnIdx e round primeiro (crítico para funcionamento)
-    // Mas só se não houver mudança local muito recente
-    // E NUNCA aceita um turnIdx remoto que está revertendo uma mudança local
-    if (nt !== null && nt !== turnIdx) {
-      const now = Date.now()
-      const lastLocal = lastLocalStateRef.current
-      // Se houve mudança local muito recente (< 5s), não sincroniza turnIdx ainda
-      // Isso protege contra estados remotos que chegam logo após mudança local
-      if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-        // Verifica se o turnIdx local mudou recentemente
-        const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
-        if (localTurnIdxChanged) {
-          // ✅ CORREÇÃO: Se o turnIdx local mudou recentemente, NUNCA aceita um turnIdx remoto diferente
-          // Isso evita que estados remotos antigos revertam mudanças locais recentes
-          // Além disso, se o turnIdx remoto está tentando reverter para um valor anterior, ignora
-          const isReverting = nt === lastLocal.turnIdx
-          if (isReverting) {
-            console.log('[NET] ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente', {
-              lastLocalTurnIdx: lastLocal.turnIdx,
-              currentLocalTurnIdx: turnIdx,
-              remoteTurnIdx: nt,
-              timeSinceLocalChange: now - lastLocal.timestamp,
-              isReverting: true
-            })
-            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
-          } else {
-            console.log('[NET] ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
-              lastLocalTurnIdx: lastLocal.turnIdx,
-              currentLocalTurnIdx: turnIdx,
-              remoteTurnIdx: nt,
-              timeSinceLocalChange: now - lastLocal.timestamp
-            })
-            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
-          }
-        } else {
-          // ✅ CORREÇÃO: Se o turnIdx local não mudou, mas há uma mudança local recente,
-          // verifica se o turnIdx remoto está tentando reverter
-          // Se o turnIdx remoto é igual ao lastLocal.turnIdx, está tentando reverter
-          if (nt === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-            console.log('[NET] ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior', {
-              lastLocalTurnIdx: lastLocal.turnIdx,
-              currentLocalTurnIdx: turnIdx,
-              remoteTurnIdx: nt
-            })
-            return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
-          }
-          // Se o turnIdx local não mudou, pode sincronizar
-          setTurnIdx(nt)
-          changed = true
-          console.log('[NET] Sincronizando turnIdx remoto', { local: turnIdx, remote: nt })
-        }
-      } else {
-        // ✅ CORREÇÃO: Se não houve mudança local recente, mas há lastLocal,
-        // verifica se o turnIdx remoto está tentando reverter
-        if (lastLocal && nt === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-          console.log('[NET] ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente)', {
-            lastLocalTurnIdx: lastLocal.turnIdx,
-            currentLocalTurnIdx: turnIdx,
-            remoteTurnIdx: nt
-          })
-          return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
-        }
-        // Se não houve mudança local recente, sincroniza normalmente
-        setTurnIdx(nt)
-        changed = true
-        console.log('[NET] Sincronizando turnIdx remoto', { local: turnIdx, remote: nt })
-      }
-    }
-    if (nr !== null && nr !== round) {
-      const now = Date.now()
-      const lastLocal = lastLocalStateRef.current
-      // Se houve mudança local muito recente (< 2s), usa Math.max para proteger incrementos
-      if (lastLocal && (now - lastLocal.timestamp) < 2000) {
-        const localRoundChanged = lastLocal.round !== round
-        if (localRoundChanged) {
-          // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
-          setRound(prevRound => {
-            const finalRound = Math.max(prevRound, nr)
-            if (finalRound > prevRound) {
-              console.log('[NET] Rodada incrementada via sincronização:', prevRound, '->', finalRound)
-            }
-            return finalRound
-          })
-          changed = true
-        } else {
-          console.log('[NET] Ignorando round remoto - mudança local muito recente (< 2s)')
-        }
-      } else {
-        // Sempre usa Math.max para proteger contra reversão
-        setRound(prevRound => Math.max(prevRound, nr))
-        changed = true
-      }
-    }
-    
-    if (np && JSON.stringify(np) !== JSON.stringify(players)) { 
-      // ✅ CORREÇÃO: Ignora estado remoto se houver uma mudança local muito recente (< 1000ms)
-      const now = Date.now()
-      const lastLocal = lastLocalStateRef.current
-      if (lastLocal && (now - lastLocal.timestamp) < 1000) {
-        console.log('[NET] Ignorando estado remoto - mudança local muito recente (< 1s)')
-        return
-      }
-      
-      // ✅ CORREÇÃO: Compara valores críticos para detectar se o estado local é mais recente
-      const currentPlayers = players
-      const myPlayer = currentPlayers.find(p => p.id === myUid)
-      const remoteMyPlayer = np.find(p => p.id === myUid)
-      
-      if (myPlayer && remoteMyPlayer) {
-        // Se o estado local tem mais recursos que o remoto, pode ser uma mudança local recente
-        const localCash = Number(myPlayer.cash || 0)
-        const remoteCash = Number(remoteMyPlayer.cash || 0)
-        const localClients = Number(myPlayer.clients || 0)
-        const remoteClients = Number(remoteMyPlayer.clients || 0)
-        
-        // Se o local tem significativamente mais recursos, ignora o remoto
-        if (localCash > remoteCash + 500 || localClients > remoteClients + 1) {
-          console.log('[NET] Ignorando estado remoto - estado local parece mais recente', {
-            localCash, remoteCash, localClients, remoteClients
-          })
-          return
-        }
-      }
-      
-      // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
-      // IMPORTANTE: Sempre aceita propriedades críticas do estado sincronizado (pos, bankrupt, etc)
-      const syncedPlayers = np.map(syncedPlayer => {
-        const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
-        if (!localPlayer) return syncedPlayer
-        
-        // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
-        const localPos = Number(localPlayer.pos || 0)
-        const remotePos = Number(syncedPlayer.pos || 0)
-        
-        // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
-        // e houve mudança local recente, NUNCA aceita posição remota menor
-        const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
-        let finalPos = Math.max(localPos, remotePos)
-        
-        if (isLocalPlayer && localPos > remotePos) {
-          // Verifica se houve mudança local recente (movimento do jogador)
-          const now = Date.now()
-          const lastLocal = lastLocalStateRef.current
-          if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-            // Se houve mudança local recente e a posição local é maior, preserva a posição local
-            // Isso evita que estados remotos antigos revertam movimentos recentes
-            if (localPos > remotePos) {
-              console.log(`[NET] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
-              finalPos = localPos
-            }
-          }
-        }
-        
-        // Log apenas se houver diferença para debug
-        if (localPos !== remotePos) {
-          console.log(`[NET] Sincronizando posição do jogador ${syncedPlayer.name}: local=${localPos}, remoto=${remotePos}, final=${finalPos}`)
-        }
-        if (isLocalPlayer) {
-          // Compara recursos para detectar se há compras locais
-          const localClients = Number(localPlayer.clients || 0)
-          const remoteClients = Number(syncedPlayer.clients || 0)
-          const localVendedores = Number(localPlayer.vendedoresComuns || 0)
-          const remoteVendedores = Number(syncedPlayer.vendedoresComuns || 0)
-          const localFieldSales = Number(localPlayer.fieldSales || 0)
-          const remoteFieldSales = Number(syncedPlayer.fieldSales || 0)
-          const localInsideSales = Number(localPlayer.insideSales || 0)
-          const remoteInsideSales = Number(syncedPlayer.insideSales || 0)
-          
-          // ✅ CORREÇÃO: Se o local tem mais recursos que o remoto, preserva estado local completo
-          // (indica que o local fez compras que o remoto ainda não conhece)
-          const hasLocalPurchases = localClients > remoteClients || 
-                                   localVendedores > remoteVendedores ||
-                                   localFieldSales > remoteFieldSales ||
-                                   localInsideSales > remoteInsideSales ||
-                                   (localPlayer.mixProdutos && localPlayer.mixProdutos !== syncedPlayer.mixProdutos && localPlayer.mixProdutos !== 'D') ||
-                                   (localPlayer.erpLevel && localPlayer.erpLevel !== syncedPlayer.erpLevel && localPlayer.erpLevel !== 'D')
-          
-          if (hasLocalPurchases) {
-            console.log('[NET] Detectadas compras locais, preservando estado local completo', {
-              localClients, remoteClients, localVendedores, remoteVendedores
-            })
-            
-            // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
-            return {
-              ...localPlayer, // Preserva estado local completo
-              // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
-              pos: finalPos,
-              bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
-              // Preserva dados de progresso local
-              az: localPlayer.az || syncedPlayer.az || 0,
-              am: localPlayer.am || syncedPlayer.am || 0,
-              rox: localPlayer.rox || syncedPlayer.rox || 0,
-              trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-              onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
-            }
-          }
-          
-          // Se não há compras locais, faz merge preservando o maior valor de recursos
-          return {
-            ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
-            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
-            pos: finalPos,
-            // Preserva o maior valor de recursos
-            cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
-            clients: Math.max(localClients, remoteClients),
-            mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
-            erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
-            vendedoresComuns: Math.max(localVendedores, remoteVendedores),
-            fieldSales: Math.max(localFieldSales, remoteFieldSales),
-            insideSales: Math.max(localInsideSales, remoteInsideSales),
-            gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
-            gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
-            managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
-            bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
-            manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
-            loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
-            // Preserva dados de progresso local
-            az: localPlayer.az || syncedPlayer.az || 0,
-            am: localPlayer.am || syncedPlayer.am || 0,
-            rox: localPlayer.rox || syncedPlayer.rox || 0,
-            trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-            onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
-          }
-        }
-        
-        // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
-        // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
-        return {
-          ...syncedPlayer,
-          pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
-          az: localPlayer.az || syncedPlayer.az || 0,
-          am: localPlayer.am || syncedPlayer.am || 0,
-          rox: localPlayer.rox || syncedPlayer.rox || 0,
-          trainingsByVendor: localPlayer.trainingsByVendor || syncedPlayer.trainingsByVendor || {},
-          onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
-        }
-      })
-      setPlayers(syncedPlayers); 
-      changed = true 
-      
-      // ✅ CORREÇÃO: Se aplicou estado remoto de players, garante que turnLock está liberado
-      // Isso evita que o botão fique travado após sincronização
-      // Verifica se é minha vez após sincronização
-      const currentPlayerAfterSync = syncedPlayers[turnIdx]
-      const isMyTurnAfterSync = currentPlayerAfterSync && String(currentPlayerAfterSync.id) === String(myUid)
-      
-      // ✅ CORREÇÃO: Se não é minha vez após sincronização, sempre libera o turnLock
-      // Se é minha vez, só libera se não há modais abertas (verificado pelo useTurnEngine)
-      if (turnLock && !isMyTurnAfterSync) {
-        console.log('[NET] Liberando turnLock após sincronização - não é minha vez', { isMyTurnAfterSync, turnIdx })
-        setTurnLock(false)
-      } else if (turnLock && isMyTurnAfterSync) {
-        // Se é minha vez, verifica se há modais abertas antes de liberar
-        // O useTurnEngine gerencia isso, mas fazemos uma verificação de segurança aqui
-        console.log('[NET] TurnLock ativo após sincronização - é minha vez, useTurnEngine gerenciará', { isMyTurnAfterSync, turnIdx })
-      }
+    if (np) setPlayers(np)
+    if (nt !== null) setTurnIdx(nt)
+    if (nr !== null) setRound(nr)
+
+    if (netState.roundFlags && typeof netState.roundFlags === 'object') {
+      setRoundFlags(netState.roundFlags)
     }
 
-    if (changed) console.log('[NET] applied remote v=%d', netVersion)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Se estes campos existirem no state da sala (recomendado)
+    if (typeof netState.turnLock === 'boolean') setTurnLock(netState.turnLock)
+    if (typeof netState.gameOver === 'boolean') setGameOver(netState.gameOver)
+    if (netState.winner !== undefined) setWinner(netState.winner)
+
+    console.log('[NET] applied remote v=%d', netVersion)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [netVersion])
 
   async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
