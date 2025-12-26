@@ -1,7 +1,7 @@
 import React from 'react'
 import S from './recoveryStyles'
 
-export default function RecoveryMenu({ playerName, loanAvailable, hasPendingLoan, onGoLoan, onGoReduce, onGoFire }) {
+export default function RecoveryMenu({ playerName, loanAvailable, hasPendingLoan, onGoLoan, onGoReduce, onGoFire, onDeclareBankruptcy }) {
   return (
     <div style={S.body}>
       <p style={S.lead}>
@@ -39,6 +39,16 @@ export default function RecoveryMenu({ playerName, loanAvailable, hasPendingLoan
           disabled={hasPendingLoan}
         >
           {hasPendingLoan ? 'EMPRÉSTIMO (JÁ REALIZADO)' : 'EMPRÉSTIMO'}
+        </button>
+        <button 
+          style={{
+            ...S.cta, 
+            background:'#d32f2f',
+            fontWeight:'bold'
+          }} 
+          onClick={onDeclareBankruptcy}
+        >
+          DECLARAR FALÊNCIA
         </button>
       </div>
     </div>
