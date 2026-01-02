@@ -26,14 +26,12 @@ export function useGameSync({
   const netVersion = net?.version
   const netCommit  = net?.commit
 
-  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
+  async function commitRemoteState(nextStatePartial) {
     if (typeof netCommit === 'function') {
       try {
         await netCommit(prev => ({
           ...(prev || {}),
-          players: nextPlayers,
-          turnIdx: nextTurnIdx,
-          round:   nextRound,
+          ...(nextStatePartial || {}),
         }))
       } catch (e) {
         console.warn('[SG][NET] commit failed:', e?.message || e)
@@ -53,7 +51,14 @@ export function useGameSync({
       timestamp: now
     }
     // 1) rede (outros computadores)
-    commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    // Nota: useGameSync não tem acesso direto a turnLock, gameOver, winner
+    // Esses campos devem ser gerenciados no App.jsx
+    commitRemoteState({
+      players: nextPlayers,
+      turnIdx: nextTurnIdx,
+      round: nextRound,
+      roundFlags,
+    })
     // 2) entre abas (mesma máquina)
     try {
       bcRef.current?.postMessage?.({
@@ -69,7 +74,11 @@ export function useGameSync({
 
   function broadcastStart(nextPlayers) {
     console.log('[SG][BC] START ->')
-    commitRemoteState(nextPlayers, 0, 1)
+    commitRemoteState({
+      players: nextPlayers,
+      turnIdx: 0,
+      round: 1,
+    })
     try {
       bcRef.current?.postMessage?.({
         type: 'START',
@@ -225,40 +234,15 @@ export function useGameSync({
           }
           
           // ✅ CORREÇÃO: Verifica se players é um array válido antes de sincronizar
-          // ✅ CORREÇÃO: Faz merge inteligente preservando posições (sempre usa o maior valor)
+          // ✅ CORREÇÃO: Estado autoritativo vence - aplica snapshot recebido como fonte de verdade
           if (Array.isArray(d.players) && d.players.length > 0) {
             setPlayers(prevPlayers => {
               return d.players.map(syncedPlayer => {
                 const localPlayer = prevPlayers.find(p => p.id === syncedPlayer.id)
                 if (!localPlayer) return syncedPlayer
                 
-                // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
-                const localPos = Number(localPlayer.pos || 0)
-                const remotePos = Number(syncedPlayer.pos || 0)
-                
-                // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
-                // e houve mudança local recente, NUNCA aceita posição remota menor
-                const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
-                let finalPos = Math.max(localPos, remotePos)
-                
-                if (isLocalPlayer && localPos > remotePos) {
-                  // Verifica se houve mudança local recente (movimento do jogador)
-                  const now = Date.now()
-                  const lastLocal = lastLocalStateRef.current
-                  if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-                    // Se houve mudança local recente e a posição local é maior, preserva a posição local
-                    // Isso evita que estados remotos antigos revertam movimentos recentes
-                    if (localPos > remotePos) {
-                      console.log(`[SG][BC] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
-                      finalPos = localPos
-                    }
-                  }
-                }
-                
-                return {
-                  ...syncedPlayer,
-                  pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
-                }
+                // ✅ CORREÇÃO: Aceita snapshot autoritativo (não faz merge heurístico de posição)
+                return syncedPlayer
               })
             })
           } else {
@@ -338,8 +322,7 @@ export function useGameSync({
       }
     }
     
-    // ✅ CORREÇÃO: Ignora estado remoto de players se houver mudança local muito recente
-    // ✅ CORREÇÃO: Faz merge inteligente preservando posições (sempre usa o maior valor)
+    // ✅ CORREÇÃO: Estado autoritativo vence - aplica snapshot recebido como fonte de verdade
     if (np && JSON.stringify(np) !== JSON.stringify(players)) {
       const now = Date.now()
       const lastLocal = lastLocalStateRef.current
@@ -351,33 +334,8 @@ export function useGameSync({
             const localPlayer = prevPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
-            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente) para garantir sincronização
-            const localPos = Number(localPlayer.pos || 0)
-            const remotePos = Number(syncedPlayer.pos || 0)
-            
-            // ✅ CORREÇÃO CRÍTICA: Se é o jogador local e tem posição maior que remota, 
-            // e houve mudança local recente, NUNCA aceita posição remota menor
-            const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
-            let finalPos = Math.max(localPos, remotePos)
-            
-            if (isLocalPlayer && localPos > remotePos) {
-              // Verifica se houve mudança local recente (movimento do jogador)
-              const now = Date.now()
-              const lastLocal = lastLocalStateRef.current
-              if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-                // Se houve mudança local recente e a posição local é maior, preserva a posição local
-                // Isso evita que estados remotos antigos revertam movimentos recentes
-                if (localPos > remotePos) {
-                  console.log(`[SG][NET] ⚠️ PRESERVANDO posição local (movimento recente): local=${localPos}, remoto=${remotePos}, final=${localPos}`)
-                  finalPos = localPos
-                }
-              }
-            }
-            
-            return {
-              ...syncedPlayer,
-              pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
-            }
+            // ✅ CORREÇÃO: Aceita snapshot autoritativo (não faz merge heurístico de posição)
+            return syncedPlayer
           })
         })
         changed = true

@@ -300,47 +300,10 @@ export default function App() {
             const localPlayer = currentPlayers.find(p => p.id === syncedPlayer.id)
             if (!localPlayer) return syncedPlayer
             
-            // ✅ MELHORIA: Valida e sincroniza posição com versionamento
-            const localPos = Number(localPlayer.pos || 0)
-            const remotePos = Number(syncedPlayer.pos || 0)
-            
-            // ✅ MELHORIA: Valida posição (deve estar entre 0 e TRACK_LEN * 10 para permitir múltiplas voltas)
-            const MAX_POS = TRACK_LEN * 10
-            const validLocalPos = Math.max(0, Math.min(localPos, MAX_POS))
-            const validRemotePos = Math.max(0, Math.min(remotePos, MAX_POS))
-            
+            // ✅ CORREÇÃO: Estado autoritativo vence - aceita posição do snapshot recebido
+            // Para jogo de turno, não fazemos merge heurístico de posição (evita desync)
             const isLocalPlayer = String(syncedPlayer.id) === String(myUid)
-            let finalPos = Math.max(validLocalPos, validRemotePos)
             
-            // ✅ MELHORIA: Se versão remota é mais recente, prioriza posição remota
-            // Mas se é jogador local e houve movimento recente, preserva local
-            if (isLocalPlayer && validLocalPos > validRemotePos) {
-              const now = Date.now()
-              const lastLocal = lastLocalStateRef.current
-              const timeSinceLocalChange = lastLocal ? (now - lastLocal.timestamp) : Infinity
-              
-              // ✅ MELHORIA: Se versão remota é mais antiga E movimento local foi recente, preserva local
-              if (remoteVersion > 0 && localVersion > 0 && remoteVersion < localVersion && timeSinceLocalChange < 5000) {
-                console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (versão antiga + movimento recente): local=${validLocalPos}, remoto=${validRemotePos}, versão remota=${remoteVersion}, versão local=${localVersion}, final=${validLocalPos}`)
-                finalPos = validLocalPos
-              } else if (timeSinceLocalChange < 5000 && validLocalPos > validRemotePos) {
-                // Se movimento local foi muito recente (< 5s), preserva local mesmo com versão mais nova
-                console.log(`[App] SYNC - ⚠️ PRESERVANDO posição local (movimento muito recente): local=${validLocalPos}, remoto=${validRemotePos}, final=${validLocalPos}, tempo desde mudança=${timeSinceLocalChange}ms`)
-                finalPos = validLocalPos
-              } else if (remoteVersion > localVersion) {
-                // Se versão remota é mais nova, aceita posição remota
-                console.log(`[App] SYNC - ✅ Aceitando posição remota (versão mais nova): local=${validLocalPos}, remoto=${validRemotePos}, versão remota=${remoteVersion}, versão local=${localVersion}, final=${validRemotePos}`)
-                finalPos = validRemotePos
-              }
-            } else if (!isLocalPlayer && remoteVersion > localVersion) {
-              // Para outros jogadores, se versão remota é mais nova, aceita
-              finalPos = validRemotePos
-            }
-            
-            // ✅ MELHORIA: Log detalhado de sincronização
-            if (validLocalPos !== validRemotePos || localPos !== validLocalPos || remotePos !== validRemotePos) {
-              console.log(`[App] SYNC - Posição sincronizada: jogador=${syncedPlayer.name}, local=${localPos}→${validLocalPos}, remoto=${remotePos}→${validRemotePos}, final=${finalPos}, versão remota=${remoteVersion}, versão local=${localVersion}`)
-            }
             if (isLocalPlayer) {
               // Compara recursos para detectar se há compras locais
               const localClients = Number(localPlayer.clients || 0)
@@ -369,8 +332,8 @@ export default function App() {
                 // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
                 return {
                   ...localPlayer, // Preserva estado local completo
-                  // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
-                  pos: finalPos,
+                  // ✅ CORREÇÃO: Aceita posição autoritativa do remoto (não faz Math.max)
+                  pos: syncedPlayer.pos,
                   bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
                   // Preserva dados de progresso local
                   az: localPlayer.az || syncedPlayer.az || 0,
@@ -381,11 +344,9 @@ export default function App() {
                 }
               }
               
-              // Se não há compras locais, faz merge preservando o maior valor de recursos
+              // Se não há compras locais, aceita snapshot remoto mas preserva o maior valor de recursos
               return {
-                ...syncedPlayer, // Aceita estado sincronizado (bankrupt, etc)
-                // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
-                pos: finalPos,
+                ...syncedPlayer, // Aceita estado sincronizado autoritativo (pos, bankrupt, etc)
                 // Preserva o maior valor de recursos
                 cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
                 clients: Math.max(localClients, remoteClients),
@@ -409,11 +370,9 @@ export default function App() {
               }
             }
             
-            // Para outros jogadores, aceita o estado sincronizado mas preserva certificados locais (caso existam)
-            // ✅ CORREÇÃO: Posição sempre usa o maior valor (mais recente)
+            // Para outros jogadores, aceita o snapshot autoritativo mas preserva certificados locais (caso existam)
             return {
-              ...syncedPlayer,
-              pos: finalPos, // ✅ CORREÇÃO: Garante que posição seja sempre sincronizada
+              ...syncedPlayer, // Aceita estado sincronizado autoritativo
               az: localPlayer.az || syncedPlayer.az || 0,
               am: localPlayer.am || syncedPlayer.am || 0,
               rox: localPlayer.rox || syncedPlayer.rox || 0,
@@ -576,14 +535,12 @@ export default function App() {
     console.log('[NET] applied remote v=%d', netVersion)
   }, [netVersion, netState, net?.enabled, net?.ready])
 
-  async function commitRemoteState(nextPlayers, nextTurnIdx, nextRound) {
+  async function commitRemoteState(nextStatePartial) {
     if (typeof netCommit === 'function') {
       try {
         await netCommit(prev => ({
           ...(prev || {}),
-          players: nextPlayers,
-          turnIdx: nextTurnIdx,
-          round: nextRound,
+          ...(nextStatePartial || {}),
         }))
       } catch (e) {
         console.warn('[NET] commit failed:', e?.message || e)
@@ -611,7 +568,15 @@ export default function App() {
     console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round:', nextRound, 'timestamp:', now)
     
     // 1) rede
-    commitRemoteState(nextPlayers, nextTurnIdx, nextRound)
+    commitRemoteState({
+      players: nextPlayers,
+      turnIdx: nextTurnIdx,
+      round: nextRound,
+      roundFlags,
+      turnLock,
+      gameOver: gameOverState,
+      winner: winnerState,
+    })
     // 2) entre abas
     try {
       bcRef.current?.postMessage?.({
@@ -631,7 +596,11 @@ export default function App() {
 
   function broadcastStart(nextPlayers) {
     // rede
-    commitRemoteState(nextPlayers, 0, 1)
+    commitRemoteState({
+      players: nextPlayers,
+      turnIdx: 0,
+      round: 1,
+    })
     // entre abas
     try {
       bcRef.current?.postMessage?.({

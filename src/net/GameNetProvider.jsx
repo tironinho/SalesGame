@@ -103,39 +103,52 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const commit = async (updater) => {
     if (!enabled || !ready) return
 
-    const prev = stateRef.current || {}
-    const next = typeof updater === 'function' ? (updater(prev) || {}) : (updater || {})
-
-    const expectedVersion = (versionRef.current || 0)
-    const newVersion = expectedVersion + 1
-
-    const { data, error } = await supabase
-      .from('rooms')
-      .update({ state: next, version: newVersion, updated_at: new Date().toISOString() })
-      .eq('code', code)
-      .eq('version', expectedVersion) // <-- CRÍTICO: optimistic locking
-      .select('state, version')
-      .single()
-
-    if (error) {
-      console.warn('[NET] commit failed (version conflict?)', error.message || error)
-
-      // estratégia simples: re-sync do banco e não sobrescreve
-      const { data: row } = await supabase
+    const MAX_ATTEMPTS = 3
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      // 1) lê snapshot mais recente
+      const { data: current, error: e1 } = await supabase
         .from('rooms')
         .select('state, version')
         .eq('code', code)
         .single()
 
-      if (row) {
-        setState(row.state || {})
-        setVersion(row.version ?? 0)
+      if (e1 || !current) {
+        console.warn('[NET] commit read failed:', e1?.message || e1)
+        return
       }
-      return
+
+      const base = current.state || {}
+      const next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
+
+      // 2) CAS
+      const { data: updated, error: e2 } = await supabase
+        .from('rooms')
+        .update({
+          state: next,
+          version: (current.version || 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('code', code)
+        .eq('version', current.version)
+        .select('state, version')
+        .single()
+
+      if (!e2 && updated) {
+        setState(updated.state || {})
+        setVersion(updated.version ?? ((current.version || 0) + 1))
+        return
+      }
+
+      console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2)
     }
 
-    setState(data?.state || {})
-    setVersion(data?.version ?? newVersion)
+    // fallback: resync final
+    const { data: row } = await supabase
+      .from('rooms')
+      .select('state, version')
+      .eq('code', code)
+      .single()
+    if (row) { setState(row.state || {}); setVersion(row.version ?? 0) }
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])
