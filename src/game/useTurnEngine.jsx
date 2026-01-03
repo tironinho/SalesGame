@@ -668,13 +668,14 @@ export function useTurnEngine({
     
     // ✅ CORREÇÃO: Atualiza as flags ANTES de atualizar a rodada
     setRoundFlags(nextFlags)
-
+    console.log('[DEBUG] roundFlags updated / round closed:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
+    
     // >>> pular jogadores falidos ao decidir o próximo turno
     const nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
-
+    
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
-
+    
     setPlayers(nextPlayers)
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
@@ -719,14 +720,17 @@ export function useTurnEngine({
     // ✅ CORREÇÃO CRÍTICA: Usa nextRound diretamente (não round) para garantir que o incremento seja preservado
     // ✅ MELHORIA: Usa o valor atualizado do estado após setRound (via ref)
     const finalNextRound = shouldIncrementRound ? currentRoundRef.current + 1 : nextRound
+    // ✅ CORREÇÃO: Se a rodada foi incrementada, reseta as flags
+    const finalNextFlags = shouldIncrementRound ? nextFlags.map((_, idx) => nextPlayers[idx]?.bankrupt ? nextFlags[idx] : false) : nextFlags
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
       nextRound: finalNextRound, // ✅ CORREÇÃO: Usa nextRound calculado (pode ser round + 1 se todos passaram pela casa 0)
+      nextRoundFlags: finalNextFlags, // ✅ CORREÇÃO: Inclui roundFlags atualizado no patch
       timestamp: Date.now(), // Adiciona timestamp para rastrear quando foi criado
       shouldIncrementRound // ✅ MELHORIA: Inclui flag para garantir incremento no tick
     }
-    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound, 'shouldIncrementRound:', shouldIncrementRound, 'rodada foi incrementada?', nextRound > round)
+    console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound, 'shouldIncrementRound:', shouldIncrementRound, 'rodada foi incrementada?', nextRound > round, 'roundFlags:', finalNextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
@@ -1515,7 +1519,15 @@ export function useTurnEngine({
                 currentRoundRef.current = finalRound
                 return finalRound
               })
-              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast)
+              // ✅ CORREÇÃO: Passa roundFlags atualizado no patch para garantir sincronização
+              const patch = {}
+              if (turnData.nextRoundFlags) {
+                patch.roundFlags = turnData.nextRoundFlags
+              }
+              if (turnData.shouldIncrementRound) {
+                patch.round = roundToBroadcast
+              }
+              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
               turnChangeInProgressRef.current = false

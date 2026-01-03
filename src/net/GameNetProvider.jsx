@@ -112,8 +112,19 @@ function GameNetProvider({ roomCode, hostId, children }) {
         .eq('code', code)
         .single()
 
-      if (e1 || !current) {
+      if (e1) {
+        // ✅ CORREÇÃO: Trata erro de "0 rows" como conflito e re-tenta
+        if (e1.code === 'PGRST116' || e1.message?.includes('0 rows')) {
+          console.warn(`[NET] commit read - no rows (attempt ${attempt}/${MAX_ATTEMPTS}), retrying...`)
+          if (attempt < MAX_ATTEMPTS) continue
+        }
         console.warn('[NET] commit read failed:', e1?.message || e1)
+        return
+      }
+
+      if (!current) {
+        console.warn('[NET] commit read - no data returned')
+        if (attempt < MAX_ATTEMPTS) continue
         return
       }
 
@@ -136,19 +147,41 @@ function GameNetProvider({ roomCode, hostId, children }) {
       if (!e2 && updated) {
         setState(updated.state || {})
         setVersion(updated.version ?? ((current.version || 0) + 1))
+        if (attempt > 1) {
+          console.log(`[NET] commit succeeded on attempt ${attempt}/${MAX_ATTEMPTS}`)
+        }
         return
+      }
+
+      // ✅ CORREÇÃO: Trata conflito de versão ou "0 rows" como conflito e re-tenta
+      const isConflict = e2?.code === 'PGRST116' || 
+                         e2?.message?.includes('0 rows') ||
+                         e2?.code === '23505' || // unique violation
+                         (e2?.message && e2.message.includes('version'))
+      
+      if (isConflict && attempt < MAX_ATTEMPTS) {
+        console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2, '- retrying...')
+        // Pequeno delay antes de re-tentar para evitar race condition
+        await new Promise(resolve => setTimeout(resolve, 50 * attempt))
+        continue
       }
 
       console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2)
     }
 
     // fallback: resync final
-    const { data: row } = await supabase
+    const { data: row, error: e3 } = await supabase
       .from('rooms')
       .select('state, version')
       .eq('code', code)
       .single()
-    if (row) { setState(row.state || {}); setVersion(row.version ?? 0) }
+    if (row) { 
+      setState(row.state || {}); 
+      setVersion(row.version ?? 0)
+      console.warn('[NET] commit failed after retries, resynced to latest state')
+    } else if (e3) {
+      console.warn('[NET] commit fallback resync failed:', e3?.message || e3)
+    }
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])

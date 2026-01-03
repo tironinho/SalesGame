@@ -523,12 +523,25 @@ export default function App() {
     if (nt !== null) setTurnIdx(nt)
     if (nr !== null) setRound(nr)
 
-    if (netState.roundFlags && typeof netState.roundFlags === 'object') {
-      setRoundFlags(netState.roundFlags)
+    // ✅ CORREÇÃO: Aplica roundFlags do estado autoritativo
+    if (netState.roundFlags !== undefined) {
+      if (Array.isArray(netState.roundFlags)) {
+        setRoundFlags(netState.roundFlags)
+        console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
+      } else if (typeof netState.roundFlags === 'object') {
+        // Se for objeto, converte para array (compatibilidade)
+        const flagsArray = Object.values(netState.roundFlags)
+        setRoundFlags(flagsArray)
+        console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
+      }
     }
 
-    // Se estes campos existirem no state da sala (recomendado)
+    // ✅ CORREÇÃO: Aplica campos de controle de turno e estado do jogo
     if (typeof netState.turnLock === 'boolean') setTurnLock(netState.turnLock)
+    if (netState.lockOwner !== undefined) {
+      // lockOwner não é state do App, mas pode ser usado se necessário
+      console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
+    }
     if (typeof netState.gameOver === 'boolean') setGameOver(netState.gameOver)
     if (netState.winner !== undefined) setWinner(netState.winner)
 
@@ -548,10 +561,17 @@ export default function App() {
     }
   }
 
-  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner) {
+  function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, patch = {}) {
     // ✅ MELHORIA: Incrementa versão sequencial
     stateVersionRef.current = stateVersionRef.current + 1
     const currentVersion = stateVersionRef.current
+    
+    // ✅ CORREÇÃO: Usa patch para obter valores atualizados (evita stale closure)
+    const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
+    const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
+    const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : null
+    const finalGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
+    const finalWinner = patch.winner !== undefined ? patch.winner : winnerState
     
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
@@ -566,16 +586,20 @@ export default function App() {
     lastAcceptedVersionRef.current = currentVersion
     
     console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round:', nextRound, 'timestamp:', now)
+    if (Object.keys(patch).length > 0) {
+      console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
+    }
     
     // 1) rede
     commitRemoteState({
       players: nextPlayers,
       turnIdx: nextTurnIdx,
       round: nextRound,
-      roundFlags,
-      turnLock,
-      gameOver: gameOverState,
-      winner: winnerState,
+      roundFlags: nextRoundFlags,
+      turnLock: nextTurnLock,
+      lockOwner: nextLockOwner,
+      gameOver: finalGameOver,
+      winner: finalWinner,
     })
     // 2) entre abas
     try {
@@ -585,9 +609,11 @@ export default function App() {
         players: nextPlayers,
         turnIdx: nextTurnIdx,
         round: nextRound,
-        roundFlags: roundFlags, // ✅ CORREÇÃO: Sincroniza roundFlags para que todos os jogadores saibam quem passou pela casa 0
-        gameOver: gameOverState,
-        winner: winnerState,
+        roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
+        turnLock: nextTurnLock,
+        lockOwner: nextLockOwner,
+        gameOver: finalGameOver,
+        winner: finalWinner,
         source: meId,
         timestamp: now,  // ✅ MELHORIA: Inclui timestamp
       })
