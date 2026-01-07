@@ -1855,7 +1855,21 @@ export function useTurnEngine({
     if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
 
     if (act.type === 'ROLL'){
-      if (!isMyTurn) return
+      // ✅ CORREÇÃO: Single-writer - apenas o jogador da vez pode rolar
+      if (!isMyTurn) {
+        console.warn('[DEBUG] ⚠️ onAction ROLL - não é minha vez, ignorando')
+        return
+      }
+      // ✅ CORREÇÃO: Verifica turnLock antes de executar
+      if (turnLock) {
+        console.warn('[DEBUG] ⚠️ onAction ROLL - turnLock ativo, ignorando')
+        return
+      }
+      // ✅ CORREÇÃO: Verifica modalLocks antes de executar
+      if (modalLocksRef.current > 0) {
+        console.warn('[DEBUG] ⚠️ onAction ROLL - há modais abertas, ignorando')
+        return
+      }
       // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock
       try {
         advanceAndMaybeLap(act.steps, act.cashDelta, act.note)

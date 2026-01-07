@@ -525,6 +525,12 @@ export default function App() {
   // ✅ CORREÇÃO: Ref para garantir monotonicidade do estado remoto aplicado
   const lastAppliedNetVersionRef = React.useRef(0)
   
+  // ✅ CORREÇÃO: Refs para rastrear baseline local antes de mudanças (para merge 3-way)
+  const playersBeforeRef = React.useRef(null)
+  
+  // ✅ CORREÇÃO: O baseline é capturado no broadcastState antes de fazer commit
+  // Não precisamos capturar via useEffect, pois o baseline deve ser o estado ANTES da mudança
+  
   // Rastreia mudanças locais
   // ✅ CORREÇÃO: Atualiza lastLocalStateRef quando turnIdx, round ou players mudam
   // Mas só atualiza o timestamp se realmente mudou E se não foi atualizado recentemente pelo broadcastState
@@ -569,12 +575,71 @@ export default function App() {
       lastAppliedNetVersionRef.current = netVersion
     }
 
+    // ✅ CORREÇÃO: Freshness gate - rejeita estados remotos "velhos" ou fora de ordem
+    const remoteStateVersion = typeof netState.stateVersion === 'number' ? netState.stateVersion : 0
+    const remoteUpdatedAt = typeof netState.updatedAt === 'number' ? netState.updatedAt : 0
+    const now = Date.now()
+    const lastLocal = lastLocalStateRef.current
+    
+    // Rejeita se:
+    // a) stateVersion remoto < lastAcceptedVersionRef (regressão)
+    if (remoteStateVersion > 0 && remoteStateVersion < lastAcceptedVersionRef.current) {
+      console.log('[NET] ❌ REJEITADO - stateVersion remoto menor que aceito:', {
+        remote: remoteStateVersion,
+        accepted: lastAcceptedVersionRef.current
+      })
+      return
+    }
+    
+    // b) existe lastLocalStateRef e (netState.updatedAt < lastLocalStateRef.timestamp) e diferença pequena (< 5s)
+    if (lastLocal && lastLocal.timestamp && remoteUpdatedAt > 0) {
+      const timeDiff = lastLocal.timestamp - remoteUpdatedAt
+      if (timeDiff > 0 && timeDiff < 5000) {
+        console.log('[NET] ❌ REJEITADO - estado remoto mais antigo que mudança local recente:', {
+          remoteUpdatedAt: new Date(remoteUpdatedAt).toISOString(),
+          localTimestamp: new Date(lastLocal.timestamp).toISOString(),
+          timeDiff: timeDiff + 'ms'
+        })
+        return
+      }
+    }
+    
+    // c) houver "mudança local recente" (lastLocalStateRef timestamp nos últimos 3-5s) e a versão remota não for maior
+    if (lastLocal && lastLocal.timestamp) {
+      const timeSinceLocalChange = now - lastLocal.timestamp
+      if (timeSinceLocalChange < 5000 && remoteStateVersion <= lastLocal.version) {
+        console.log('[NET] ❌ REJEITADO - mudança local recente e versão remota não é maior:', {
+          timeSinceLocalChange: timeSinceLocalChange + 'ms',
+          localVersion: lastLocal.version,
+          remoteVersion: remoteStateVersion
+        })
+        return
+      }
+    }
+
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
-    if (np) setPlayers(np)
-    if (nt !== null) setTurnIdx(nt)
+    // ✅ CORREÇÃO: Só aplica se remoto for claramente mais novo
+    if (np) {
+      // Aplica players apenas se versão remota for maior ou se não houver mudança local recente
+      const shouldApplyPlayers = remoteStateVersion > (lastLocal?.version || 0) || 
+                                 !lastLocal || 
+                                 (now - (lastLocal.timestamp || 0)) >= 3000
+      if (shouldApplyPlayers) {
+        setPlayers(np)
+        // Atualiza baseline para próximo merge
+        playersBeforeRef.current = JSON.parse(JSON.stringify(np))
+      } else {
+        console.log('[NET] ⚠️ IGNORANDO players remoto - mudança local muito recente')
+      }
+    }
+    
+    if (nt !== null) {
+      setTurnIdx(nt)
+    }
+    
     if (nr !== null) {
       // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
       const isResetState = (
@@ -638,7 +703,12 @@ export default function App() {
       console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${netState.winner?.name ?? netState.winner ?? "N/A"}`);
     }
 
-    console.log('[NET] applied remote v=%d', netVersion)
+    // ✅ CORREÇÃO: Atualiza lastAcceptedVersionRef quando aceita estado remoto
+    if (remoteStateVersion > 0) {
+      lastAcceptedVersionRef.current = Math.max(lastAcceptedVersionRef.current, remoteStateVersion)
+    }
+    
+    console.log('[NET] applied remote v=%d stateVersion=%d updatedAt=%s', netVersion, remoteStateVersion, remoteUpdatedAt > 0 ? new Date(remoteUpdatedAt).toISOString() : 'N/A')
   }, [netVersion, netState, net?.enabled, net?.ready])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
@@ -682,17 +752,97 @@ export default function App() {
   async function commitRemoteState(nextStatePartial) {
     if (typeof netCommit === 'function') {
       try {
-        await netCommit(prev => ({
-          ...(prev || {}),
-          ...(nextStatePartial || {}),
-        }))
+        await netCommit(prev => {
+          const prevState = prev || {}
+          const nextPartial = nextStatePartial || {}
+          
+          // ✅ CORREÇÃO: Merge 3-way para players (evita sobrescrever com snapshot stale)
+          if (nextPartial.players && Array.isArray(nextPartial.players)) {
+            const baseline = playersBeforeRef.current || prevState.players || []
+            const prevPlayers = prevState.players || []
+            const nextPlayers = nextPartial.players
+            
+            // Cria mapas por ID para facilitar lookup
+            const baselineMap = new Map(baseline.map(p => [String(p?.id), p]))
+            const prevMap = new Map(prevPlayers.map(p => [String(p?.id), p]))
+            const nextMap = new Map(nextPlayers.map(p => [String(p?.id), p]))
+            
+            // Merge 3-way: para cada playerId
+            const mergedPlayers = []
+            const allPlayerIds = new Set([
+              ...baselineMap.keys(),
+              ...prevMap.keys(),
+              ...nextMap.keys()
+            ])
+            
+            for (const playerId of allPlayerIds) {
+              const baselinePlayer = baselineMap.get(playerId)
+              const prevPlayer = prevMap.get(playerId)
+              const nextPlayer = nextMap.get(playerId)
+              
+              // Se o player mudou do baseline para nextPlayers => aplicar nextPlayer (mudança local)
+              const changedFromBaseline = baselinePlayer && nextPlayer && 
+                JSON.stringify(baselinePlayer) !== JSON.stringify(nextPlayer)
+              
+              if (changedFromBaseline && nextPlayer) {
+                // Mudança local: aplicar nextPlayer
+                mergedPlayers.push(applyStarterKit(nextPlayer))
+              } else if (prevPlayer) {
+                // Não mudou localmente: manter o que está no servidor (prevPlayer)
+                mergedPlayers.push(applyStarterKit(prevPlayer))
+              } else if (nextPlayer) {
+                // Novo player: aplicar nextPlayer
+                mergedPlayers.push(applyStarterKit(nextPlayer))
+              }
+            }
+            
+            // Ordena por ordem original (preserva índices)
+            const orderedPlayers = []
+            const nextOrder = nextPlayers.map(p => String(p?.id))
+            for (const playerId of nextOrder) {
+              const found = mergedPlayers.find(p => String(p?.id) === playerId)
+              if (found) orderedPlayers.push(found)
+            }
+            // Adiciona players que não estavam em nextPlayers
+            for (const player of mergedPlayers) {
+              if (!nextOrder.includes(String(player?.id))) {
+                orderedPlayers.push(player)
+              }
+            }
+            
+            // Limpa baseline após merge
+            playersBeforeRef.current = null
+            
+            return {
+              ...prevState,
+              ...nextPartial,
+              players: orderedPlayers.length > 0 ? orderedPlayers : nextPlayers
+            }
+          }
+          
+          // Para outros campos, merge simples
+          return {
+            ...prevState,
+            ...nextPartial
+          }
+        })
       } catch (e) {
         console.warn('[NET] commit failed:', e?.message || e)
+        // Limpa baseline em caso de erro
+        playersBeforeRef.current = null
       }
     }
   }
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, patch = {}) {
+    // ✅ CORREÇÃO: Captura baseline ANTES de qualquer mudança (para merge 3-way)
+    // O baseline é o estado ATUAL de players (antes de ser atualizado para nextPlayers)
+    // Isso permite fazer merge 3-way: baseline -> nextPlayers (local) vs baseline -> prevState.players (remoto)
+    if (!playersBeforeRef.current) {
+      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
+      console.log('[App] broadcastState - baseline capturado (estado atual antes da mudança):', playersBeforeRef.current.length, 'players')
+    }
+    
     // ✅ MELHORIA: Incrementa versão sequencial
     stateVersionRef.current = stateVersionRef.current + 1
     const currentVersion = stateVersionRef.current
@@ -732,13 +882,23 @@ export default function App() {
       winner: finalWinner,
       lockOwner: nextLockOwner, // ✅ BUG 1 FIX: Armazena lockOwner para preservar em próximos broadcasts
       timestamp: now,
-      version: currentVersion
+      version: currentVersion,
+      stateVersion: currentVersion, // ✅ CORREÇÃO: Versionamento autoritativo
+      updatedAt: now, // ✅ CORREÇÃO: Timestamp em ms
+      updatedBy: myUid // ✅ CORREÇÃO: Quem fez a mudança
     }
     lastAcceptedVersionRef.current = currentVersion
     
-    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now)
+    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid)
     if (Object.keys(patch).length > 0) {
       console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
+    }
+    
+    // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
+    // Se não houver baseline, usa o estado atual como fallback
+    if (!playersBeforeRef.current) {
+      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
+      console.log('[App] broadcastState - baseline capturado (fallback):', playersBeforeRef.current.length, 'players')
     }
     
     // 1) rede
@@ -751,6 +911,9 @@ export default function App() {
       lockOwner: nextLockOwner,
       gameOver: finalGameOver,
       winner: finalWinner,
+      stateVersion: currentVersion, // ✅ CORREÇÃO: Versionamento autoritativo
+      updatedAt: now, // ✅ CORREÇÃO: Timestamp em ms
+      updatedBy: myUid // ✅ CORREÇÃO: Quem fez a mudança
     })
     // 2) entre abas
     try {
