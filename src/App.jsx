@@ -203,54 +203,61 @@ export default function App() {
                 // Isso evita que estados remotos antigos revertam mudanças locais recentes
                 // Além disso, se o turnIdx remoto está tentando reverter para um valor anterior, ignora
                 const isReverting = d.turnIdx === lastLocal.turnIdx
+                let ignoreTurnIdx = false
                 if (isReverting) {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente', {
+                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente (mantendo resto do snapshot)', {
                     lastLocalTurnIdx: lastLocal.turnIdx,
                     currentLocalTurnIdx: turnIdx,
                     remoteTurnIdx: d.turnIdx,
                     timeSinceLocalChange: now - lastLocal.timestamp,
                     isReverting: true
                   })
-                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+                  ignoreTurnIdx = true // ✅ BUG 1b FIX: Não retorna cedo, apenas ignora turnIdx
                 } else {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s)', {
+                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s) (mantendo resto do snapshot)', {
                     lastLocalTurnIdx: lastLocal.turnIdx,
                     currentLocalTurnIdx: turnIdx,
                     remoteTurnIdx: d.turnIdx,
                     timeSinceLocalChange: now - lastLocal.timestamp
                   })
-                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+                  ignoreTurnIdx = true // ✅ BUG 1b FIX: Não retorna cedo, apenas ignora turnIdx
+                }
+                // ✅ BUG 1b FIX: Continua aplicando resto do snapshot mesmo ignorando turnIdx
+                if (!ignoreTurnIdx && d.turnIdx !== undefined) {
+                  setTurnIdx(d.turnIdx)
                 }
               } else {
                 // ✅ CORREÇÃO: Se o turnIdx local não mudou, mas há uma mudança local recente,
                 // verifica se o turnIdx remoto está tentando reverter
                 // Se o turnIdx remoto é igual ao lastLocal.turnIdx, está tentando reverter
                 if (d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior', {
+                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (mantendo resto do snapshot)', {
                     lastLocalTurnIdx: lastLocal.turnIdx,
                     currentLocalTurnIdx: turnIdx,
                     remoteTurnIdx: d.turnIdx
                   })
-                  return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+                  // ✅ BUG 1b FIX: Não retorna cedo, apenas não aplica turnIdx
+                } else {
+                  // Se o turnIdx local não mudou, pode sincronizar
+                  setTurnIdx(d.turnIdx)
+                  console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
                 }
-                // Se o turnIdx local não mudou, pode sincronizar
-                setTurnIdx(d.turnIdx)
-                console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
               }
             } else {
               // ✅ CORREÇÃO: Se não houve mudança local recente, mas há lastLocal,
               // verifica se o turnIdx remoto está tentando reverter
               if (lastLocal && d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-                console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente)', {
+                console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente, mantendo resto do snapshot)', {
                   lastLocalTurnIdx: lastLocal.turnIdx,
                   currentLocalTurnIdx: turnIdx,
                   remoteTurnIdx: d.turnIdx
                 })
-                return // ✅ CORREÇÃO: Retorna cedo para não processar o resto da sincronização
+                // ✅ BUG 1b FIX: Não retorna cedo, apenas não aplica turnIdx
+              } else {
+                // Se não houve mudança local recente, sincroniza normalmente
+                setTurnIdx(d.turnIdx)
+                console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
               }
-              // Se não houve mudança local recente, sincroniza normalmente
-              setTurnIdx(d.turnIdx)
-              console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
             }
           }
           
@@ -380,7 +387,9 @@ export default function App() {
               onboarding: localPlayer.onboarding || syncedPlayer.onboarding || false
             }
           })
-          setPlayers(syncedPlayers)
+          // ✅ BUG 2 FIX: Usa merge monotônico para evitar reset de cash/assets
+          const merged = mergePlayersMonotonic(players, syncedPlayers)
+          setPlayers(merged)
           
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
           console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
@@ -555,9 +564,18 @@ export default function App() {
     }
 
     // ✅ CORREÇÃO: Aplica campos de controle de turno e estado do jogo
-    if (typeof netState.turnLock === 'boolean') setTurnLock(netState.turnLock)
+    if (typeof netState.turnLock === 'boolean') {
+      setTurnLock(netState.turnLock)
+      // ✅ BUG 1 FIX: Log quando detectar travamento por lockOwner/turnLock
+      if (netState.turnLock && netState.lockOwner) {
+        console.log('[LOCK] bloqueado: turnLockBroadcast=true lockOwner=', netState.lockOwner, 'myId=', myUid)
+      }
+    }
     if (netState.lockOwner !== undefined) {
-      // lockOwner não é state do App, mas pode ser usado se necessário
+      // ✅ BUG 1 FIX: Armazena lockOwner no lastLocalStateRef para preservar em próximos broadcasts
+      if (lastLocalStateRef.current) {
+        lastLocalStateRef.current.lockOwner = netState.lockOwner
+      }
       console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
     }
     // ✅ Monotônico: gameOver nunca volta para false
@@ -599,7 +617,9 @@ export default function App() {
     // ✅ CORREÇÃO: Usa patch para obter valores atualizados (evita stale closure)
     const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
     const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
-    const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : null
+    // ✅ BUG 1 FIX: Preserva lockOwner atual quando patch não vem (evita zerar lock)
+    const lastKnownLockOwner = lastLocalStateRef.current?.lockOwner ?? null
+    const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : lastKnownLockOwner
     const patchedGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
     const prevGameOver = !!gameOver || !!lastLocalStateRef.current?.gameOver
     const finalGameOver = prevGameOver ? true : !!patchedGameOver
@@ -627,6 +647,7 @@ export default function App() {
       round: safeRound,
       gameOver: finalGameOver,
       winner: finalWinner,
+      lockOwner: nextLockOwner, // ✅ BUG 1 FIX: Armazena lockOwner para preservar em próximos broadcasts
       timestamp: now,
       version: currentVersion
     }
