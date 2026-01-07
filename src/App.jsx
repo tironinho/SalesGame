@@ -525,6 +525,76 @@ export default function App() {
   // ✅ CORREÇÃO: Refs para rastrear baseline local antes de mudanças (para merge 3-way)
   const playersBeforeRef = React.useRef(null)
   
+  // ✅ CORREÇÃO MULTIPLAYER: Helper para commitar patch/delta (não snapshot completo)
+  // Permite fazer merge por ID sem sobrescrever estado completo
+  const commitGamePatch = React.useCallback(({ playersDeltaById = {}, statePatch = {} }) => {
+    if (typeof netCommit !== 'function') return
+    
+    // Calcula versionamento e timestamp
+    stateVersionRef.current = stateVersionRef.current + 1
+    const currentVersion = stateVersionRef.current
+    const now = Date.now()
+    
+    try {
+      netCommit(prev => {
+        const prevState = prev || {}
+        
+        // ✅ CORREÇÃO: Merge players por ID (não por índice ou snapshot completo)
+        const prevPlayers = normalizePlayers(prevState.players || [])
+        const byId = new Map(prevPlayers.map(p => [String(p.id), p]))
+        
+        // Aplica deltas por ID
+        for (const [id, delta] of Object.entries(playersDeltaById)) {
+          const playerId = String(id)
+          const existing = byId.get(playerId)
+          if (existing) {
+            // Merge do delta sobre o player existente
+            byId.set(playerId, applyStarterKit({ ...existing, ...delta }))
+          } else {
+            // Novo player (não deve acontecer, mas trata)
+            byId.set(playerId, applyStarterKit({ id: playerId, ...delta }))
+          }
+        }
+        
+        // Reconstrói array ordenado
+        const mergedPlayers = normalizePlayers(Array.from(byId.values()))
+        
+        // Prepara statePatch completo (inclui versionamento)
+        const finalStatePatch = {
+          ...statePatch,
+          stateVersion: currentVersion,
+          updatedAt: now,
+          updatedBy: myUid
+        }
+        
+        // Se players foram modificados, inclui no patch
+        if (Object.keys(playersDeltaById).length > 0) {
+          finalStatePatch.players = mergedPlayers
+        }
+        
+        // Merge do statePatch sobre o estado anterior
+        const next = {
+          ...prevState,
+          ...finalStatePatch
+        }
+        
+        // Garante que players sempre está normalizado
+        if (next.players) {
+          next.players = normalizePlayers(next.players)
+        }
+        
+        console.log('[NET] ✅ commitGamePatch - tipo:', statePatch.turnPlayerId ? 'TURN' : statePatch.round ? 'ROUND' : 'PLAYER_DELTA', 
+                   'playersDeltaIds:', Object.keys(playersDeltaById).join(','),
+                   'statePatchKeys:', Object.keys(statePatch).join(','),
+                   'netVersion será incrementado pelo commit')
+        
+        return next
+      })
+    } catch (e) {
+      console.warn('[NET] commitGamePatch failed:', e?.message || e)
+    }
+  }, [netCommit, myUid])
+  
   // ✅ CORREÇÃO: O baseline é capturado no broadcastState antes de fazer commit
   // Não precisamos capturar via useEffect, pois o baseline deve ser o estado ANTES da mudança
   
@@ -931,26 +1001,72 @@ export default function App() {
     }
     lastAcceptedVersionRef.current = currentVersion
     
-    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'turnPlayerId:', nextTurnPlayerId, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid, 'playersOrdered:', normalizedPlayers.map(p => p.id).join(','))
-    if (Object.keys(patch).length > 0) {
-      console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
-    }
+    // ✅ CORREÇÃO MULTIPLAYER: Detectar se é START GAME (snapshot completo) ou ação parcial (delta)
+    const isStartGame = patch.isStartGame === true || (safeRound === 1 && nextTurnIdx === 0 && normalizedPlayers.every(p => Number(p?.pos ?? 0) === 0))
     
-    // 1) rede
-    commitRemoteState({
-      players: normalizedPlayers,
-      turnIdx: nextTurnIdx,
-      turnPlayerId: nextTurnPlayerId, // ✅ CORREÇÃO: turnPlayerId autoritativo
-      round: safeRound,
-      roundFlags: nextRoundFlags,
-      turnLock: nextTurnLock,
-      lockOwner: nextLockOwner,
-      gameOver: finalGameOver,
-      winner: finalWinner,
-      stateVersion: currentVersion, // ✅ CORREÇÃO: Versionamento autoritativo
-      updatedAt: now, // ✅ CORREÇÃO: Timestamp em ms
-      updatedBy: myUid // ✅ CORREÇÃO: Quem fez a mudança
-    })
+    if (isStartGame) {
+      // ✅ START GAME: Usa commitRemoteState com snapshot completo (única exceção permitida)
+      console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', nextTurnPlayerId, 'round:', safeRound)
+      commitRemoteState({
+        players: normalizedPlayers,
+        turnIdx: nextTurnIdx,
+        turnPlayerId: nextTurnPlayerId,
+        round: safeRound,
+        roundFlags: nextRoundFlags,
+        stateVersion: currentVersion,
+        updatedAt: now,
+        updatedBy: myUid
+      })
+    } else {
+      // ✅ CORREÇÃO MULTIPLAYER: Ação parcial - usar commitGamePatch com delta
+      // Calcula delta apenas dos players que mudaram
+      const playersDeltaById = {}
+      const currentPlayersMap = new Map(players.map(p => [String(p.id), p]))
+      
+      for (const nextPlayer of normalizedPlayers) {
+        const playerId = String(nextPlayer.id)
+        const currentPlayer = currentPlayersMap.get(playerId)
+        if (!currentPlayer) {
+          // Novo player (não deve acontecer em ações, mas trata)
+          playersDeltaById[playerId] = nextPlayer
+        } else {
+          // Compara propriedades para detectar mudanças
+          const delta = {}
+          const keysToCheck = ['pos', 'cash', 'bankrupt', 'clients', 'vendedoresComuns', 'fieldSales', 'insideSales', 
+                               'gestores', 'gestoresComerciais', 'manutencao', 'bens', 'mixProdutos', 'erpLevel',
+                               'az', 'am', 'rox', 'onboarding', 'trainingByVendor', 'trainingsByVendor', 'loanPending',
+                               'waitingAtRevenue', 'revenue', 'erpOwned', 'erp']
+          for (const key of keysToCheck) {
+            if (JSON.stringify(currentPlayer[key]) !== JSON.stringify(nextPlayer[key])) {
+              delta[key] = nextPlayer[key]
+            }
+          }
+          // Se há mudanças, inclui no delta
+          if (Object.keys(delta).length > 0) {
+            playersDeltaById[playerId] = delta
+          }
+        }
+      }
+      
+      // ✅ CORREÇÃO MULTIPLAYER: Usa commitGamePatch para fazer merge por delta
+      commitGamePatch({
+        playersDeltaById,
+        statePatch: {
+          turnPlayerId: nextTurnPlayerId,
+          turnIdx: nextTurnIdx,
+          round: safeRound,
+          roundFlags: nextRoundFlags,
+          turnLock: nextTurnLock,
+          lockOwner: nextLockOwner,
+          gameOver: finalGameOver,
+          winner: finalWinner
+        }
+      })
+      
+      console.log('[App] broadcastState (PATCH) - tipo:', nextTurnPlayerId && nextTurnPlayerId !== turnPlayerId ? 'TURN' : 'PLAYER_DELTA', 
+                  'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
+                  'turnPlayerId:', nextTurnPlayerId, 'round:', safeRound)
+    }
     // 2) entre abas
     try {
       bcRef.current?.postMessage?.({
@@ -978,11 +1094,10 @@ export default function App() {
     const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
     
     // rede
-    commitRemoteState({
-      players: normalized,
-      turnIdx: 0,
-      turnPlayerId: firstPlayerId, // ✅ CORREÇÃO: turnPlayerId autoritativo
-      round: 1,
+    broadcastState(normalized, 0, 1, false, null, {
+      turnPlayerId: firstPlayerId,
+      roundFlags: Array(nextPlayers.length).fill(false),
+      isStartGame: true // ✅ CORREÇÃO: Marca como START GAME (snapshot completo permitido)
     })
     // entre abas
     try {
@@ -1223,10 +1338,13 @@ export default function App() {
   // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
   // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
   const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
+  // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId é a fonte autoritativa para "é minha vez?"
+  const isMyTurnFromId = turnPlayerId !== null && turnPlayerId !== undefined && String(turnPlayerId) === String(myUid)
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
   const lockOwnerOk = lockOwner == null || lockOwner === myUid
-  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
-  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'lockOwner:', lockOwner, 'lockOwnerOk:', lockOwnerOk, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
+  // ✅ CORREÇÃO: controlsCanRoll usa turnPlayerId como fonte autoritativa (não depender de array index)
+  const controlsCanRoll = isMyTurnFromId && modalLocks === 0 && !turnLock && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
+  console.log('[App] controlsCanRoll - turnPlayerId:', turnPlayerId, 'myUid:', myUid, 'isMyTurnFromId:', isMyTurnFromId, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'lockOwner:', lockOwner, 'lockOwnerOk:', lockOwnerOk, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
 
   return (
     <div className="page">

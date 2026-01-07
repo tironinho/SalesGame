@@ -103,28 +103,14 @@ function GameNetProvider({ roomCode, hostId, children }) {
         { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => {
           const row = payload.new || payload.old || {}
-          // ✅ CORREÇÃO: Aceita somente versão maior (evita regressão)
+          // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE version como autoridade (removido updatedAt check)
           if (typeof row.version === 'number' && row.version > versionRef.current) {
-            // ✅ CORREÇÃO: Ignora eventos de rows antigas (updated_at menor que o conhecido)
-            if (latestKnownUpdatedAtRef.current && row.updated_at) {
-              const rowUpdatedAt = new Date(row.updated_at).getTime()
-              const knownUpdatedAt = new Date(latestKnownUpdatedAtRef.current).getTime()
-              if (rowUpdatedAt < knownUpdatedAt) {
-                console.log('[NET] realtime - ignorando evento de row antiga', {
-                  rowVersion: row.version,
-                  currentVersion: versionRef.current,
-                  rowUpdatedAt: row.updated_at,
-                  knownUpdatedAt: latestKnownUpdatedAtRef.current
-                })
-                return
-              }
-            }
             setVersion(row.version)
             if (row.state) setState(row.state)
             if (row.updated_at) latestKnownUpdatedAtRef.current = row.updated_at
             if (row.id) activeRoomIdRef.current = row.id
             lastEvtRef.current = Date.now()
-            console.log('[NET] applied remote v=%d', row.version)
+            console.log('[NET] ✅ applied remote v=%d (realtime)', row.version)
           }
         }
       )
