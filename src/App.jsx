@@ -387,17 +387,19 @@ export default function App() {
           console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           // Sincroniza estado do jogo (gameOver e winner)
-          if (typeof d.gameOver === 'boolean') {
-            setGameOver(prev => {
-              const next = prev || d.gameOver
-              if (!prev && d.gameOver) {
-                console.log('[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=...', d.winner?.name ?? d.winner ?? null)
-              }
-              return next
-            })
-          }
-          if (d.winner !== undefined) {
-            setWinner(prev => (d.winner ?? prev))
+          // ✅ Monotônico: gameOver nunca volta para false
+          setGameOver(prev => prev || !!d.gameOver);
+          
+          // ✅ Monotônico: winner nunca some depois que gameOver=true
+          setWinner(prev => {
+            const willBeGameOver = (gameOver || d.gameOver);
+            if (willBeGameOver && prev && (!d.winner)) return prev;
+            return d.winner ?? prev;
+          });
+          
+          // ✅ Log obrigatório
+          if (d.gameOver === true) {
+            console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${d.winner?.name ?? d.winner ?? "N/A"}`);
           }
         }
       }
@@ -558,17 +560,19 @@ export default function App() {
       // lockOwner não é state do App, mas pode ser usado se necessário
       console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
     }
-    if (typeof netState.gameOver === 'boolean') {
-      setGameOver(prev => {
-        const next = prev || netState.gameOver
-        if (!prev && netState.gameOver) {
-          console.log('[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=...', netState.winner?.name ?? netState.winner ?? null)
-        }
-        return next
-      })
-    }
-    if (netState.winner !== undefined) {
-      setWinner(prev => (netState.winner ?? prev))
+    // ✅ Monotônico: gameOver nunca volta para false
+    setGameOver(prev => prev || !!netState.gameOver);
+    
+    // ✅ Monotônico: winner nunca some depois que gameOver=true
+    setWinner(prev => {
+      const willBeGameOver = (gameOver || netState.gameOver);
+      if (willBeGameOver && prev && (!netState.winner)) return prev;
+      return netState.winner ?? prev;
+    });
+    
+    // ✅ Log obrigatório
+    if (netState.gameOver === true) {
+      console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${netState.winner?.name ?? netState.winner ?? "N/A"}`);
     }
 
     console.log('[NET] applied remote v=%d', netVersion)
@@ -908,8 +912,9 @@ export default function App() {
   // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
   // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
   const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
-  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && !isCurrentPlayerBankrupt && !gameOver
-  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'result:', controlsCanRoll)
+  const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
+  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
+  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
 
   return (
     <div className="page">

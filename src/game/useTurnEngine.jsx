@@ -297,7 +297,7 @@ export function useTurnEngine({
   }, [canPay, appendLog])
 
   // ========= fim de jogo =========
-  const maybeFinishGame = React.useCallback((finalPlayers, nextRound) => {
+  const maybeFinishGame = React.useCallback((finalPlayers, nextRound, finalTurnIdx) => {
     // nextRound = 6 significa: a 5ª rodada terminou agora
     if (nextRound <= 5) return false
 
@@ -306,15 +306,17 @@ export function useTurnEngine({
     // caso extremo: ninguém vivo
     if (alivePlayers.length === 0) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - Nenhum jogador vivo restante')
+      setPlayers(finalPlayers)
       setWinner(null)
       setGameOver(true)
       setRound(5)
       currentRoundRef.current = 5
       appendLog('Fim de jogo! Todos os jogadores falidos.')
+      pendingTurnDataRef.current = null
       setTurnLockBroadcast(false)
 
       try {
-        broadcastState(finalPlayers || [], turnIdx, 5, true, null, { round: 5, gameOver: true, winner: null })
+        broadcastState(finalPlayers || [], finalTurnIdx || turnIdx, 5, true, null, { round: 5, gameOver: true, winner: null })
       } catch {}
       return true
     }
@@ -334,18 +336,20 @@ export function useTurnEngine({
 
     const champ = ranked[0]?.player || null
 
-    console.log('[DEBUG] 🏆 VENCEDOR - Jogadores vivos:', alivePlayers.map(p => p.name), 'Vencedor:', champ?.name)
+    console.log("[ENDGAME] finalizando: vencedor=", champ?.name || "N/A", ", round=5")
 
+    setPlayers(finalPlayers)
     setWinner(champ)
     setGameOver(true)
-    setRound(5)                // ✅ HUD continua mostrando 5 (não 6)
+    setRound(5)
     currentRoundRef.current = 5
     appendLog(`Fim de jogo! 5 rodadas completas. Vencedor: ${champ?.name || '—'}`)
+    pendingTurnDataRef.current = null
     setTurnLockBroadcast(false)
 
     // ✅ propaga fim do jogo para todos os clientes
     try {
-      broadcastState(finalPlayers || [], turnIdx, 5, true, champ, { round: 5, gameOver: true, winner: champ })
+      broadcastState(finalPlayers || [], finalTurnIdx || turnIdx, 5, true, champ, { round: 5, gameOver: true, winner: champ })
     } catch {}
 
     return true
@@ -609,18 +613,52 @@ export function useTurnEngine({
 
     console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap, 'CompletedLap:', completedLap)
 
+    // ✅ CORREÇÃO: Verifica se passou pela casa 0 (Faturamento do Mês)
+    const crossedStart1ForRound = crossedTile(oldPos, newPos, 0) || lap
+    
     // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
+    // ✅ Adiciona lastRevenueRound e waitingAtRevenue
+    const roundNow = currentRoundRef.current
+    const aliveCount = players.filter(p => !p?.bankrupt).length
+    
     const nextPlayers = players.map((p, i) => {
       if (i !== curIdx) return p
       const nextCash = (p.cash || 0) + (deltaCash || 0)
-      return { ...p, pos: newPos, cash: Math.max(0, nextCash) }
+      
+      // Inicializa campos se não existirem
+      const lastRevenueRound = Number(p.lastRevenueRound) || 0
+      let waitingAtRevenue = false
+      let finalPos = newPos
+      
+      // Se cruzou o faturamento, atualiza lastRevenueRound
+      if (crossedStart1ForRound) {
+        const newLastRevenueRound = Math.max(lastRevenueRound, roundNow)
+        
+        // Trava somente na 5ª rodada se há mais de 1 jogador vivo
+        if (roundNow === 5 && aliveCount > 1) {
+          waitingAtRevenue = true
+          finalPos = 0  // Trava na casa 0
+        }
+        
+        return {
+          ...p,
+          pos: finalPos,
+          cash: Math.max(0, nextCash),
+          lastRevenueRound: newLastRevenueRound,
+          waitingAtRevenue
+        }
+      }
+      
+      return {
+        ...p,
+        pos: finalPos,
+        cash: Math.max(0, nextCash),
+        lastRevenueRound,
+        waitingAtRevenue: false  // Nunca trava em rodadas < 5
+      }
     })
     
-    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash)
-
-    // ✅ CORREÇÃO: Verifica se passou pela casa 0 (Faturamento do Mês) - será usado abaixo
-    // crossedStart1 será definido mais abaixo, mas precisamos verificar aqui também
-    const crossedStart1ForRound = crossedTile(oldPos, newPos, 0)
+    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash, 'lastRevenueRound:', nextPlayers[curIdx]?.lastRevenueRound, 'waitingAtRevenue:', nextPlayers[curIdx]?.waitingAtRevenue)
 
     // >>> controle de rodada: só vira quando TODOS os jogadores VIVOS cruzarem a casa 0
     // ✅ CORREÇÃO CRÍTICA: Usa ref para pegar valor atualizado de round (evita stale closure)
@@ -670,12 +708,11 @@ export function useTurnEngine({
       const aliveIndices = nextPlayers.map((p, i) => !p?.bankrupt ? i : -1).filter(i => i >= 0)
       
       // ✅ CORREÇÃO: Verifica se todos os jogadores vivos passaram pela casa 0
-      // IMPORTANTE: Verifica se há pelo menos um jogador vivo e se todos eles têm flag = true
-      const allAliveDone = aliveIndices.length > 0 && aliveIndices.every(idx => {
-        const hasFlag = nextFlags[idx] === true
-        console.log('[DEBUG] 🔍 Verificando jogador:', nextPlayers[idx]?.name, 'flag:', hasFlag, 'índice:', idx, 'pos:', nextPlayers[idx]?.pos)
-        return hasFlag
-      })
+      // Usa lastRevenueRound >= currentRoundRef.current (robusto)
+      const alive = nextPlayers.filter(p => !p?.bankrupt)
+      const allAliveDone = alive.length > 0 && alive.every(p => (Number(p.lastRevenueRound) || 0) >= currentRoundRef.current)
+      
+      console.log('[DEBUG] 🔍 Verificando allAliveDone - Rodada atual:', currentRoundRef.current, 'Jogadores vivos:', alive.map(p => ({ name: p.name, lastRevenueRound: p.lastRevenueRound })))
       
       console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', currentRoundRef.current, 'round do closure:', round)
       console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => `${nextPlayers[i]?.name}:${nextFlags[i]}`).join(', '))
@@ -688,38 +725,34 @@ export function useTurnEngine({
         const currentRoundValue = currentRoundRef.current
         const computedNextRound = currentRoundValue + 1
         
-        // ✅ FIX: Detecta quando a rodada tentaria ir para 6 (fim de jogo)
-        if (computedNextRound > 5) {
-          shouldEndGameAfterTick = true
-          nextRound = Math.min(5, currentRoundValue)
-          console.log('[DEBUG] 🏁 5 rodadas completas - todos os jogadores vivos passaram pelo faturamento')
-          
-          if (!endGamePendingRef.current && !endGameFinalizedRef.current) {
-            endGamePendingRef.current = true
-            console.log('[ENDGAME] detectado: fim da 5ª (tentaria round=6)')
-          }
-        } else {
-          nextRound = computedNextRound
-          shouldIncrementRound = true
-          console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
-          
-          // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
-          nextFlags = nextFlags.map((_, idx) => {
-            if (nextPlayers[idx]?.bankrupt) {
-              // Mantém a flag do jogador falido (não reseta)
-              return nextFlags[idx]
-            } else {
-              // Reseta a flag do jogador vivo
-              return false
-            }
-          })
-          console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior (ref):', currentRoundValue, 'Rodada anterior (closure):', round, 'Jogadores vivos:', alivePlayers.length)
-          console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
-          appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+        nextRound = computedNextRound
+        shouldIncrementRound = true
+        
+        // ✅ FIM DE JOGO: quando round===5 e shouldIncrementRound, finaliza
+        if (currentRoundValue === 5 && shouldIncrementRound) {
+          console.log("[ENDGAME] detectado: fim da 5ª (tentaria round=6)");
+          maybeFinishGame(nextPlayers, 6, turnIdx);
+          return;
         }
+        
+        console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
+        
+        // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
+        nextFlags = nextFlags.map((_, idx) => {
+          if (nextPlayers[idx]?.bankrupt) {
+            // Mantém a flag do jogador falido (não reseta)
+            return nextFlags[idx]
+          } else {
+            // Reseta a flag do jogador vivo
+            return false
+          }
+        })
+        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior (ref):', currentRoundValue, 'Rodada anterior (closure):', round, 'Jogadores vivos:', alive.length)
+        console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
+        appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
       } else {
-        const missingPlayers = aliveIndices.filter(idx => !nextFlags[idx]).map(idx => nextPlayers[idx]?.name)
-        console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0:', missingPlayers.join(', '))
+        const missingPlayers = alive.filter(p => (Number(p.lastRevenueRound) || 0) < currentRoundRef.current).map(p => p.name)
+        console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores completarem o mês:', missingPlayers.join(', '))
       }
     }
     
@@ -728,7 +761,19 @@ export function useTurnEngine({
     console.log('[DEBUG] roundFlags updated / round closed:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
     
     // >>> pular jogadores falidos ao decidir o próximo turno
-    const nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
+    // ✅ Na rodada 5, pula também quem está waitingAtRevenue
+    let nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
+    
+    // Pula waiting na rodada 5
+    if (currentRoundRef.current === 5) {
+      let guard = 0
+      while (guard < nextPlayers.length) {
+        const p = nextPlayers[nextTurnIdx]
+        if (!p.bankrupt && !(p.waitingAtRevenue === true)) break
+        nextTurnIdx = (nextTurnIdx + 1) % nextPlayers.length
+        guard++
+      }
+    }
     
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
@@ -793,7 +838,7 @@ export function useTurnEngine({
 
     // ✅ Fim de jogo por rodada (correto):
     // Se a próxima rodada calculada for 6, significa que a 5ª rodada terminou agora.
-    if (maybeFinishGame(nextPlayers, nextRound)) {
+    if (maybeFinishGame(nextPlayers, nextRound, turnIdx)) {
       // evita deixar o motor "travado" esperando tick
       pendingTurnDataRef.current = null
       turnChangeInProgressRef.current = false
