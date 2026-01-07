@@ -1812,6 +1812,28 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Delay maior para dar tempo das modais serem abertas (as modais são abertas de forma assíncrona)
     // As modais são abertas dentro de blocos (async () => { ... })(), então precisamos aguardar
     setTimeout(checkBeforeTick, 500)
+  } catch (error) {
+    console.error('[DEBUG] Erro em advanceAndMaybeLap:', error)
+    // ✅ BUG 2 FIX: Libera turnLock em caso de erro
+    if (lockOwnerRef.current === String(myUid)) {
+      setTurnLockBroadcast(false)
+    }
+    throw error
+  } finally {
+    // ✅ BUG 2 FIX: Garante que turnLock é liberado se ainda estiver preso
+    // Usa ref para verificar se ainda é o dono do lock
+    if (lockOwnerRef.current === String(myUid)) {
+      // Pequeno delay para evitar race condition
+      setTimeout(() => {
+        if (lockOwnerRef.current === String(myUid)) {
+          setTurnLockBroadcast(false)
+          turnChangeInProgressRef.current = false
+        }
+      }, 100)
+    } else {
+      turnChangeInProgressRef.current = false
+    }
+  }
   }, [
     players, round, turnIdx, roundFlags, isMyTurn, isMine,
     myUid, myCash, gameOver,
@@ -2375,28 +2397,6 @@ export function useTurnEngine({
       return
     }
     console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
-    } catch (error) {
-      console.error('[DEBUG] Erro em advanceAndMaybeLap:', error)
-      // ✅ BUG 2 FIX: Libera turnLock em caso de erro
-      if (lockOwnerRef.current === String(myUid)) {
-        setTurnLockBroadcast(false)
-      }
-      throw error
-    } finally {
-      // ✅ BUG 2 FIX: Garante que turnLock é liberado se ainda estiver preso
-      // Usa ref para verificar se ainda é o dono do lock
-      if (lockOwnerRef.current === String(myUid)) {
-        // Pequeno delay para evitar race condition
-        setTimeout(() => {
-          if (lockOwnerRef.current === String(myUid)) {
-            setTurnLockBroadcast(false)
-            turnChangeInProgressRef.current = false
-          }
-        }, 100)
-      } else {
-        turnChangeInProgressRef.current = false
-      }
-    }
   }, [
     players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,
