@@ -154,39 +154,27 @@ export function useGameSync({
             return
           }
           
-          // Sincroniza turnIdx apenas se não houver mudança local muito recente
+          // ✅ CORREÇÃO MULTIPLAYER: BroadcastChannel SYNC é para mesma máquina (abas)
+          // Em multiplayer via Supabase, o netState é a autoridade
+          // Aqui aplicamos turnIdx/turnPlayerId do BroadcastChannel apenas se não houver netState ativo
+          // REMOVIDO: heurísticas de rejeição baseadas em timestamp local (< 5s)
           if (d.turnIdx !== turnIdx) {
-            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-              const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
-              if (localTurnIdxChanged) {
-                // ✅ CORREÇÃO: Se o turnIdx remoto está tentando reverter para um valor anterior, ignora
-                const isReverting = d.turnIdx === lastLocal.turnIdx
-                if (isReverting) {
-                  console.log('[SG][BC] ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente', {
-                    lastLocalTurnIdx: lastLocal.turnIdx,
-                    currentLocalTurnIdx: turnIdx,
-                    remoteTurnIdx: d.turnIdx,
-                    timeSinceLocalChange: now - lastLocal.timestamp,
-                    isReverting: true
-                  })
-                } else {
-                  console.log('[SG][BC] Ignorando turnIdx remoto - turnIdx local mudou recentemente (< 5s)')
-                }
-              } else {
-                // ✅ CORREÇÃO: Verifica se o turnIdx remoto está dentro dos limites válidos
-                if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
-                  setTurnIdx(d.turnIdx)
-                } else {
-                  console.warn('[SG][BC] ❌ IGNORANDO turnIdx remoto fora dos limites:', d.turnIdx, 'players.length:', d.players?.length || players.length)
-                }
+            // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
+            if (d.turnPlayerId !== undefined && d.turnPlayerId !== null) {
+              setTurnPlayerId?.(d.turnPlayerId)
+              // Deriva turnIdx de turnPlayerId
+              const normalized = (d.players || players).filter(Boolean)
+              const derivedTurnIdx = normalized.findIndex(p => String(p.id) === String(d.turnPlayerId))
+              if (derivedTurnIdx >= 0) {
+                setTurnIdx(derivedTurnIdx)
+                console.log('[SG][BC] turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', d.turnPlayerId)
               }
+            } else if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
+              // Fallback: usa turnIdx se turnPlayerId não disponível
+              setTurnIdx(d.turnIdx)
+              console.log('[SG][BC] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
             } else {
-              // ✅ CORREÇÃO: Verifica se o turnIdx remoto está dentro dos limites válidos
-              if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
-                setTurnIdx(d.turnIdx)
-              } else {
-                console.warn('[SG][BC] ❌ IGNORANDO turnIdx remoto fora dos limites:', d.turnIdx, 'players.length:', d.players?.length || players.length)
-              }
+              console.warn('[SG][BC] ⚠️ turnIdx remoto fora dos limites:', d.turnIdx, 'players.length:', d.players?.length || players.length)
             }
           }
           

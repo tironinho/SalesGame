@@ -252,72 +252,25 @@ export default function App() {
             console.log('[App] SYNC - ✅ Aceitando versão remota:', remoteVersion, '> versão local:', localVersion)
           }
           
-          // ✅ CORREÇÃO CRÍTICA: Sincroniza turnIdx apenas se não houver mudança local muito recente
-          // E NUNCA aceita um turnIdx remoto que está revertendo uma mudança local
-          if (d.turnIdx !== turnIdx) {
-            if (lastLocal && (now - lastLocal.timestamp) < 5000) {
-              // Verifica se o turnIdx local mudou recentemente
-              const localTurnIdxChanged = lastLocal.turnIdx !== turnIdx
-              if (localTurnIdxChanged) {
-                // ✅ CORREÇÃO: Se o turnIdx local mudou recentemente, NUNCA aceita um turnIdx remoto diferente
-                // Isso evita que estados remotos antigos revertam mudanças locais recentes
-                // Além disso, se o turnIdx remoto está tentando reverter para um valor anterior, ignora
-                const isReverting = d.turnIdx === lastLocal.turnIdx
-                let ignoreTurnIdx = false
-                if (isReverting) {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter mudança local recente (mantendo resto do snapshot)', {
-                    lastLocalTurnIdx: lastLocal.turnIdx,
-                    currentLocalTurnIdx: turnIdx,
-                    remoteTurnIdx: d.turnIdx,
-                    timeSinceLocalChange: now - lastLocal.timestamp,
-                    isReverting: true
-                  })
-                  ignoreTurnIdx = true // ✅ BUG 1b FIX: Não retorna cedo, apenas ignora turnIdx
-                } else {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - turnIdx local mudou recentemente (< 5s) (mantendo resto do snapshot)', {
-                    lastLocalTurnIdx: lastLocal.turnIdx,
-                    currentLocalTurnIdx: turnIdx,
-                    remoteTurnIdx: d.turnIdx,
-                    timeSinceLocalChange: now - lastLocal.timestamp
-                  })
-                  ignoreTurnIdx = true // ✅ BUG 1b FIX: Não retorna cedo, apenas ignora turnIdx
-                }
-                // ✅ BUG 1b FIX: Continua aplicando resto do snapshot mesmo ignorando turnIdx
-                if (!ignoreTurnIdx && d.turnIdx !== undefined) {
-                  setTurnIdx(d.turnIdx)
-                }
-              } else {
-                // ✅ CORREÇÃO: Se o turnIdx local não mudou, mas há uma mudança local recente,
-                // verifica se o turnIdx remoto está tentando reverter
-                // Se o turnIdx remoto é igual ao lastLocal.turnIdx, está tentando reverter
-                if (d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-                  console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (mantendo resto do snapshot)', {
-                    lastLocalTurnIdx: lastLocal.turnIdx,
-                    currentLocalTurnIdx: turnIdx,
-                    remoteTurnIdx: d.turnIdx
-                  })
-                  // ✅ BUG 1b FIX: Não retorna cedo, apenas não aplica turnIdx
-                } else {
-                  // Se o turnIdx local não mudou, pode sincronizar
-                  setTurnIdx(d.turnIdx)
-                  console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
-                }
+          // ✅ CORREÇÃO MULTIPLAYER: BroadcastChannel SYNC é para mesma máquina (abas)
+          // Em multiplayer via Supabase, o netState é a autoridade
+          // Aqui aplicamos turnIdx/turnPlayerId do BroadcastChannel apenas se não houver netState ativo
+          // REMOVIDO: todas as heurísticas de rejeição baseadas em timestamp local (< 5s)
+          if (d.turnIdx !== turnIdx && (!net?.enabled || !net?.ready)) {
+            // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
+            if (d.turnPlayerId !== undefined && d.turnPlayerId !== null) {
+              setTurnPlayerId(d.turnPlayerId)
+              // Deriva turnIdx de turnPlayerId
+              const normalized = normalizePlayers(d.players || players)
+              const derivedTurnIdx = normalized.findIndex(p => String(p.id) === String(d.turnPlayerId))
+              if (derivedTurnIdx >= 0) {
+                setTurnIdx(derivedTurnIdx)
+                console.log('[App] SYNC (BC) - turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', d.turnPlayerId)
               }
-            } else {
-              // ✅ CORREÇÃO: Se não houve mudança local recente, mas há lastLocal,
-              // verifica se o turnIdx remoto está tentando reverter
-              if (lastLocal && d.turnIdx === lastLocal.turnIdx && lastLocal.turnIdx !== turnIdx) {
-                console.log('[App] SYNC - ❌ IGNORANDO turnIdx remoto - tentando reverter para valor anterior (sem mudança recente, mantendo resto do snapshot)', {
-                  lastLocalTurnIdx: lastLocal.turnIdx,
-                  currentLocalTurnIdx: turnIdx,
-                  remoteTurnIdx: d.turnIdx
-                })
-                // ✅ BUG 1b FIX: Não retorna cedo, apenas não aplica turnIdx
-              } else {
-                // Se não houve mudança local recente, sincroniza normalmente
-                setTurnIdx(d.turnIdx)
-                console.log('[App] SYNC - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
-              }
+            } else if (d.turnIdx >= 0 && d.turnIdx < (d.players?.length || players.length)) {
+              // Fallback: usa turnIdx se turnPlayerId não disponível
+              setTurnIdx(d.turnIdx)
+              console.log('[App] SYNC (BC) - Sincronizando turnIdx', { local: turnIdx, remote: d.turnIdx })
             }
           }
           
@@ -613,89 +566,59 @@ export default function App() {
     if (!net?.enabled || !net?.ready) return
     if (!netState) return
 
-    // ✅ CORREÇÃO: Garante monotonicidade do que você aplica
+    // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE netVersion como autoridade (versão da linha no servidor)
+    // Snapshot autoritativo: se netVersion <= lastAppliedNetVersionRef => ignore (snapshot antigo)
     if (typeof netVersion === 'number') {
-      if (netVersion <= lastAppliedNetVersionRef.current) return
+      if (netVersion <= lastAppliedNetVersionRef.current) {
+        console.log('[NET] ⏭️ IGNORADO - netVersion não avançou:', {
+          netVersion,
+          lastApplied: lastAppliedNetVersionRef.current
+        })
+        return
+      }
+      // Atualiza lastAppliedNetVersionRef ANTES de aplicar (garante monotonicidade)
       lastAppliedNetVersionRef.current = netVersion
-    }
-
-    // ✅ CORREÇÃO: Freshness gate - rejeita estados remotos "velhos" ou fora de ordem
-    const remoteStateVersion = typeof netState.stateVersion === 'number' ? netState.stateVersion : 0
-    const remoteUpdatedAt = typeof netState.updatedAt === 'number' ? netState.updatedAt : 0
-    const now = Date.now()
-    const lastLocal = lastLocalStateRef.current
-    
-    // Rejeita se:
-    // a) stateVersion remoto < lastAcceptedVersionRef (regressão)
-    if (remoteStateVersion > 0 && remoteStateVersion < lastAcceptedVersionRef.current) {
-      console.log('[NET] ❌ REJEITADO - stateVersion remoto menor que aceito:', {
-        remote: remoteStateVersion,
-        accepted: lastAcceptedVersionRef.current
-      })
+    } else {
+      // Se netVersion não está disponível, não aplica (aguarda versão válida)
       return
     }
-    
-    // b) existe lastLocalStateRef e (netState.updatedAt < lastLocalStateRef.timestamp) e diferença pequena (< 5s)
-    if (lastLocal && lastLocal.timestamp && remoteUpdatedAt > 0) {
-      const timeDiff = lastLocal.timestamp - remoteUpdatedAt
-      if (timeDiff > 0 && timeDiff < 5000) {
-        console.log('[NET] ❌ REJEITADO - estado remoto mais antigo que mudança local recente:', {
-          remoteUpdatedAt: new Date(remoteUpdatedAt).toISOString(),
-          localTimestamp: new Date(lastLocal.timestamp).toISOString(),
-          timeDiff: timeDiff + 'ms'
-        })
-        return
-      }
-    }
-    
-    // c) houver "mudança local recente" (lastLocalStateRef timestamp nos últimos 3-5s) e a versão remota não for maior
-    if (lastLocal && lastLocal.timestamp) {
-      const timeSinceLocalChange = now - lastLocal.timestamp
-      if (timeSinceLocalChange < 5000 && remoteStateVersion <= lastLocal.version) {
-        console.log('[NET] ❌ REJEITADO - mudança local recente e versão remota não é maior:', {
-          timeSinceLocalChange: timeSinceLocalChange + 'ms',
-          localVersion: lastLocal.version,
-          remoteVersion: remoteStateVersion
-        })
-        return
-      }
-    }
 
+    // ✅ CORREÇÃO MULTIPLAYER: Aplica snapshot COMPLETO sempre que netVersion avançar
+    // REMOVIDO: todas as heurísticas de rejeição (stateVersion, timestamp local, "mudança recente")
+    // O servidor (netVersion) é a única autoridade
+    
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
+    const nr = Number.isInteger(netState.round) ? netState.round : null
+
     // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
-    if (netState.turnPlayerId !== undefined) {
+    // turnPlayerId é a fonte de verdade; turnIdx é derivado localmente
+    if (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null) {
       setTurnPlayerId(netState.turnPlayerId)
       // Deriva turnIdx de turnPlayerId se players estão normalizados
       const normalized = normalizePlayers(np || players)
       const derivedTurnIdx = normalized.findIndex(p => String(p.id) === String(netState.turnPlayerId))
-      if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
-        console.log('[NET] turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', netState.turnPlayerId)
-        setTurnIdx(derivedTurnIdx)
-      }
-    }
-    const nr = Number.isInteger(netState.round) ? netState.round : null
-
-    // ✅ CORREÇÃO: Só aplica se remoto for claramente mais novo
-    if (np) {
-      // ✅ CORREÇÃO: Normaliza players antes de aplicar
-      const normalizedPlayers = normalizePlayers(np)
-      
-      // Aplica players apenas se versão remota for maior ou se não houver mudança local recente
-      const shouldApplyPlayers = remoteStateVersion > (lastLocal?.version || 0) || 
-                                 !lastLocal || 
-                                 (now - (lastLocal.timestamp || 0)) >= 3000
-      if (shouldApplyPlayers) {
-        setPlayers(normalizedPlayers)
-        // Atualiza baseline para próximo merge
-        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+      if (derivedTurnIdx >= 0) {
+        if (derivedTurnIdx !== turnIdx) {
+          console.log('[NET] ✅ turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', netState.turnPlayerId)
+          setTurnIdx(derivedTurnIdx)
+        }
       } else {
-        console.log('[NET] ⚠️ IGNORANDO players remoto - mudança local muito recente')
+        console.warn('[NET] ⚠️ turnPlayerId não encontrado em players:', netState.turnPlayerId)
       }
-    }
-    
-    if (nt !== null) {
+    } else if (nt !== null) {
+      // Fallback: se turnPlayerId não está disponível, usa turnIdx (compatibilidade)
       setTurnIdx(nt)
+    }
+
+    // ✅ CORREÇÃO MULTIPLAYER: Aplica players SEMPRE quando netVersion avançar (snapshot autoritativo)
+    if (np) {
+      // Normaliza players antes de aplicar (garante ordem consistente)
+      const normalizedPlayers = normalizePlayers(np)
+      setPlayers(normalizedPlayers)
+      // Atualiza baseline para próximo merge
+      playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+      console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
     }
     
     if (nr !== null) {
@@ -745,7 +668,56 @@ export default function App() {
       }
       console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
     }
+    // ✅ CORREÇÃO MULTIPLAYER: Aplica roundFlags do snapshot autoritativo
+    if (netState.roundFlags !== undefined) {
+      if (Array.isArray(netState.roundFlags)) {
+        setRoundFlags(netState.roundFlags)
+        console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
+      } else if (typeof netState.roundFlags === 'object') {
+        // Se for objeto, converte para array (compatibilidade)
+        const flagsArray = Object.values(netState.roundFlags)
+        setRoundFlags(flagsArray)
+        console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
+      }
+    }
+
+    // ✅ CORREÇÃO MULTIPLAYER: Aplica campos de controle de turno e estado do jogo do snapshot autoritativo
+    if (typeof netState.turnLock === 'boolean') {
+      setTurnLock(netState.turnLock)
+      // ✅ BUG 2 FIX: Rastreia quando turnLock vira true para watchdog
+      if (netState.turnLock && !lockSinceRef.current) {
+        lockSinceRef.current = Date.now()
+      } else if (!netState.turnLock) {
+        lockSinceRef.current = null
+      }
+      // ✅ BUG 1 FIX: Log quando detectar travamento por lockOwner/turnLock
+      if (netState.turnLock && netState.lockOwner) {
+        console.log('[LOCK] bloqueado: turnLockBroadcast=true lockOwner=', netState.lockOwner, 'myId=', myUid)
+      }
+    }
+    if (netState.lockOwner !== undefined) {
+      setLockOwner(netState.lockOwner)
+      // ✅ BUG 1 FIX: Armazena lockOwner no lastLocalStateRef para preservar em próximos broadcasts
+      if (lastLocalStateRef.current) {
+        lastLocalStateRef.current.lockOwner = netState.lockOwner
+      }
+      console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
+    }
     lastNetApplyAtRef.current = Date.now()
+    
+    // ✅ CORREÇÃO MULTIPLAYER: Aplica round do snapshot autoritativo
+    if (nr !== null) {
+      // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
+      const isResetState = (
+        nr === 1 &&
+        (nt === 0 || nt === null) &&
+        Array.isArray(np) && np.length > 0 &&
+        np.every(p => Number(p?.pos ?? 0) === 0) &&
+        (netState.gameOver === false || netState.gameOver == null)
+      )
+      setRound(prev => isResetState ? 1 : Math.max(prev, nr))
+    }
+    
     // ✅ Monotônico: gameOver nunca volta para false
     setGameOver(prev => prev || !!netState.gameOver);
     
@@ -761,12 +733,8 @@ export default function App() {
       console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${netState.winner?.name ?? netState.winner ?? "N/A"}`);
     }
 
-    // ✅ CORREÇÃO: Atualiza lastAcceptedVersionRef quando aceita estado remoto
-    if (remoteStateVersion > 0) {
-      lastAcceptedVersionRef.current = Math.max(lastAcceptedVersionRef.current, remoteStateVersion)
-    }
-    
-    console.log('[NET] applied remote v=%d stateVersion=%d updatedAt=%s', netVersion, remoteStateVersion, remoteUpdatedAt > 0 ? new Date(remoteUpdatedAt).toISOString() : 'N/A')
+    // ✅ CORREÇÃO MULTIPLAYER: Log de aplicação do snapshot autoritativo
+    console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'turnIdx:', nt, 'round:', nr)
   }, [netVersion, netState, net?.enabled, net?.ready])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo

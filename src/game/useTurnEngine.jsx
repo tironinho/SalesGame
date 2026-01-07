@@ -541,10 +541,15 @@ export function useTurnEngine({
                 return false
               }
               const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+              // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
+              const nextPlayer = updatedPlayers[nextIdx]
+              const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
               setPlayers(updatedPlayers)
               setTurnIdx(nextIdx)
               setTurnLockBroadcast(false)
-              broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
+              broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
+                turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
+              })
               return false
             }
             
@@ -641,10 +646,15 @@ export function useTurnEngine({
           return false
         }
         const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+        // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
+        const nextPlayer = updatedPlayers[nextIdx]
+        const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
         setPlayers(updatedPlayers)
         setTurnIdx(nextIdx)
         setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
+        broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
+          turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
+        })
         return false
       } else {
         setTurnLockBroadcast(false)
@@ -885,9 +895,13 @@ export function useTurnEngine({
     // (nunca somar +1 aqui, senão o tick/broadcast sai com round errado)
     const finalNextRound = nextRound
     const finalNextFlags = nextFlags
+    // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador (fonte autoritativa)
+    const nextPlayer = nextPlayers[nextTurnIdx]
+    const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
+      nextTurnPlayerId, // ✅ CORREÇÃO: turnPlayerId do próximo jogador
       nextRound: finalNextRound,
       nextRoundFlags: finalNextFlags,
       timestamp: Date.now(),
@@ -1762,6 +1776,9 @@ export function useTurnEngine({
               if (turnData.shouldIncrementRound) {
                 patch.round = roundToBroadcast
               }
+              if (turnData.nextTurnPlayerId) {
+                patch.turnPlayerId = turnData.nextTurnPlayerId // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId autoritativo
+              }
               broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
@@ -1904,8 +1921,13 @@ export function useTurnEngine({
   const nextTurn = React.useCallback(() => {
     if (gameOver || !players.length) return
     const nextTurnIdx = findNextAliveIdx(players, turnIdx)
+    // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
+    const nextPlayer = players[nextTurnIdx]
+    const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
     setTurnIdx(nextTurnIdx)
-    broadcastState(players, nextTurnIdx, currentRoundRef.current)
+    broadcastState(players, nextTurnIdx, currentRoundRef.current, false, null, {
+      turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
+    })
   }, [broadcastState, gameOver, players, round, setTurnIdx, turnIdx])
 
   const onAction = React.useCallback((act) => {
