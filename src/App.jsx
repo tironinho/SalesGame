@@ -78,38 +78,40 @@ export default function App() {
   })
 
   // ✅ CORREÇÃO: Normaliza ordem dos players para garantir consistência entre clientes
-  // Ordena por seat (se existir) ou por id (string) para garantir ordem determinística
+  // Seat é IMUTÁVEL após atribuído no start - nunca reatribui seat existente
   const normalizePlayers = (players) => {
     if (!Array.isArray(players) || players.length === 0) return players
     
     // Cria cópia para não mutar o original
-    const normalized = [...players]
+    const arr = [...players].filter(Boolean)
     
-    // Ordena: primeiro por seat (se existir), depois por id (string)
-    normalized.sort((a, b) => {
-      // Se ambos têm seat, ordena por seat
-      if (typeof a.seat === 'number' && typeof b.seat === 'number') {
-        if (a.seat !== b.seat) return a.seat - b.seat
+    // Verifica se TODOS possuem seat válido
+    const hasSeat = arr.every(p => Number.isInteger(p.seat))
+    
+    // Ordena: se todos têm seat, ordena por seat; senão, ordena por id
+    let ordered = hasSeat 
+      ? arr.sort((a, b) => a.seat - b.seat)
+      : arr.sort((a, b) => String(a?.id ?? a?.player_id ?? '').localeCompare(String(b?.id ?? b?.player_id ?? '')))
+    
+    // Preenche seats faltantes SEM alterar os existentes
+    let nextSeat = 0
+    const used = new Set(ordered.filter(p => Number.isInteger(p.seat)).map(p => p.seat))
+    
+    ordered = ordered.map(p => {
+      if (Number.isInteger(p.seat)) {
+        return p // Preserva seat existente
       }
-      // Se apenas um tem seat, ele vem primeiro
-      if (typeof a.seat === 'number' && typeof b.seat !== 'number') return -1
-      if (typeof a.seat !== 'number' && typeof b.seat === 'number') return 1
-      
-      // Caso contrário, ordena por id (string) para garantir ordem determinística
-      const idA = String(a?.id ?? a?.player_id ?? '')
-      const idB = String(b?.id ?? b?.player_id ?? '')
-      return idA.localeCompare(idB)
+      // Atribui próximo seat disponível
+      while (used.has(nextSeat)) nextSeat++
+      used.add(nextSeat)
+      return { ...p, seat: nextSeat++ }
     })
     
-    // Garante que todos os players tenham seat atribuído (baseado na posição ordenada)
-    normalized.forEach((p, i) => {
-      if (typeof p.seat !== 'number') {
-        p.seat = i
-      }
-    })
+    // Reordena por seat após preencher faltantes
+    ordered = ordered.sort((a, b) => a.seat - b.seat)
     
-    console.log('[App] normalizePlayers - ordenados:', normalized.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
-    return normalized
+    console.log('[App] normalizePlayers - ordenados:', ordered.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
+    return ordered
   }
 
   const [players, setPlayers] = useState([
@@ -117,6 +119,7 @@ export default function App() {
   ])
   const [round, setRound] = useState(1)
   const [turnIdx, setTurnIdx] = useState(0)
+  const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState(null)
@@ -202,6 +205,9 @@ export default function App() {
 
           setPlayers(normalized)
           setTurnIdx(0)
+          // ✅ CORREÇÃO: Define turnPlayerId no start (fonte autoritativa)
+          const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
+          setTurnPlayerId(firstPlayerId)
           setRound(1)
           setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
@@ -657,6 +663,17 @@ export default function App() {
 
     const np = Array.isArray(netState.players) ? netState.players : null
     const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
+    // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
+    if (netState.turnPlayerId !== undefined) {
+      setTurnPlayerId(netState.turnPlayerId)
+      // Deriva turnIdx de turnPlayerId se players estão normalizados
+      const normalized = normalizePlayers(np || players)
+      const derivedTurnIdx = normalized.findIndex(p => String(p.id) === String(netState.turnPlayerId))
+      if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
+        console.log('[NET] turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', netState.turnPlayerId)
+        setTurnIdx(derivedTurnIdx)
+      }
+    }
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
     // ✅ CORREÇÃO: Só aplica se remoto for claramente mais novo
@@ -922,12 +939,18 @@ export default function App() {
     // ✅ CORREÇÃO: Normaliza players antes de broadcast
     const normalizedPlayers = normalizePlayers(nextPlayers)
     
+    // ✅ CORREÇÃO: Deriva turnPlayerId de turnIdx se não estiver no patch
+    const nextTurnPlayerId = patch.turnPlayerId !== undefined 
+      ? patch.turnPlayerId 
+      : (normalizedPlayers[nextTurnIdx]?.id ? String(normalizedPlayers[nextTurnIdx].id) : turnPlayerId)
+    
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
     lastLocalStateRef.current = {
       players: normalizedPlayers,
       turnIdx: nextTurnIdx,
+      turnPlayerId: nextTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId
       round: safeRound,
       gameOver: finalGameOver,
       winner: finalWinner,
@@ -940,7 +963,7 @@ export default function App() {
     }
     lastAcceptedVersionRef.current = currentVersion
     
-    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid, 'playersOrdered:', normalizedPlayers.map(p => p.id).join(','))
+    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'turnPlayerId:', nextTurnPlayerId, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid, 'playersOrdered:', normalizedPlayers.map(p => p.id).join(','))
     if (Object.keys(patch).length > 0) {
       console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
     }
@@ -949,6 +972,7 @@ export default function App() {
     commitRemoteState({
       players: normalizedPlayers,
       turnIdx: nextTurnIdx,
+      turnPlayerId: nextTurnPlayerId, // ✅ CORREÇÃO: turnPlayerId autoritativo
       round: safeRound,
       roundFlags: nextRoundFlags,
       turnLock: nextTurnLock,
@@ -982,10 +1006,14 @@ export default function App() {
     // ✅ CORREÇÃO: Normaliza players antes de broadcast
     const normalized = normalizePlayers(nextPlayers)
     
+    // ✅ CORREÇÃO: Define turnPlayerId no start (fonte autoritativa)
+    const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
+    
     // rede
     commitRemoteState({
       players: normalized,
       turnIdx: 0,
+      turnPlayerId: firstPlayerId, // ✅ CORREÇÃO: turnPlayerId autoritativo
       round: 1,
     })
     // entre abas

@@ -84,37 +84,39 @@ export function useTurnEngine({
   const lastModalClosedTimeRef = React.useRef(null)
 
   // ✅ CORREÇÃO: Normaliza players para garantir ordem consistente
-  // Ordena por seat (se existir) ou por id (string) para garantir ordem determinística
+  // Seat é IMUTÁVEL após atribuído no start - nunca reatribui seat existente
   const normalizePlayers = React.useCallback((players) => {
     if (!Array.isArray(players) || players.length === 0) return players
     
     // Cria cópia para não mutar o original
-    const normalized = [...players]
+    const arr = [...players].filter(Boolean)
     
-    // Ordena: primeiro por seat (se existir), depois por id (string)
-    normalized.sort((a, b) => {
-      // Se ambos têm seat, ordena por seat
-      if (typeof a.seat === 'number' && typeof b.seat === 'number') {
-        if (a.seat !== b.seat) return a.seat - b.seat
+    // Verifica se TODOS possuem seat válido
+    const hasSeat = arr.every(p => Number.isInteger(p.seat))
+    
+    // Ordena: se todos têm seat, ordena por seat; senão, ordena por id
+    let ordered = hasSeat 
+      ? arr.sort((a, b) => a.seat - b.seat)
+      : arr.sort((a, b) => String(a?.id ?? a?.player_id ?? '').localeCompare(String(b?.id ?? b?.player_id ?? '')))
+    
+    // Preenche seats faltantes SEM alterar os existentes
+    let nextSeat = 0
+    const used = new Set(ordered.filter(p => Number.isInteger(p.seat)).map(p => p.seat))
+    
+    ordered = ordered.map(p => {
+      if (Number.isInteger(p.seat)) {
+        return p // Preserva seat existente
       }
-      // Se apenas um tem seat, ele vem primeiro
-      if (typeof a.seat === 'number' && typeof b.seat !== 'number') return -1
-      if (typeof a.seat !== 'number' && typeof b.seat === 'number') return 1
-      
-      // Caso contrário, ordena por id (string) para garantir ordem determinística
-      const idA = String(a?.id ?? a?.player_id ?? '')
-      const idB = String(b?.id ?? b?.player_id ?? '')
-      return idA.localeCompare(idB)
+      // Atribui próximo seat disponível
+      while (used.has(nextSeat)) nextSeat++
+      used.add(nextSeat)
+      return { ...p, seat: nextSeat++ }
     })
     
-    // Garante que todos os players tenham seat atribuído (baseado na posição ordenada)
-    normalized.forEach((p, i) => {
-      if (typeof p.seat !== 'number') {
-        p.seat = i
-      }
-    })
+    // Reordena por seat após preencher faltantes
+    ordered = ordered.sort((a, b) => a.seat - b.seat)
     
-    return normalized
+    return ordered
   }, [])
 
   // ✅ CORREÇÃO: Players ordenados (memoizado) para uso em toda a lógica
@@ -425,14 +427,17 @@ export function useTurnEngine({
     setLockOwner(String(myUid))
     
     try {
+    // ✅ CORREÇÃO: Usa playersOrdered para garantir ordem consistente e obtém ID do jogador da vez
     const curIdx = turnIdx
-    // ✅ CORREÇÃO: Usa playersOrdered para garantir ordem consistente
     const cur = playersOrdered[curIdx]
     if (!cur) { 
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false
       return 
     }
+    
+    // ✅ CORREÇÃO: Obtém ID do jogador da vez para atualizações por ID (não por índice)
+    const ownerId = String(cur.id)
     
     console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
 
@@ -443,9 +448,9 @@ export function useTurnEngine({
       if (currentCash >= requiredAmount) {
         // Processa o pagamento já que tem saldo suficiente
         console.log('[DEBUG] ✅ Saldo suficiente! Processando pagamento de:', requiredAmount)
-        // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-        const updatedPlayers = currentPlayers.map((p, i) => 
-          i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
+        // ✅ CORREÇÃO: Atualiza jogador por ID, não por índice
+        const updatedPlayers = normalizePlayers(currentPlayers).map((p) => 
+          String(p.id) !== ownerId ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
         )
         setPlayers(updatedPlayers)
         broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
@@ -665,8 +670,9 @@ export function useTurnEngine({
     const roundNow = currentRoundRef.current
     const aliveCount = players.filter(p => !p?.bankrupt).length
     
-    const nextPlayers = players.map((p, i) => {
-      if (i !== curIdx) return p
+    // ✅ CORREÇÃO: Atualiza jogador por ID/seat, não por índice
+    const nextPlayers = normalizePlayers(players).map((p) => {
+      if (String(p.id) !== ownerId) return p
       const nextCash = (p.cash || 0) + (deltaCash || 0)
       
       // Inicializa campos se não existirem
@@ -702,7 +708,9 @@ export function useTurnEngine({
       }
     })
     
-    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', nextPlayers[curIdx]?.name, 'Posição:', nextPlayers[curIdx]?.pos, 'Saldo:', nextPlayers[curIdx]?.cash, 'lastRevenueRound:', nextPlayers[curIdx]?.lastRevenueRound, 'waitingAtRevenue:', nextPlayers[curIdx]?.waitingAtRevenue)
+    // ✅ CORREÇÃO: Encontra jogador atualizado por ID para log
+    const updatedCur = nextPlayers.find(p => String(p.id) === ownerId)
+    console.log('[DEBUG] 📍 APÓS MOVIMENTO - Jogador:', updatedCur?.name, 'Posição:', updatedCur?.pos, 'Saldo:', updatedCur?.cash, 'lastRevenueRound:', updatedCur?.lastRevenueRound, 'waitingAtRevenue:', updatedCur?.waitingAtRevenue)
 
     // >>> controle de rodada: só vira quando TODOS os jogadores VIVOS cruzarem a casa 0
     // ✅ CORREÇÃO CRÍTICA: Usa ref para pegar valor atualizado de round (evita stale closure)
@@ -726,9 +734,12 @@ export function useTurnEngine({
         nextFlags = [...nextFlags, ...new Array(players.length - nextFlags.length).fill(false)]
       }
       
-      // Marca que este jogador passou pela casa 0 (completou volta)
-      nextFlags[curIdx] = true
-      console.log('[DEBUG] 🏁 Flag marcada por volta completa (lap) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      // ✅ CORREÇÃO: Encontra índice do jogador atual por ID para marcar flag
+      const curIdxForFlag = playersOrdered.findIndex(p => String(p.id) === ownerId)
+      if (curIdxForFlag >= 0) {
+        nextFlags[curIdxForFlag] = true
+      }
+      console.log('[DEBUG] 🏁 Flag marcada por volta completa (lap) - Flags:', nextFlags.map((f, i) => `${playersOrdered[i]?.name}:${f}`).join(', '))
     }
     
     // ✅ CORREÇÃO: Usa crossedStart1ForRound para detectar passagem pela casa 0 (pode ser sem dar volta completa)
@@ -739,12 +750,15 @@ export function useTurnEngine({
         nextFlags = [...nextFlags, ...new Array(players.length - nextFlags.length).fill(false)]
       }
       
-      // Marca que este jogador passou pela casa 0 (se ainda não foi marcado por lap)
-      if (!nextFlags[curIdx]) {
-        nextFlags[curIdx] = true
-        console.log('[DEBUG] 🏁 Jogador passou pela casa 0 (crossedStart1ForRound) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
-      } else {
-        console.log('[DEBUG] 🏁 Jogador já tinha flag marcada (por lap) - Flags:', nextFlags.map((f, i) => `${players[i]?.name}:${f}`).join(', '))
+      // ✅ CORREÇÃO: Encontra índice do jogador atual por ID para marcar flag
+      const curIdxForFlag = playersOrdered.findIndex(p => String(p.id) === ownerId)
+      if (curIdxForFlag >= 0) {
+        if (!nextFlags[curIdxForFlag]) {
+          nextFlags[curIdxForFlag] = true
+          console.log('[DEBUG] 🏁 Jogador passou pela casa 0 (crossedStart1ForRound) - Flags:', nextFlags.map((f, i) => `${playersOrdered[i]?.name}:${f}`).join(', '))
+        } else {
+          console.log('[DEBUG] 🏁 Jogador já tinha flag marcada (por lap) - Flags:', nextFlags.map((f, i) => `${playersOrdered[i]?.name}:${f}`).join(', '))
+        }
       }
       
       // ✅ CORREÇÃO: Conta apenas jogadores vivos para verificar se todos passaram
@@ -758,8 +772,13 @@ export function useTurnEngine({
       
       console.log('[DEBUG] 🔍 Verificando allAliveDone - Rodada atual:', currentRoundRef.current, 'Jogadores vivos:', alive.map(p => ({ name: p.name, lastRevenueRound: p.lastRevenueRound })))
       
-      console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', nextPlayers[curIdx]?.name, 'Rodada atual:', currentRoundRef.current, 'round do closure:', round)
-      console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => `${nextPlayers[i]?.name}:${nextFlags[i]}`).join(', '))
+      const curForLog = nextPlayers.find(p => String(p.id) === ownerId)
+      console.log('[DEBUG] 🔍 Verificação de rodada - Jogador:', curForLog?.name, 'Rodada atual:', currentRoundRef.current, 'round do closure:', round)
+      console.log('[DEBUG] 🔍 Jogadores vivos:', aliveIndices.map(i => {
+        const p = nextPlayers[i]
+        const flagIdx = playersOrdered.findIndex(po => String(po.id) === String(p?.id))
+        return `${p?.name}:${flagIdx >= 0 ? nextFlags[flagIdx] : false}`
+      }).join(', '))
       console.log('[DEBUG] 🔍 Total de jogadores vivos:', aliveIndices.length)
       console.log('[DEBUG] 🔍 Flags completas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f ? '✓' : '✗'}`).join(', '))
       console.log('[DEBUG] 🔍 Todos passaram pela casa 0?', allAliveDone)
