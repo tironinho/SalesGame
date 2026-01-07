@@ -92,7 +92,12 @@ export default function App() {
 
   // ====== bloqueio de turno (cadeado entre abas)
   const [turnLock, setTurnLock] = useState(false)
+  const [lockOwner, setLockOwner] = useState(null)
   const bcRef = useRef(null)
+  
+  // ✅ BUG 2 FIX: Refs para watchdog anti-trava
+  const lockSinceRef = useRef(null)
+  const lastNetApplyAtRef = useRef(0)
 
   // ====== “quem sou eu” no array de players
   const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
@@ -388,8 +393,8 @@ export default function App() {
             }
           })
           // ✅ BUG 2 FIX: Usa merge monotônico para evitar reset de cash/assets
-          const merged = mergePlayersMonotonic(players, syncedPlayers)
-          setPlayers(merged)
+          // A lógica de merge já foi aplicada acima em syncedPlayers, então usa diretamente
+          setPlayers(syncedPlayers)
           
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
           console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
@@ -566,18 +571,26 @@ export default function App() {
     // ✅ CORREÇÃO: Aplica campos de controle de turno e estado do jogo
     if (typeof netState.turnLock === 'boolean') {
       setTurnLock(netState.turnLock)
+      // ✅ BUG 2 FIX: Rastreia quando turnLock vira true para watchdog
+      if (netState.turnLock && !lockSinceRef.current) {
+        lockSinceRef.current = Date.now()
+      } else if (!netState.turnLock) {
+        lockSinceRef.current = null
+      }
       // ✅ BUG 1 FIX: Log quando detectar travamento por lockOwner/turnLock
       if (netState.turnLock && netState.lockOwner) {
         console.log('[LOCK] bloqueado: turnLockBroadcast=true lockOwner=', netState.lockOwner, 'myId=', myUid)
       }
     }
     if (netState.lockOwner !== undefined) {
+      setLockOwner(netState.lockOwner)
       // ✅ BUG 1 FIX: Armazena lockOwner no lastLocalStateRef para preservar em próximos broadcasts
       if (lastLocalStateRef.current) {
         lastLocalStateRef.current.lockOwner = netState.lockOwner
       }
       console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
     }
+    lastNetApplyAtRef.current = Date.now()
     // ✅ Monotônico: gameOver nunca volta para false
     setGameOver(prev => prev || !!netState.gameOver);
     
@@ -595,6 +608,44 @@ export default function App() {
 
     console.log('[NET] applied remote v=%d', netVersion)
   }, [netVersion, netState, net?.enabled, net?.ready])
+
+  // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
+  useEffect(() => {
+    if (!turnLock) {
+      lockSinceRef.current = null
+      return
+    }
+
+    // Inicializa lockSinceRef quando turnLock vira true
+    if (!lockSinceRef.current) {
+      lockSinceRef.current = Date.now()
+    }
+
+    const checkInterval = setInterval(() => {
+      const now = Date.now()
+      const lockAge = lockSinceRef.current ? (now - lockSinceRef.current) : 0
+      const currentPlayer = players[turnIdx]
+      const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
+      const isMyTurnCheck = isMyTurn && isCurrentPlayerMe
+      const isLockOwnerMe = lockOwner === myUid
+      const shouldSteal = lockAge > 8000 && isMyTurnCheck && !isLockOwnerMe && lockOwner != null
+
+      if (shouldSteal) {
+        console.warn('[LOCK-WATCHDOG] stole lock - turnLock travado por', lockAge, 'ms, liberando...', {
+          isMyTurn: isMyTurnCheck,
+          lockOwner,
+          myUid
+        })
+        // Tenta "steal lock" via commit/broadcast
+        commitRemoteState({ turnLock: false, lockOwner: myUid })
+        setTurnLockBroadcast(false)
+        setLockOwner(myUid)
+        lockSinceRef.current = null
+      }
+    }, 1000)
+
+    return () => clearInterval(checkInterval)
+  }, [turnLock, isMyTurn, turnIdx, players, lockOwner, myUid, netCommit])
 
   async function commitRemoteState(nextStatePartial) {
     if (typeof netCommit === 'function') {
@@ -928,14 +979,16 @@ export default function App() {
   // 1. É minha vez (isMyTurn) - verifica se o jogador atual é realmente eu
   // 2. Não há modais abertas (modalLocks === 0) - garante que todas as modais foram fechadas
   // 3. Não há turnLock ativo (!turnLock) - garante que não há ação em progresso
-  // 4. O jogador atual não está falido
-  // 5. O jogo não terminou
+  // 4. lockOwner é null OU lockOwner === myUid (permitir se sou o dono ou não há dono)
+  // 5. O jogador atual não está falido
+  // 6. O jogo não terminou
   // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
   // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
   const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
-  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
-  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
+  const lockOwnerOk = lockOwner == null || lockOwner === myUid
+  const controlsCanRoll = isMyTurn && isCurrentPlayerMe && modalLocks === 0 && !turnLock && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
+  console.log('[App] controlsCanRoll - isMyTurn:', isMyTurn, 'isCurrentPlayerMe:', isCurrentPlayerMe, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'lockOwner:', lockOwner, 'lockOwnerOk:', lockOwnerOk, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
 
   return (
     <div className="page">
