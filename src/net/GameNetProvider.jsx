@@ -4,7 +4,15 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { supabase } from '../lib/supabaseClient.js'
 
 const Ctx = createContext(null)
-export const useGameNet = () => useContext(Ctx)
+// ✅ CORREÇÃO: useGameNet retorna null de forma segura se não houver provider
+export const useGameNet = () => {
+  try {
+    return useContext(Ctx)
+  } catch {
+    // Se não houver provider, retorna null (não explode)
+    return null
+  }
+}
 
 /**
  * Tabela rooms: { id, code (UNIQUE), host_id, state (jsonb), version (int), updated_at }

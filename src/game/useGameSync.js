@@ -19,9 +19,8 @@ export function useGameSync({
   const bcRef = useRef(null)
 
   // ===== Realtime provider (opcional) =====
-  const net = (() => {
-    try { return useGameNet?.() } catch { return null }
-  })() || null
+  // ✅ CORREÇÃO: useGameNet deve ser chamado diretamente, sem IIFE/try/catch (Rules of Hooks)
+  const net = useGameNet()
   const netState   = net?.state
   const netVersion = net?.version
   const netCommit  = net?.commit

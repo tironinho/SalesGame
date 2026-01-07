@@ -1,4 +1,5 @@
-import { supabase } from '../auth' // use seu client existente
+// ✅ CORREÇÃO: Usa o client Supabase unificado
+import { supabase } from '../lib/supabaseClient.js'
 import { nanoid } from 'nanoid/non-secure'
 
 /**

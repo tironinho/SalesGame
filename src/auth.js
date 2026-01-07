@@ -1,23 +1,10 @@
 // src/auth.js
-// Cliente Supabase + helpers de identidade por ABA (sessionStorage)
+// ✅ CORREÇÃO: Helpers de identidade por ABA (sessionStorage)
 // Mantém também os helpers "legados" em localStorage para compatibilidade.
+// NÃO cria client Supabase - usa o client unificado de src/lib/supabaseClient.js
 
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnon) {
-  console.error(
-    '[auth] Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY em .env ' +
-    'e no Vercel → Project → Settings → Environment Variables.'
-  );
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnon, {
-  auth: { persistSession: true, autoRefreshToken: true },
-  realtime: { params: { eventsPerSecond: 10 } },
-});
+// Re-exporta o client unificado para compatibilidade com código legado
+export { supabase } from './lib/supabaseClient.js'
 
 export function makeId() {
   return (typeof crypto !== 'undefined' && crypto.randomUUID)

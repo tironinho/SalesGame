@@ -1,5 +1,6 @@
 // src/lib/lobbies.js
-import { supabase } from '../auth'
+// ✅ CORREÇÃO: Usa o client Supabase unificado
+import { supabase } from './supabaseClient.js'
 
 /* ==============================
    LISTAGEM DE LOBBIES

@@ -21,9 +21,20 @@ import {
   capacityAndAttendance
 } from './game/gameMath'
 import { debugMode, validateGameState, validateCalculations } from './game/debugMode.js'
-import { validateGameState as validateGameStateRealTime } from './game/__tests__/realTimeValidator.js'
-// Carrega sistema de testes completo
-import './game/__tests__/index.js'
+// ✅ CORREÇÃO: Imports de testes apenas em DEV (carregamento dinâmico)
+if (import.meta.env.DEV) {
+  // Carrega validadores e testes apenas em desenvolvimento
+  Promise.all([
+    import('./game/__tests__/realTimeValidator.js'),
+    import('./game/__tests__/index.js')
+  ]).then(([realTimeModule]) => {
+    if (realTimeModule?.validateGameState) {
+      window.__validateGameStateRealTime = realTimeModule.validateGameState
+    }
+  }).catch(err => {
+    console.warn('[App] Failed to load test modules:', err)
+  })
+}
 
 // Identidade por aba
 import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
@@ -472,12 +483,8 @@ export default function App() {
   }
 
   // ====== multiplayer em rede (opcional) via provider
-  let net = null
-  try {
-    net = useGameNet?.() || null
-  } catch (error) {
-    console.warn('[App] useGameNet not available:', error)
-  }
+  // ✅ CORREÇÃO: useGameNet deve ser chamado diretamente, sem try/catch (Rules of Hooks)
+  const net = useGameNet()
   const netCommit = net?.commit
   const netVersion = net?.version
   const netState = net?.state
@@ -787,7 +794,10 @@ export default function App() {
     if (phase === 'game') {
       validateGameState(players, turnIdx, round, gameOver, winner, 'Game State Update')
       // Validação em tempo real adicional
-      validateGameStateRealTime(players, turnIdx, round, gameOver, winner, 'Real-time Validation')
+      // ✅ CORREÇÃO: Validação apenas em DEV e se disponível
+      if (import.meta.env.DEV && typeof window.__validateGameStateRealTime === 'function') {
+        window.__validateGameStateRealTime(players, turnIdx, round, gameOver, winner, 'Real-time Validation')
+      }
     }
   }, [players, turnIdx, round, gameOver, winner, phase])
 
