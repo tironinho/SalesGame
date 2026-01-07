@@ -83,6 +83,43 @@ export function useTurnEngine({
   // Isso garante que há um delay antes de mudar o turno, dando tempo para todas as modais serem fechadas
   const lastModalClosedTimeRef = React.useRef(null)
 
+  // ✅ CORREÇÃO: Normaliza players para garantir ordem consistente
+  // Ordena por seat (se existir) ou por id (string) para garantir ordem determinística
+  const normalizePlayers = React.useCallback((players) => {
+    if (!Array.isArray(players) || players.length === 0) return players
+    
+    // Cria cópia para não mutar o original
+    const normalized = [...players]
+    
+    // Ordena: primeiro por seat (se existir), depois por id (string)
+    normalized.sort((a, b) => {
+      // Se ambos têm seat, ordena por seat
+      if (typeof a.seat === 'number' && typeof b.seat === 'number') {
+        if (a.seat !== b.seat) return a.seat - b.seat
+      }
+      // Se apenas um tem seat, ele vem primeiro
+      if (typeof a.seat === 'number' && typeof b.seat !== 'number') return -1
+      if (typeof a.seat !== 'number' && typeof b.seat === 'number') return 1
+      
+      // Caso contrário, ordena por id (string) para garantir ordem determinística
+      const idA = String(a?.id ?? a?.player_id ?? '')
+      const idB = String(b?.id ?? b?.player_id ?? '')
+      return idA.localeCompare(idB)
+    })
+    
+    // Garante que todos os players tenham seat atribuído (baseado na posição ordenada)
+    normalized.forEach((p, i) => {
+      if (typeof p.seat !== 'number') {
+        p.seat = i
+      }
+    })
+    
+    return normalized
+  }, [])
+
+  // ✅ CORREÇÃO: Players ordenados (memoizado) para uso em toda a lógica
+  const playersOrdered = React.useMemo(() => normalizePlayers(players), [players, normalizePlayers])
+
   // 🔄 Sincronização de modalLocks entre jogadores
   React.useEffect(() => {
     if (isMyTurn) {
@@ -389,7 +426,8 @@ export function useTurnEngine({
     
     try {
     const curIdx = turnIdx
-    const cur = players[curIdx]
+    // ✅ CORREÇÃO: Usa playersOrdered para garantir ordem consistente
+    const cur = playersOrdered[curIdx]
     if (!cur) { 
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false

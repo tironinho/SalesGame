@@ -199,8 +199,8 @@ function GameNetProvider({ roomCode, hostId, children }) {
       // Atualiza activeRoomIdRef se necessário
       if (current.id) activeRoomIdRef.current = current.id
 
-      const base = current.state || {}
-      const next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
+      let base = current.state || {}
+      let next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
 
       // 2) CAS usando ID (não code) para evitar conflitos com duplicatas
       const targetId = activeRoomIdRef.current || current.id
@@ -235,20 +235,35 @@ function GameNetProvider({ roomCode, hostId, children }) {
         return
       }
 
-      // ✅ CORREÇÃO: Trata conflito de versão ou "0 rows" como conflito e re-tenta
+      // ✅ CORREÇÃO: Trata conflito de versão, "0 rows", ou "Cannot coerce" como conflito e re-tenta
       const isConflict = e2?.code === 'PGRST116' || 
                          e2?.message?.includes('0 rows') ||
+                         e2?.message?.includes('Cannot coerce') ||
                          e2?.code === '23505' || // unique violation
-                         (e2?.message && e2.message.includes('version'))
+                         (e2?.message && e2.message.includes('version')) ||
+                         !updated // Se não retornou row, é conflito de versão
       
       if (isConflict && attempt < MAX_ATTEMPTS) {
-        console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2, '- retrying...')
+        console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2 || 'no rows updated', '- retrying with fresh state...')
+        
+        // ✅ CORREÇÃO: Re-fetch estado mais recente e re-aplica updater
+        const fresh = await getLatestRoomByCode(code)
+        if (fresh) {
+          current = fresh
+          activeRoomIdRef.current = fresh.id
+          latestKnownUpdatedAtRef.current = fresh.updated_at
+          
+          // Re-aplica updater no estado mais recente
+          base = fresh.state || {}
+          next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
+        }
+        
         // Pequeno delay antes de re-tentar para evitar race condition
         await new Promise(resolve => setTimeout(resolve, 50 * attempt))
         continue
       }
 
-      console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2)
+      console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2 || 'no rows updated')
     }
 
     // fallback: resync final

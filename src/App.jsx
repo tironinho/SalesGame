@@ -77,6 +77,41 @@ export default function App() {
     vendedoresComuns: obj.vendedoresComuns ?? 1,
   })
 
+  // ✅ CORREÇÃO: Normaliza ordem dos players para garantir consistência entre clientes
+  // Ordena por seat (se existir) ou por id (string) para garantir ordem determinística
+  const normalizePlayers = (players) => {
+    if (!Array.isArray(players) || players.length === 0) return players
+    
+    // Cria cópia para não mutar o original
+    const normalized = [...players]
+    
+    // Ordena: primeiro por seat (se existir), depois por id (string)
+    normalized.sort((a, b) => {
+      // Se ambos têm seat, ordena por seat
+      if (typeof a.seat === 'number' && typeof b.seat === 'number') {
+        if (a.seat !== b.seat) return a.seat - b.seat
+      }
+      // Se apenas um tem seat, ele vem primeiro
+      if (typeof a.seat === 'number' && typeof b.seat !== 'number') return -1
+      if (typeof a.seat !== 'number' && typeof b.seat === 'number') return 1
+      
+      // Caso contrário, ordena por id (string) para garantir ordem determinística
+      const idA = String(a?.id ?? a?.player_id ?? '')
+      const idB = String(b?.id ?? b?.player_id ?? '')
+      return idA.localeCompare(idB)
+    })
+    
+    // Garante que todos os players tenham seat atribuído (baseado na posição ordenada)
+    normalized.forEach((p, i) => {
+      if (typeof p.seat !== 'number') {
+        p.seat = i
+      }
+    })
+    
+    console.log('[App] normalizePlayers - ordenados:', normalized.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
+    return normalized
+  }
+
   const [players, setPlayers] = useState([
     applyStarterKit({ id: meId, name: myName || 'Jogador', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
   ])
@@ -156,16 +191,19 @@ export default function App() {
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
+          // ✅ CORREÇÃO: Normaliza players antes de usar
+          const normalized = normalizePlayers(mapped)
+
           // adota UID real se PlayersLobby tiver setado
           try {
             const wuid = (window.__MY_UID || window.__myUid || window.__playerId) || null
             if (wuid) setMyUid(String(wuid))
           } catch {}
 
-          setPlayers(mapped)
+          setPlayers(normalized)
           setTurnIdx(0)
           setRound(1)
-          setRoundFlags(new Array(Math.max(1, mapped.length)).fill(false))
+          setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
           setPhase('game')
           setLog(['Jogo iniciado!'])
@@ -623,14 +661,17 @@ export default function App() {
 
     // ✅ CORREÇÃO: Só aplica se remoto for claramente mais novo
     if (np) {
+      // ✅ CORREÇÃO: Normaliza players antes de aplicar
+      const normalizedPlayers = normalizePlayers(np)
+      
       // Aplica players apenas se versão remota for maior ou se não houver mudança local recente
       const shouldApplyPlayers = remoteStateVersion > (lastLocal?.version || 0) || 
                                  !lastLocal || 
                                  (now - (lastLocal.timestamp || 0)) >= 3000
       if (shouldApplyPlayers) {
-        setPlayers(np)
+        setPlayers(normalizedPlayers)
         // Atualiza baseline para próximo merge
-        playersBeforeRef.current = JSON.parse(JSON.stringify(np))
+        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
       } else {
         console.log('[NET] ⚠️ IGNORANDO players remoto - mudança local muito recente')
       }
@@ -871,11 +912,21 @@ export default function App() {
       Number(lastLocalStateRef.current?.round || 1)
     )
     
+    // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
+    // Se não houver baseline, usa o estado atual como fallback
+    if (!playersBeforeRef.current) {
+      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
+      console.log('[App] broadcastState - baseline capturado (fallback):', playersBeforeRef.current.length, 'players')
+    }
+    
+    // ✅ CORREÇÃO: Normaliza players antes de broadcast
+    const normalizedPlayers = normalizePlayers(nextPlayers)
+    
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
     lastLocalStateRef.current = {
-      players: nextPlayers,
+      players: normalizedPlayers,
       turnIdx: nextTurnIdx,
       round: safeRound,
       gameOver: finalGameOver,
@@ -889,21 +940,14 @@ export default function App() {
     }
     lastAcceptedVersionRef.current = currentVersion
     
-    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid)
+    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now, 'updatedBy:', myUid, 'playersOrdered:', normalizedPlayers.map(p => p.id).join(','))
     if (Object.keys(patch).length > 0) {
       console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
     }
     
-    // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
-    // Se não houver baseline, usa o estado atual como fallback
-    if (!playersBeforeRef.current) {
-      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
-      console.log('[App] broadcastState - baseline capturado (fallback):', playersBeforeRef.current.length, 'players')
-    }
-    
     // 1) rede
     commitRemoteState({
-      players: nextPlayers,
+      players: normalizedPlayers,
       turnIdx: nextTurnIdx,
       round: safeRound,
       roundFlags: nextRoundFlags,
@@ -920,7 +964,7 @@ export default function App() {
       bcRef.current?.postMessage?.({
         type: 'SYNC',
         version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
-        players: nextPlayers,
+        players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
         turnIdx: nextTurnIdx,
         round: safeRound,
         roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
@@ -935,9 +979,12 @@ export default function App() {
   }
 
   function broadcastStart(nextPlayers) {
+    // ✅ CORREÇÃO: Normaliza players antes de broadcast
+    const normalized = normalizePlayers(nextPlayers)
+    
     // rede
     commitRemoteState({
-      players: nextPlayers,
+      players: normalized,
       turnIdx: 0,
       round: 1,
     })
@@ -1105,41 +1152,61 @@ export default function App() {
 
           // normaliza jogadores vindos do lobby
           const raw = Array.isArray(payload) ? payload : (payload?.players ?? payload?.lobbyPlayers ?? [])
-          const mapped = raw.map((p, i) =>
+          
+          // ✅ CORREÇÃO: Ordena raw antes de map para garantir ordem consistente
+          // Ordena por created_at/joined_at se existir, senão por id
+          const sortedRaw = [...raw].sort((a, b) => {
+            // Se ambos têm created_at ou joined_at, ordena por timestamp
+            const timeA = a.created_at || a.joined_at || a.createdAt || a.joinedAt
+            const timeB = b.created_at || b.joined_at || b.createdAt || b.joinedAt
+            if (timeA && timeB) {
+              return new Date(timeA) - new Date(timeB)
+            }
+            // Caso contrário, ordena por id
+            const idA = String(a.id ?? a.player_id ?? '')
+            const idB = String(b.id ?? b.player_id ?? '')
+            return idA.localeCompare(idB)
+          })
+          
+          const mapped = sortedRaw.map((p, i) =>
             applyStarterKit({
               id: String(p.id ?? p.player_id),
               name: p.name ?? p.player_name,
               cash: 18000,
               pos: 0,
               bens: 4000,
-              color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4]
+              color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4],
+              seat: i // ✅ CORREÇÃO: Atribui seat baseado na ordem ordenada
             })
           )
           if (mapped.length === 0) return
 
+          // ✅ CORREÇÃO: Normaliza players antes de usar
+          const normalized = normalizePlayers(mapped)
+
           // alinha meu UID com o id real (comparando pelo nome salvo)
           try {
-            const mine = mapped.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
+            const mine = normalized.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
             if (mine?.id) setMyUid(String(mine.id))
           } catch {}
 
-          setPlayers(mapped)
+          setPlayers(normalized)
           setTurnIdx(0)
           setRound(1)
-          setRoundFlags(new Array(mapped.length).fill(false))
+          setRoundFlags(new Array(normalized.length).fill(false))
           setGameOver(false); setWinner(null)
           setMeHud(h => {
-            const mine = mapped.find(isMine)
+            const mine = normalized.find(isMine)
             return {
               ...h,
-              name: mine?.name || mapped[0]?.name || 'Jogador',
-              color: mine?.color || mapped[0]?.color || '#6c5ce7',
+              name: mine?.name || normalized[0]?.name || 'Jogador',
+              color: mine?.color || normalized[0]?.color || '#6c5ce7',
               cash: mine?.cash ?? 18000,
               possibAt: 0, clientsAt: 0
             }
           })
           setLog(['Jogo iniciado!'])
-          broadcastStart(mapped)
+          broadcastStart(normalized)
           setPhase('game')
         }}
       />
