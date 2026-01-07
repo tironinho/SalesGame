@@ -387,11 +387,17 @@ export default function App() {
           console.log('[App] SYNC - é minha vez?', String(syncedPlayers[d.turnIdx]?.id) === String(myUid))
           
           // Sincroniza estado do jogo (gameOver e winner)
-          if (d.gameOver !== undefined) {
-            setGameOver(d.gameOver)
+          if (typeof d.gameOver === 'boolean') {
+            setGameOver(prev => {
+              const next = prev || d.gameOver
+              if (!prev && d.gameOver) {
+                console.log('[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=...', d.winner?.name ?? d.winner ?? null)
+              }
+              return next
+            })
           }
           if (d.winner !== undefined) {
-            setWinner(d.winner)
+            setWinner(prev => (d.winner ?? prev))
           }
         }
       }
@@ -521,7 +527,17 @@ export default function App() {
 
     if (np) setPlayers(np)
     if (nt !== null) setTurnIdx(nt)
-    if (nr !== null) setRound(nr)
+    if (nr !== null) {
+      // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
+      const isResetState = (
+        nr === 1 &&
+        (nt === 0 || nt === null) &&
+        Array.isArray(np) && np.length > 0 &&
+        np.every(p => Number(p?.pos ?? 0) === 0) &&
+        (netState.gameOver === false || netState.gameOver == null)
+      )
+      setRound(prev => isResetState ? 1 : Math.max(prev, nr))
+    }
 
     // ✅ CORREÇÃO: Aplica roundFlags do estado autoritativo
     if (netState.roundFlags !== undefined) {
@@ -542,8 +558,18 @@ export default function App() {
       // lockOwner não é state do App, mas pode ser usado se necessário
       console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
     }
-    if (typeof netState.gameOver === 'boolean') setGameOver(netState.gameOver)
-    if (netState.winner !== undefined) setWinner(netState.winner)
+    if (typeof netState.gameOver === 'boolean') {
+      setGameOver(prev => {
+        const next = prev || netState.gameOver
+        if (!prev && netState.gameOver) {
+          console.log('[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=...', netState.winner?.name ?? netState.winner ?? null)
+        }
+        return next
+      })
+    }
+    if (netState.winner !== undefined) {
+      setWinner(prev => (netState.winner ?? prev))
+    }
 
     console.log('[NET] applied remote v=%d', netVersion)
   }, [netVersion, netState, net?.enabled, net?.ready])
@@ -570,22 +596,39 @@ export default function App() {
     const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
     const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
     const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : null
-    const finalGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
-    const finalWinner = patch.winner !== undefined ? patch.winner : winnerState
+    const patchedGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
+    const prevGameOver = !!gameOver || !!lastLocalStateRef.current?.gameOver
+    const finalGameOver = prevGameOver ? true : !!patchedGameOver
+
+    const patchedWinner = patch.winner !== undefined ? patch.winner : winnerState
+    const prevWinner = (winner ?? lastLocalStateRef.current?.winner ?? null)
+    const finalWinner = finalGameOver ? (patchedWinner ?? prevWinner) : patchedWinner
+
+    // ✅ FIX CRÍTICO: round monotônico (nunca deixa broadcast rebaixar rodada)
+    // - nextRound pode vir stale (closures em modais/compras)
+    // - lastLocalStateRef.current.round geralmente já tem o maior round local
+    const patchedRound = patch.round !== undefined ? patch.round : nextRound
+    const safeRound = Math.max(
+      Number(patchedRound || 1),
+      Number(round || 1),
+      Number(lastLocalStateRef.current?.round || 1)
+    )
     
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
-    lastLocalStateRef.current = { 
-      players: nextPlayers, 
-      turnIdx: nextTurnIdx, 
-      round: nextRound, 
+    lastLocalStateRef.current = {
+      players: nextPlayers,
+      turnIdx: nextTurnIdx,
+      round: safeRound,
+      gameOver: finalGameOver,
+      winner: finalWinner,
       timestamp: now,
-      version: currentVersion  // ✅ MELHORIA: Inclui versão
+      version: currentVersion
     }
     lastAcceptedVersionRef.current = currentVersion
     
-    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round:', nextRound, 'timestamp:', now)
+    console.log('[App] broadcastState - versão:', currentVersion, 'turnIdx:', nextTurnIdx, 'round(next):', nextRound, 'round(safe):', safeRound, 'timestamp:', now)
     if (Object.keys(patch).length > 0) {
       console.log('[NET] commit patch keys:', Object.keys(patch).join(', '))
     }
@@ -594,7 +637,7 @@ export default function App() {
     commitRemoteState({
       players: nextPlayers,
       turnIdx: nextTurnIdx,
-      round: nextRound,
+      round: safeRound,
       roundFlags: nextRoundFlags,
       turnLock: nextTurnLock,
       lockOwner: nextLockOwner,
@@ -608,7 +651,7 @@ export default function App() {
         version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
         players: nextPlayers,
         turnIdx: nextTurnIdx,
-        round: nextRound,
+        round: safeRound,
         roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
         turnLock: nextTurnLock,
         lockOwner: nextLockOwner,

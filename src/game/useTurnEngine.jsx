@@ -161,6 +161,20 @@ export function useTurnEngine({
     console.log('[DEBUG] 🔄 currentRoundRef atualizado para:', round)
   }, [round])
 
+  // ✅ refs do estado mais recente (evita stale no tick / winner)
+  const playersRef = React.useRef(players)
+  React.useEffect(() => { playersRef.current = players }, [players])
+
+  const turnIdxRef = React.useRef(turnIdx)
+  React.useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
+
+  const gameOverRef = React.useRef(gameOver)
+  React.useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
+
+  // ✅ ENDGAME: pendente + idempotência
+  const endGamePendingRef = React.useRef(false)
+  const endGameFinalizedRef = React.useRef(false)
+
   // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
   React.useEffect(() => {
     const currentPlayer = players[turnIdx]
@@ -283,36 +297,64 @@ export function useTurnEngine({
   }, [canPay, appendLog])
 
   // ========= fim de jogo =========
-  const maybeFinishGame = React.useCallback((nextPlayers, nextRound) => {
-    if (nextRound <= 5) return
-    
-    // Filtra apenas jogadores vivos (não falidos) para determinar o vencedor
-    const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
+  const maybeFinishGame = React.useCallback((finalPlayers, nextRound) => {
+    // nextRound = 6 significa: a 5ª rodada terminou agora
+    if (nextRound <= 5) return false
+
+    const alivePlayers = (finalPlayers || []).filter(p => !p?.bankrupt)
+
+    // caso extremo: ninguém vivo
     if (alivePlayers.length === 0) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - Nenhum jogador vivo restante')
       setWinner(null)
       setGameOver(true)
+      setRound(5)
+      currentRoundRef.current = 5
       appendLog('Fim de jogo! Todos os jogadores falidos.')
       setTurnLockBroadcast(false)
-      return
+
+      try {
+        broadcastState(finalPlayers || [], turnIdx, 5, true, null, { round: 5, gameOver: true, winner: null })
+      } catch {}
+      return true
     }
-    
-    const ranked = alivePlayers.map(p => ({
-      ...p,
-      patrimonio: (p.cash || 0) + (p.bens || 0)
-    })).sort((a,b) => b.patrimonio - a.patrimonio)
-    
-    console.log('[DEBUG] 🏆 VENCEDOR - Jogadores vivos:', alivePlayers.map(p => p.name), 'Vencedor:', ranked[0]?.name)
-    setWinner(ranked[0] || null)
+
+    // vencedor: maior patrimônio (cash + bens). Desempate: cash, depois nome.
+    const ranked = alivePlayers
+      .map(p => ({
+        player: p,
+        patrimonio: (p.cash || 0) + (p.bens || 0),
+        cash: (p.cash || 0),
+      }))
+      .sort((a, b) =>
+        (b.patrimonio - a.patrimonio) ||
+        (b.cash - a.cash) ||
+        String(a.player?.name || '').localeCompare(String(b.player?.name || ''))
+      )
+
+    const champ = ranked[0]?.player || null
+
+    console.log('[DEBUG] 🏆 VENCEDOR - Jogadores vivos:', alivePlayers.map(p => p.name), 'Vencedor:', champ?.name)
+
+    setWinner(champ)
     setGameOver(true)
-    appendLog('Fim de jogo! 5 rodadas completas.')
+    setRound(5)                // ✅ HUD continua mostrando 5 (não 6)
+    currentRoundRef.current = 5
+    appendLog(`Fim de jogo! 5 rodadas completas. Vencedor: ${champ?.name || '—'}`)
     setTurnLockBroadcast(false)
-  }, [appendLog, setGameOver, setTurnLockBroadcast, setWinner])
+
+    // ✅ propaga fim do jogo para todos os clientes
+    try {
+      broadcastState(finalPlayers || [], turnIdx, 5, true, champ, { round: 5, gameOver: true, winner: champ })
+    } catch {}
+
+    return true
+  }, [appendLog, broadcastState, setGameOver, setRound, setTurnLockBroadcast, setWinner, turnIdx])
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
     console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
-    if (gameOver || !players.length) return
+    if (gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current || !players.length) return
 
     // ✅ CORREÇÃO: Verifica se já há uma mudança de turno em progresso
     if (turnChangeInProgressRef.current) {
@@ -358,7 +400,7 @@ export function useTurnEngine({
           i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
         )
         setPlayers(updatedPlayers)
-        broadcastState(updatedPlayers, turnIdx, round)
+        broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
         return true // Tem saldo suficiente e pagou
       }
 
@@ -409,7 +451,7 @@ export function useTurnEngine({
             })
             console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[curIdx]?.cash)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'LOAN') {
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
             
@@ -449,7 +491,7 @@ export function useTurnEngine({
               setPlayers(updatedPlayers)
               setTurnIdx(nextIdx)
               setTurnLockBroadcast(false)
-              broadcastState(updatedPlayers, nextIdx, round)
+              broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
               return false
             }
             
@@ -475,7 +517,7 @@ export function useTurnEngine({
             console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[curIdx]?.cash)
             console.log('[DEBUG] Novo loanPending:', updatedPlayers[curIdx]?.loanPending)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'REDUCE') {
             console.log('[DEBUG] ✅ Condição REDUCE atendida! Processando redução:', recoveryModalRes)
             const selections = recoveryModalRes.items || []
@@ -503,7 +545,7 @@ export function useTurnEngine({
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
             console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[curIdx]?.cash)
             setPlayers(updatedPlayers)
-            broadcastState(updatedPlayers, turnIdx, round)
+            broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else {
             console.log('[DEBUG] ❌ Nenhuma condição foi atendida! Tipo:', recoveryModalRes.type, 'Action:', recoveryModalRes.action)
           }
@@ -521,7 +563,7 @@ export function useTurnEngine({
             )
             console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[curIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[curIdx]?.cash)
             setPlayers(finalPlayers)
-            broadcastState(finalPlayers, turnIdx, round)
+            broadcastState(finalPlayers, turnIdx, currentRoundRef.current)
             return true
           } else {
             console.log('[DEBUG] ❌ Saldo ainda insuficiente após recuperação. Continuando recursão...')
@@ -549,7 +591,7 @@ export function useTurnEngine({
         setPlayers(updatedPlayers)
         setTurnIdx(nextIdx)
         setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, nextIdx, round)
+        broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
         return false
       } else {
         setTurnLockBroadcast(false)
@@ -585,6 +627,7 @@ export function useTurnEngine({
     let nextRound = currentRoundRef.current
     let nextFlags = [...roundFlags]
     let shouldIncrementRound = false
+    let shouldEndGameAfterTick = false
     
     // ✅ CORREÇÃO CRÍTICA: Se jogador completou volta completa (lap), marca flag imediatamente
     // Isso garante que a flag seja marcada mesmo se crossedStart1ForRound não detectar corretamente
@@ -643,23 +686,37 @@ export function useTurnEngine({
       if (allAliveDone) {
         // ✅ CORREÇÃO CRÍTICA: Usa valor atualizado de round via ref, não do closure
         const currentRoundValue = currentRoundRef.current
-        nextRound = currentRoundValue + 1
-        shouldIncrementRound = true
-        console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
+        const computedNextRound = currentRoundValue + 1
         
-        // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
-        nextFlags = nextFlags.map((_, idx) => {
-          if (nextPlayers[idx]?.bankrupt) {
-            // Mantém a flag do jogador falido (não reseta)
-            return nextFlags[idx]
-          } else {
-            // Reseta a flag do jogador vivo
-            return false
+        // ✅ FIX: Detecta quando a rodada tentaria ir para 6 (fim de jogo)
+        if (computedNextRound > 5) {
+          shouldEndGameAfterTick = true
+          nextRound = Math.min(5, currentRoundValue)
+          console.log('[DEBUG] 🏁 5 rodadas completas - todos os jogadores vivos passaram pelo faturamento')
+          
+          if (!endGamePendingRef.current && !endGameFinalizedRef.current) {
+            endGamePendingRef.current = true
+            console.log('[ENDGAME] detectado: fim da 5ª (tentaria round=6)')
           }
-        })
-        console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior (ref):', currentRoundValue, 'Rodada anterior (closure):', round, 'Jogadores vivos:', alivePlayers.length)
-        console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
-        appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+        } else {
+          nextRound = computedNextRound
+          shouldIncrementRound = true
+          console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
+          
+          // ✅ CORREÇÃO: Reseta apenas as flags dos jogadores vivos (mantém flags de falidos)
+          nextFlags = nextFlags.map((_, idx) => {
+            if (nextPlayers[idx]?.bankrupt) {
+              // Mantém a flag do jogador falido (não reseta)
+              return nextFlags[idx]
+            } else {
+              // Reseta a flag do jogador vivo
+              return false
+            }
+          })
+          console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Nova rodada:', nextRound, 'Rodada anterior (ref):', currentRoundValue, 'Rodada anterior (closure):', round, 'Jogadores vivos:', alivePlayers.length)
+          console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
+          appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+        }
       } else {
         const missingPlayers = aliveIndices.filter(idx => !nextFlags[idx]).map(idx => nextPlayers[idx]?.name)
         console.log('[DEBUG] ⏳ Rodada NÃO incrementada - ainda faltam jogadores passarem pela casa 0:', missingPlayers.join(', '))
@@ -716,47 +773,31 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Armazena os dados do próximo turno para uso na função tick
     // IMPORTANTE: Não atualiza turnIdx ainda - isso será feito pelo tick quando todas as modais fecharem
     // IMPORTANTE: Usa nextRound calculado acima (pode ser diferente de round se todos passaram pela casa 0)
-    // ✅ CORREÇÃO: Garante que nextRound seja sempre >= round atual
-    // ✅ CORREÇÃO CRÍTICA: Usa nextRound diretamente (não round) para garantir que o incremento seja preservado
-    // ✅ MELHORIA: Usa o valor atualizado do estado após setRound (via ref)
-    const finalNextRound = shouldIncrementRound ? currentRoundRef.current + 1 : nextRound
-    // ✅ CORREÇÃO: Se a rodada foi incrementada, reseta as flags
-    const finalNextFlags = shouldIncrementRound ? nextFlags.map((_, idx) => nextPlayers[idx]?.bankrupt ? nextFlags[idx] : false) : nextFlags
+    // ✅ FIX: pendingTurnDataRef deve carregar EXATAMENTE a rodada calculada
+    // (nunca somar +1 aqui, senão o tick/broadcast sai com round errado)
+    const finalNextRound = nextRound
+    const finalNextFlags = nextFlags
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
-      nextRound: finalNextRound, // ✅ CORREÇÃO: Usa nextRound calculado (pode ser round + 1 se todos passaram pela casa 0)
-      nextRoundFlags: finalNextFlags, // ✅ CORREÇÃO: Inclui roundFlags atualizado no patch
-      timestamp: Date.now(), // Adiciona timestamp para rastrear quando foi criado
-      shouldIncrementRound // ✅ MELHORIA: Inclui flag para garantir incremento no tick
+      nextRound: finalNextRound,
+      nextRoundFlags: finalNextFlags,
+      timestamp: Date.now(),
+      shouldIncrementRound,
+      endGame: shouldEndGameAfterTick
     }
     console.log('[DEBUG] 📝 pendingTurnDataRef preenchido - próximo turno:', nextTurnIdx, 'rodada atual:', round, 'próxima rodada:', finalNextRound, 'nextRound calculado:', nextRound, 'shouldIncrementRound:', shouldIncrementRound, 'rodada foi incrementada?', nextRound > round, 'roundFlags:', finalNextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
 
-    // Verifica se o jogo deve terminar (quando todos os jogadores vivos completaram 5 rodadas)
-    const alivePlayers = nextPlayers.filter(p => !p?.bankrupt)
-    const allCompleted5Rounds = alivePlayers.every(p => {
-      // Conta quantas vezes o jogador passou pela casa 1 (faturamento)
-      // Cada volta completa no tabuleiro = 1 rodada completada
-      const roundsCompleted = Math.floor((p.pos || 0) / TRACK_LEN)
-      return roundsCompleted >= 5
-    })
-    
-    if (allCompleted5Rounds) {
-      console.log('[DEBUG] 🏁 FIM DE JOGO - Todos os jogadores completaram 5 rodadas')
-      maybeFinishGame(nextPlayers, nextRound)
-      setTurnLockBroadcast(false)
-      return
-    }
-    
-    // Se o jogador atual completou 5 rodadas, pula para o próximo
-    const currentPlayerRounds = Math.floor((nextPlayers[curIdx]?.pos || 0) / TRACK_LEN)
-    if (currentPlayerRounds >= 5) {
-      console.log('[DEBUG] ⏭️ JOGADOR COMPLETOU 5 RODADAS - Pulando para próximo:', nextPlayers[curIdx]?.name)
-      // O jogador que completou 5 rodadas aguarda, mas o jogo continua para os outros
-      setTurnLockBroadcast(false)
+    // ✅ Fim de jogo por rodada (correto):
+    // Se a próxima rodada calculada for 6, significa que a 5ª rodada terminou agora.
+    if (maybeFinishGame(nextPlayers, nextRound)) {
+      // evita deixar o motor "travado" esperando tick
+      pendingTurnDataRef.current = null
+      turnChangeInProgressRef.current = false
+      openingModalRef.current = false
       return
     }
 
@@ -790,7 +831,7 @@ export function useTurnEngine({
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais (não nextTurnIdx/nextRound) para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -824,7 +865,7 @@ export function useTurnEngine({
               i !== curIdx ? p : applyTrainingPurchase(p, res)
             )
             // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-            broadcastState(upd, turnIdx, round)
+            broadcastState(upd, turnIdx, currentRoundRef.current)
             return upd
           })
       })()
@@ -867,7 +908,7 @@ export function useTurnEngine({
                   })
                 )
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -892,7 +933,7 @@ export function useTurnEngine({
                   manutencaoDelta: mexp
                 }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -907,7 +948,7 @@ export function useTurnEngine({
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -928,7 +969,7 @@ export function useTurnEngine({
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -949,7 +990,7 @@ export function useTurnEngine({
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -969,7 +1010,7 @@ export function useTurnEngine({
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -991,7 +1032,7 @@ export function useTurnEngine({
                   bensDelta: bensD
                 }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -1019,7 +1060,7 @@ export function useTurnEngine({
               setPlayers(ps => {
                 const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, round); return upd
+                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
             }
             return
@@ -1055,7 +1096,7 @@ export function useTurnEngine({
                     })
               )
               // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-              broadcastState(upd, turnIdx, round)
+              broadcastState(upd, turnIdx, currentRoundRef.current)
               return upd
             })
             return
@@ -1073,7 +1114,7 @@ export function useTurnEngine({
                   })
             )
             // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-            broadcastState(upd, turnIdx, round)
+            broadcastState(upd, turnIdx, currentRoundRef.current)
             return upd
           })
         }
@@ -1095,7 +1136,7 @@ export function useTurnEngine({
             i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -1125,7 +1166,7 @@ export function useTurnEngine({
                 })
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -1152,7 +1193,7 @@ export function useTurnEngine({
             i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -1179,7 +1220,7 @@ export function useTurnEngine({
               i !== curIdx ? p : applyDeltas(p, deltas)
             )
             // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-            broadcastState(upd, turnIdx, round)
+            broadcastState(upd, turnIdx, currentRoundRef.current)
             return upd
           })
         }
@@ -1207,7 +1248,7 @@ export function useTurnEngine({
             i !== curIdx ? p : applyDeltas(p, deltas)
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -1243,7 +1284,7 @@ export function useTurnEngine({
                 })
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
       })()
@@ -1296,7 +1337,7 @@ export function useTurnEngine({
             return next
           })
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, round)
+          broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
 
@@ -1314,7 +1355,7 @@ export function useTurnEngine({
             setPlayers(ps => {
               const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
               // ✅ CORREÇÃO: Usa turnIdx e round atuais para bônus durante o turno
-              broadcastState(upd, turnIdx, round); return upd
+              broadcastState(upd, turnIdx, currentRoundRef.current); return upd
             })
           }
         }
@@ -1331,7 +1372,7 @@ export function useTurnEngine({
         setPlayers(ps => {
           const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para faturamento durante o turno
-          broadcastState(upd, turnIdx, round); return upd
+          broadcastState(upd, turnIdx, currentRoundRef.current); return upd
         })
         appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
         try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
@@ -1393,7 +1434,7 @@ export function useTurnEngine({
               return next
             })
             // ✅ CORREÇÃO: Usa turnIdx e round atuais para despesas durante o turno
-            broadcastState(upd, turnIdx, round); return upd
+            broadcastState(upd, turnIdx, currentRoundRef.current); return upd
           })
         }
         appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
@@ -1462,6 +1503,60 @@ export function useTurnEngine({
       const canChangeTurn = currentModalLocks === 0 && (timeSinceLastModalClosed >= minTimeAfterModalClose || !lastModalClosedTimeRef.current)
       
       if (canChangeTurn) {
+        // ✅ ENDGAME autoritativo: finaliza assim que não houver modais
+        const td = pendingTurnDataRef.current
+        const shouldEnd = !!(td?.endGame || endGamePendingRef.current)
+
+        if (shouldEnd && !endGameFinalizedRef.current) {
+          endGameFinalizedRef.current = true
+          endGamePendingRef.current = false
+
+          // pega estado mais recente (inclui faturamento/despesas já aplicados)
+          const finalPlayers = Array.isArray(playersRef.current) ? playersRef.current : (td?.nextPlayers || [])
+          const alive = (finalPlayers || []).filter(p => !p?.bankrupt)
+
+          // campeão: patrimônio desc, cash desc, nome asc
+          let champ = null
+          if (alive.length > 0) {
+            const ranked = alive
+              .map(p => ({
+                p,
+                patrimonio: (Number(p.cash) || 0) + (Number(p.bens) || 0),
+                cash: (Number(p.cash) || 0),
+              }))
+              .sort((a, b) =>
+                (b.patrimonio - a.patrimonio) ||
+                (b.cash - a.cash) ||
+                String(a.p?.name || '').localeCompare(String(b.p?.name || ''))
+              )
+            champ = ranked[0]?.p || null
+          }
+
+          console.log('[ENDGAME] finalizando: vencedor=%s, round=5', champ?.name || '—')
+
+          // estado final local (obrigatório)
+          setPlayers(finalPlayers || [])
+          setGameOver(true)
+          setWinner(champ)
+          setRound(5)
+          currentRoundRef.current = 5
+
+          // limpa pendências / destrava / não avança turno
+          pendingTurnDataRef.current = null
+          turnChangeInProgressRef.current = false
+          openingModalRef.current = false
+          setTurnLockBroadcast(false)
+
+          // propaga para todos (obrigatório)
+          broadcastState(finalPlayers || [], turnIdxRef.current, 5, true, champ, {
+            round: 5,
+            gameOver: true,
+            winner: champ,
+          })
+
+          return
+        }
+
         // ✅ CORREÇÃO: Verifica se o turnIdx atual corresponde ao lockOwner
         // Se o turno mudou via SYNC, o lockOwner pode estar desatualizado
         const currentPlayer = players[turnIdx]
@@ -1488,6 +1583,47 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
             if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
               console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
+              
+              // ✅ FIM DE JOGO: quando a rodada tentaria ir para 6, encerramos mantendo Rodada:5
+              if (turnData.endGame) {
+                const finalRoundToBroadcast = Math.min(5, Number(turnData.nextRound || 5))
+
+                // Determina vencedor (apenas jogadores vivos), pelo maior patrimônio (cash + bens)
+                const alivePlayers = players.filter(p => !p?.bankrupt)
+                let finalWinner = null
+                if (alivePlayers.length > 0) {
+                  const ranked = alivePlayers
+                    .map(p => ({ ...p, patrimonio: (p.cash || 0) + (p.bens || 0) }))
+                    .sort((a, b) => b.patrimonio - a.patrimonio)
+                  finalWinner = ranked[0] || null
+                }
+
+                console.log('[DEBUG] 🏁 FIM DE JOGO no tick - Rodada:', finalRoundToBroadcast, 'Vencedor:', finalWinner?.name || null)
+                setWinner(finalWinner)
+                setGameOver(true)
+                appendLog('Fim de jogo! 5 rodadas completas.')
+
+                // Garante que HUD fique travado em 5
+                setRound(prev => {
+                  const finalRound = Math.min(5, Math.max(prev, finalRoundToBroadcast))
+                  currentRoundRef.current = finalRound
+                  return finalRound
+                })
+
+                const patch = {}
+                if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
+                patch.round = finalRoundToBroadcast
+                patch.gameOver = true
+                patch.winner = finalWinner
+
+                // Não muda turnIdx ao encerrar
+                broadcastState(players, turnIdx, finalRoundToBroadcast, true, finalWinner, patch)
+                pendingTurnDataRef.current = null
+                setTurnLockBroadcast(false)
+                turnChangeInProgressRef.current = false
+                return
+              }
+              
               // ✅ CORREÇÃO: Marca que mudança de turno está em progresso
               turnChangeInProgressRef.current = true
               
@@ -1500,22 +1636,13 @@ export function useTurnEngine({
               // ✅ CORREÇÃO: Atualiza turnIdx e rodada antes de fazer broadcast
               // O broadcastState atualiza lastLocalStateRef com o novo turnIdx e rodada, protegendo contra estados remotos antigos
               setTurnIdx(turnData.nextTurnIdx)
-              // ✅ CORREÇÃO CRÍTICA: Sempre atualiza a rodada usando Math.max para proteger incrementos
-              // Se shouldIncrement é true, força o incremento mesmo se houver sincronização
+              // ✅ FIX: round monotônico no tick (NUNCA soma +1 aqui)
+              // roundToBroadcast já é o valor correto calculado no advanceAndMaybeLap.
               setRound(prevRound => {
-                let finalRound = prevRound
-                if (shouldIncrement) {
-                  // Se deve incrementar, força o incremento
-                  finalRound = Math.max(roundToBroadcast, prevRound + 1)
-                  console.log('[DEBUG] 🔄 Rodada incrementada no broadcast (forçado) - de:', prevRound, 'para:', finalRound, 'roundToBroadcast:', roundToBroadcast)
-                } else {
-                  // Caso contrário, usa Math.max para proteger
-                  finalRound = Math.max(roundToBroadcast, prevRound)
-                  if (finalRound > prevRound) {
-                    console.log('[DEBUG] 🔄 Rodada atualizada no broadcast - de:', prevRound, 'para:', finalRound)
-                  }
+                const finalRound = Math.max(prevRound, roundToBroadcast)
+                if (finalRound !== prevRound) {
+                  console.log('[DEBUG] 🔄 Rodada atualizada no tick - de:', prevRound, 'para:', finalRound)
                 }
-                // ✅ MELHORIA: Atualiza ref com valor final
                 currentRoundRef.current = finalRound
                 return finalRound
               })
@@ -1648,11 +1775,11 @@ export function useTurnEngine({
     if (gameOver || !players.length) return
     const nextTurnIdx = findNextAliveIdx(players, turnIdx)
     setTurnIdx(nextTurnIdx)
-    broadcastState(players, nextTurnIdx, round)
+    broadcastState(players, nextTurnIdx, currentRoundRef.current)
   }, [broadcastState, gameOver, players, round, setTurnIdx, turnIdx])
 
   const onAction = React.useCallback((act) => {
-    if (!act?.type || gameOver) return
+    if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
 
     if (act.type === 'ROLL'){
       if (!isMyTurn) return
@@ -1667,7 +1794,7 @@ export function useTurnEngine({
       const nextPlayers = players.map(p => (isMine(p) ? { ...p, cash: p.cash + recover } : p))
       appendLog(`${cur.name} ativou Recuperação Financeira (+$${recover})`)
       setPlayers(nextPlayers)
-      broadcastState(nextPlayers, turnIdx, round)
+      broadcastState(nextPlayers, turnIdx, currentRoundRef.current)
       // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
       // setTurnLockBroadcast(false)
       return
@@ -1680,7 +1807,7 @@ export function useTurnEngine({
       const nextPlayers = players.map(p => (isMine(p) ? { ...p, cash: p.cash + amount } : p))
       appendLog(`${cur.name} recuperou +$${amount}`)
       setPlayers(nextPlayers)
-      broadcastState(nextPlayers, turnIdx, round)
+      broadcastState(nextPlayers, turnIdx, currentRoundRef.current)
       // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
       // setTurnLockBroadcast(false)
       return
@@ -1822,7 +1949,7 @@ export function useTurnEngine({
       const curIdx = turnIdx;
       setPlayers(ps => {
         const upd = ps.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)));
-        broadcastState(upd, turnIdx, round);
+        broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
@@ -1866,7 +1993,7 @@ export function useTurnEngine({
                 },
               }
         );
-        broadcastState(upd, turnIdx, round);
+        broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
@@ -1898,7 +2025,7 @@ export function useTurnEngine({
             mixProdutos: level
           };
         });
-        broadcastState(upd, turnIdx, round);
+        broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
@@ -1929,7 +2056,7 @@ export function useTurnEngine({
             erpSystems: { ...(p.erpSystems || {}), level }
           };
         });
-        broadcastState(upd, turnIdx, round);
+        broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
@@ -1985,7 +2112,7 @@ export function useTurnEngine({
             const upd = ps.map((p, i) =>
               i !== curIdx ? p : { ...p, cash: (Number(p.cash) || 0) + creditOnly }
             );
-            broadcastState(upd, turnIdx, round);
+            broadcastState(upd, turnIdx, currentRoundRef.current);
             return upd;
           });
         }
@@ -2141,7 +2268,7 @@ export function useTurnEngine({
           };
         });
 
-        broadcastState(upd, turnIdx, round);
+        broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
@@ -2183,7 +2310,7 @@ export function useTurnEngine({
       setPlayers(updatedPlayers)
       setTurnIdx(nextIdx)
       setTurnLockBroadcast(false)
-      broadcastState(updatedPlayers, nextIdx, round)
+      broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
       console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
       return
     }
