@@ -489,6 +489,31 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
   
+  // ====== "é minha vez?" (movido para antes do useEffect do watchdog para evitar TDZ)
+  const isMyTurn = useMemo(() => {
+    // ✅ CORREÇÃO: Verifica se turnIdx é válido
+    if (turnIdx < 0 || turnIdx >= players.length) {
+      console.warn('[App] isMyTurn - turnIdx inválido:', turnIdx, 'players.length:', players.length)
+      return false
+    }
+    
+    const owner = players[turnIdx]
+    if (!owner) {
+      console.log('[App] isMyTurn - owner não encontrado, turnIdx:', turnIdx, 'players.length:', players.length)
+      return false
+    }
+    
+    // ✅ CORREÇÃO: Verifica se o jogador não está falido
+    if (owner.bankrupt) {
+      console.log('[App] isMyTurn - owner está falido:', owner.name)
+      return false
+    }
+    
+    const isMine = owner.id != null && String(owner.id) === String(myUid)
+    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
+    return isMine
+  }, [turnIdx, players, myUid])
+  
   // ✅ CORREÇÃO: Ref para rastrear quando uma mudança local foi feita recentemente
   const localChangeRef = React.useRef(null)
   const lastLocalStateRef = React.useRef(null)
@@ -763,31 +788,8 @@ export default function App() {
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
   }
 
-  // ====== "é minha vez?"
+  // ====== "é minha vez?" (declaração movida para antes do useEffect do watchdog)
   const current = players[turnIdx]
-  const isMyTurn = useMemo(() => {
-    // ✅ CORREÇÃO: Verifica se turnIdx é válido
-    if (turnIdx < 0 || turnIdx >= players.length) {
-      console.warn('[App] isMyTurn - turnIdx inválido:', turnIdx, 'players.length:', players.length)
-      return false
-    }
-    
-    const owner = players[turnIdx]
-    if (!owner) {
-      console.log('[App] isMyTurn - owner não encontrado, turnIdx:', turnIdx, 'players.length:', players.length)
-      return false
-    }
-    
-    // ✅ CORREÇÃO: Verifica se o jogador não está falido
-    if (owner.bankrupt) {
-      console.log('[App] isMyTurn - owner está falido:', owner.name)
-      return false
-    }
-    
-    const isMine = owner.id != null && String(owner.id) === String(myUid)
-    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
-    return isMine
-  }, [players, turnIdx, myUid])
 
   // ====== Validação do estado do jogo (modo debug)
   useEffect(() => {
