@@ -51,6 +51,15 @@ import { TRACK_LEN } from './data/track'
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
 // -------------------------------------------------------------
+
+// ✅ CORREÇÃO: Função util para clamp de round (defesa em profundidade)
+const MAX_ROUNDS = 5
+const clampRound = (r) => {
+  const n = Number(r)
+  if (!Number.isFinite(n)) return 1
+  return Math.min(MAX_ROUNDS, Math.max(1, n))
+}
+
 export default function App() {
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
@@ -292,25 +301,36 @@ export default function App() {
           }
           
           // ✅ CORREÇÃO: Sincroniza round usando Math.max para proteger incrementos locais
+          // ✅ PROTEÇÃO: Clamp para garantir que nunca exiba round > MAX_ROUNDS
           if (d.round !== round) {
+            const incoming = clampRound(d.round)
             if (lastLocal && (now - lastLocal.timestamp) < 3000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
                 // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
                 setRound(prevRound => {
-                  const finalRound = Math.max(prevRound, d.round)
+                  const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, incoming))
                   if (finalRound > prevRound) {
-                    console.log('[App] SYNC - Rodada incrementada via sincronização:', prevRound, '->', finalRound)
+                    console.log('[App] SYNC round aplicado (clamp): local=', prevRound, 'remote=', incoming, 'final=', finalRound)
                   }
                   return finalRound
                 })
               } else {
-                setRound(d.round)
+                setRound(incoming)
               }
             } else {
               // Sempre usa Math.max para proteger contra reversão
-              setRound(prevRound => Math.max(prevRound, d.round))
+              setRound(prevRound => {
+                const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, incoming))
+                console.log('[App] SYNC round aplicado (clamp): local=', prevRound, 'remote=', incoming, 'final=', finalRound)
+                return finalRound
+              })
             }
+          }
+          
+          // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
+          if (d.gameOver === true || d.winner) {
+            setRound(MAX_ROUNDS)
           }
           
           // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
@@ -700,7 +720,16 @@ export default function App() {
         np.every(p => Number(p?.pos ?? 0) === 0) &&
         (netState.gameOver === false || netState.gameOver == null)
       )
-      setRound(prev => isResetState ? 1 : Math.max(prev, nr))
+      const safeNr = clampRound(nr)
+      setRound(prev => {
+        const finalRound = isResetState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr))
+        return finalRound
+      })
+    }
+    
+    // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
+    if (netState.gameOver === true || netState.winner) {
+      setRound(MAX_ROUNDS)
     }
 
     // ✅ CORREÇÃO: Aplica roundFlags do estado autoritativo
@@ -785,7 +814,16 @@ export default function App() {
         np.every(p => Number(p?.pos ?? 0) === 0) &&
         (netState.gameOver === false || netState.gameOver == null)
       )
-      setRound(prev => isResetState ? 1 : Math.max(prev, nr))
+      const safeNr = clampRound(nr)
+      setRound(prev => {
+        const finalRound = isResetState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr))
+        return finalRound
+      })
+    }
+    
+    // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
+    if (netState.gameOver === true || netState.winner) {
+      setRound(MAX_ROUNDS)
     }
     
     // ✅ Monotônico: gameOver nunca volta para false
@@ -961,11 +999,11 @@ export default function App() {
     // - nextRound pode vir stale (closures em modais/compras)
     // - lastLocalStateRef.current.round geralmente já tem o maior round local
     const patchedRound = patch.round !== undefined ? patch.round : nextRound
-    const safeRound = Math.max(
+    const safeRound = clampRound(Math.max(
       Number(patchedRound || 1),
       Number(round || 1),
       Number(lastLocalStateRef.current?.round || 1)
-    )
+    ))
     
     // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
     // Se não houver baseline, usa o estado atual como fallback

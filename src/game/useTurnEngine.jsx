@@ -831,31 +831,15 @@ export function useTurnEngine({
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
     // Usa função de atualização para sempre pegar o valor mais recente do estado
-    // Se shouldIncrementRound é true, força o incremento mesmo se houver sincronização
+    // NUNCA usa prevRound + 1 - em multiplayer, se prevRound já está adiantado por sync, NÃO incrementa novamente
     setRound(prevRound => {
-      let finalRound = prevRound
+      const safeNext = Math.min(MAX_ROUNDS, nextRound)
+      const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, safeNext))
       
-      // ✅ CORREÇÃO: Se todos passaram pela casa 0, incrementa a rodada
-      if (shouldIncrementRound) {
-        // Se nextRound foi calculado corretamente e é maior que prevRound, usa nextRound
-        if (nextRound > prevRound) {
-          finalRound = nextRound
-          console.log('[DEBUG] 🔄 RODADA INCREMENTADA - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
-          console.log('[DEBUG] ✅ Rodada incrementada com sucesso!')
-          appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
-        } else {
-          // Se nextRound não é maior (pode ter sido calculado com round desatualizado), incrementa manualmente
-          finalRound = prevRound + 1
-          console.log('[DEBUG] 🔄 RODADA INCREMENTADA (forçado) - Rodada anterior:', prevRound, 'Nova rodada:', finalRound, 'nextRound calculado:', nextRound)
-          console.log('[DEBUG] ✅ Rodada incrementada com sucesso (forçado devido a sincronização)!')
-          appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
-        }
-      } else {
-        // Se não deve incrementar, usa Math.max para proteger contra reversão
-        finalRound = Math.max(nextRound, prevRound)
-        if (finalRound !== prevRound) {
-          console.log('[DEBUG] 🔄 Rodada atualizada via Math.max - prevRound:', prevRound, 'nextRound:', nextRound, 'finalRound:', finalRound)
-        }
+      // ✅ CORREÇÃO: Log e appendLog só quando realmente incrementou (shouldIncrementRound E finalRound > prevRound)
+      if (shouldIncrementRound && finalRound > prevRound) {
+        console.log('[ROUND] allAliveDone=true -> round', prevRound, '->', finalRound)
+        appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
       }
       
       // ✅ CORREÇÃO: Atualiza o ref com o valor final para uso futuro
@@ -1724,8 +1708,10 @@ export function useTurnEngine({
               setTurnIdx(turnData.nextTurnIdx)
               // ✅ FIX: round monotônico no tick (NUNCA soma +1 aqui)
               // roundToBroadcast já é o valor correto calculado no advanceAndMaybeLap.
+              // ✅ PROTEÇÃO DEFENSIVA: Clamp para garantir que nunca exiba round > MAX_ROUNDS
               setRound(prevRound => {
-                const finalRound = Math.max(prevRound, roundToBroadcast)
+                const safeRoundToBroadcast = Math.min(MAX_ROUNDS, roundToBroadcast)
+                const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, safeRoundToBroadcast))
                 if (finalRound !== prevRound) {
                   console.log('[DEBUG] 🔄 Rodada atualizada no tick - de:', prevRound, 'para:', finalRound)
                 }
