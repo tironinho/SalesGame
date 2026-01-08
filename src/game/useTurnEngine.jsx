@@ -85,6 +85,14 @@ export function useTurnEngine({
   // ✅ CORREÇÃO: Ref para rastrear quando a última modal foi fechada
   // Isso garante que há um delay antes de mudar o turno, dando tempo para todas as modais serem fechadas
   const lastModalClosedTimeRef = React.useRef(null)
+  
+  // ✅ CORREÇÃO A.2: Fila de modais para serializar chamadas (evitar modalLocks > 1)
+  const modalQueueRef = React.useRef(Promise.resolve())
+  
+  function enqueueModal(fn) {
+    modalQueueRef.current = modalQueueRef.current.then(fn).catch(() => {})
+    return modalQueueRef.current
+  }
 
   // ✅ CORREÇÃO: Normaliza players para garantir ordem consistente
   // Seat é IMUTÁVEL após atribuído no start - nunca reatribui seat existente
@@ -163,9 +171,17 @@ export function useTurnEngine({
           lockOwner: currentLockOwner
         })
         
-        // Se sou o dono do lock e não há modais, força liberação
-        if (isLockOwner && currentModalLocks === 0 && !currentOpening) {
-          console.warn('[DEBUG] 🔓 FORÇANDO LIBERAÇÃO DO TURNLOCK (timeout de segurança)')
+        // ✅ CORREÇÃO D: Se sou o dono do lock e não há modais, força liberação
+        // OU se lockOwner é null por muito tempo, também libera
+        const shouldForceUnlock = (isLockOwner && currentModalLocks === 0 && !currentOpening) || 
+                                   (currentLockOwner == null && currentModalLocks === 0 && !currentOpening)
+        if (shouldForceUnlock) {
+          console.warn('[DEBUG] 🔓 FORÇANDO LIBERAÇÃO DO TURNLOCK (timeout de segurança)', {
+            isLockOwner,
+            lockOwner: currentLockOwner,
+            modalLocks: currentModalLocks,
+            opening: currentOpening
+          })
           setTurnLockBroadcast(false)
           turnChangeInProgressRef.current = false
         }
@@ -257,69 +273,87 @@ export function useTurnEngine({
   const openModalAndWait = async (element) => {
     if (!(pushModal && awaitTop)) return null
     
-    // ✅ CORREÇÃO: Marca que uma modal está sendo aberta ANTES de qualquer coisa
-    openingModalRef.current = true
-    
-    // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
-    let currentLockCount = 0
-    setModalLocks(prev => {
-      currentLockCount = prev
-      const newLockCount = prev + 1
-      modalLocksRef.current = newLockCount
-      lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
-      console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
-      return newLockCount
-    })
-    
-    let modalResolved = false
-    try {
-      pushModal(element)
-      // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
-      await new Promise(resolve => setTimeout(resolve, 100))
-      openingModalRef.current = false
-      console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
-      const res = await awaitTop()
-      modalResolved = true
-      // ✅ CORREÇÃO: Pequeno delay após resolver para garantir que a modal foi completamente fechada
-      await new Promise(resolve => setTimeout(resolve, 50))
-      return res
-    } catch (error) {
-      console.error('[DEBUG] ❌ ERRO ao abrir/aguardar modal:', error)
-      modalResolved = true
-      // ✅ CORREÇÃO: Em caso de erro, garante que o contador seja decrementado
-      openingModalRef.current = false
-      setModalLocks(prev => {
-        const newLockCountAfter = Math.max(0, prev - 1)
-        modalLocksRef.current = newLockCountAfter
-        // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
-        if (newLockCountAfter === 0) {
-          lastModalClosedTimeRef.current = Date.now()
-        }
-        console.log('[DEBUG] openModalAndWait - ERRO, decrementando modalLocks:', prev, '->', newLockCountAfter)
-        return newLockCountAfter
-      })
-      return null
-    } finally {
-      // ✅ CORREÇÃO: Garante que openingModalRef seja sempre resetado
-      if (!modalResolved) {
-        openingModalRef.current = false
-      }
+    // ✅ CORREÇÃO A.2: Serializa chamadas via fila (evita modalLocks > 1)
+    return enqueueModal(async () => {
+      // ✅ CORREÇÃO: Marca que uma modal está sendo aberta ANTES de qualquer coisa
+      openingModalRef.current = true
+      
       // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
-      // Só decrementa se a modal foi realmente resolvida (não decrementa duas vezes)
-      if (modalResolved) {
+      let currentLockCount = 0
+      setModalLocks(prev => {
+        currentLockCount = prev
+        const newLockCount = prev + 1
+        modalLocksRef.current = newLockCount
+        lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
+        console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
+        return newLockCount
+      })
+      
+      let modalResolved = false
+      try {
+        pushModal(element)
+        // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
+        await new Promise(resolve => setTimeout(resolve, 100))
+        openingModalRef.current = false
+        console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
+        
+        // ✅ CORREÇÃO A.3: Timeout de segurança (15s) para evitar travamentos
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Modal timeout')), 15000)
+        )
+        
+        const res = await Promise.race([awaitTop(), timeoutPromise])
+        modalResolved = true
+        // ✅ CORREÇÃO: Pequeno delay após resolver para garantir que a modal foi completamente fechada
+        await new Promise(resolve => setTimeout(resolve, 50))
+        return res
+      } catch (error) {
+        console.error('[DEBUG] ❌ ERRO ao abrir/aguardar modal:', error)
+        
+        // ✅ CORREÇÃO A.3: Se timeout, força fechamento
+        if (error.message === 'Modal timeout') {
+          console.warn('[WARN] modal timeout -> auto-close')
+          try {
+            closeTop?.({ action: 'SKIP' })
+          } catch {}
+        }
+        
+        modalResolved = true
+        // ✅ CORREÇÃO: Em caso de erro, garante que o contador seja decrementado
+        openingModalRef.current = false
         setModalLocks(prev => {
           const newLockCountAfter = Math.max(0, prev - 1)
           modalLocksRef.current = newLockCountAfter
           // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
           if (newLockCountAfter === 0) {
             lastModalClosedTimeRef.current = Date.now()
-            console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
           }
-          console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
+          console.log('[DEBUG] openModalAndWait - ERRO, decrementando modalLocks:', prev, '->', newLockCountAfter)
           return newLockCountAfter
         })
+        return null
+      } finally {
+        // ✅ CORREÇÃO: Garante que openingModalRef seja sempre resetado
+        if (!modalResolved) {
+          openingModalRef.current = false
+        }
+        // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
+        // Só decrementa se a modal foi realmente resolvida (não decrementa duas vezes)
+        if (modalResolved) {
+          setModalLocks(prev => {
+            const newLockCountAfter = Math.max(0, prev - 1)
+            modalLocksRef.current = newLockCountAfter
+            // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
+            if (newLockCountAfter === 0) {
+              lastModalClosedTimeRef.current = Date.now()
+              console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
+            }
+            console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
+            return newLockCountAfter
+          })
+        }
       }
-    }
+    })
   }
 
 
@@ -840,6 +874,11 @@ export function useTurnEngine({
       if (shouldIncrementRound && finalRound > prevRound) {
         console.log('[ROUND] allAliveDone=true -> round', prevRound, '->', finalRound)
         appendLog(`🔄 Rodada ${finalRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
+      }
+      
+      // ✅ CORREÇÃO: Log obrigatório quando round muda
+      if (finalRound !== prevRound) {
+        console.log('[ROUND]', prevRound, '->', finalRound)
       }
       
       // ✅ CORREÇÃO: Atualiza o ref com o valor final para uso futuro
@@ -1437,44 +1476,57 @@ export function useTurnEngine({
 
     // === AUTO-MODAIS (Faturamento / Despesas) ===
     if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
-      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
-      const meNow = nextPlayers[curIdx] || {}
-      const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
-      ;(async () => {
-        await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
-        setPlayers(ps => {
-          const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
-          // ✅ CORREÇÃO: Usa turnIdx e round atuais para faturamento durante o turno
-          broadcastState(upd, turnIdx, currentRoundRef.current); return upd
-        })
-        appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
-        try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
-      })()
+      // ✅ CORREÇÃO A.1: Idempotência por jogada (evita reabrir modal no mesmo pendingTurnDataRef)
+      const td = pendingTurnDataRef.current
+      td._once = td._once || {}
+      if (!td._once.faturamento) {
+        td._once.faturamento = true
+        openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
+        const meNow = nextPlayers[curIdx] || {}
+        const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
+        ;(async () => {
+          await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
+          setPlayers(ps => {
+            const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para faturamento durante o turno
+            broadcastState(upd, turnIdx, currentRoundRef.current); return upd
+          })
+          appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
+          try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
+        })()
+      } else {
+        console.log('[MODAL] skip duplicate faturamento (tdId=' + (td?.timestamp || 'unknown') + ')')
+      }
     }
 
     if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
-      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
-      console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
-      const meNow = nextPlayers[curIdx] || {}
-      const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
+      // ✅ CORREÇÃO A.1: Idempotência por jogada (evita reabrir modal no mesmo pendingTurnDataRef)
+      const td = pendingTurnDataRef.current
+      td._once = td._once || {}
+      if (!td._once.expenses23) {
+        td._once.expenses23 = true
+        openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
+        console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
+        const meNow = nextPlayers[curIdx] || {}
+        const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
 
-      const lp = meNow.loanPending || {}
-      // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
-      // Verifica se há empréstimo pendente e se deve ser cobrado nesta passagem
-      const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
-      const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+        const lp = meNow.loanPending || {}
+        // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
+        // Verifica se há empréstimo pendente e se deve ser cobrado nesta passagem
+        const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
+        const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
 
-      console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
-      console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
-        amount: Number(lp.amount),
-        charged: lp.charged,
-        shouldChargeOnNextExpenses: lp.shouldChargeOnNextExpenses,
-        currentRound: round,
-        shouldCharge: shouldChargeLoan
-      })
+        console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
+        console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
+          amount: Number(lp.amount),
+          charged: lp.charged,
+          shouldChargeOnNextExpenses: lp.shouldChargeOnNextExpenses,
+          currentRound: round,
+          shouldCharge: shouldChargeLoan
+        })
 
-      ;(async () => {
-        await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
+        ;(async () => {
+          await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
         const totalCharge = expense + loanCharge
         
         console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge, 'Posição:', nextPlayers[curIdx]?.pos)
@@ -1524,7 +1576,10 @@ export function useTurnEngine({
         })
         // ✅ CORREÇÃO: Não precisa fechar modal aqui - a modal de despesas já foi fechada pelo openModalAndWait
         // O closeTop pode causar problemas com o modalLocks
-      })()
+        })()
+      } else {
+        console.log('[MODAL] skip duplicate expenses23 (tdId=' + (td?.timestamp || 'unknown') + ')')
+      }
     }
 
     // fail-safe: solta o cadeado quando todas as modais fecharem
@@ -1657,10 +1712,12 @@ export function useTurnEngine({
               if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
                 console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
               
-              // ✅ CORREÇÃO: Detecta finalização por rodada ANTES de mudar turno
-              // Se shouldIncrementRound === true e nextRound > MAX_ROUNDS, finaliza o jogo
-              if (turnData.shouldIncrementRound && turnData.nextRound > MAX_ROUNDS) {
-                console.log('[DEBUG] 🏁 FIM DE JOGO detectado no tick - próxima rodada seria:', turnData.nextRound, 'MAX_ROUNDS:', MAX_ROUNDS)
+              // ✅ CORREÇÃO C: Detecta finalização por rodada ANTES de mudar turno
+              // Condição autoritativa: currentRoundRef.current === 5 E shouldIncrementRound === true
+              // (não usa pos/TRACK_LEN - apenas round-based)
+              const isEndgameCondition = currentRoundRef.current === 5 && turnData.shouldIncrementRound
+              if (isEndgameCondition || (turnData.shouldIncrementRound && turnData.nextRound > MAX_ROUNDS)) {
+                console.log('[ENDGAME] detectado: fim da 5ª - currentRound:', currentRoundRef.current, 'shouldIncrementRound:', turnData.shouldIncrementRound, 'nextRound:', turnData.nextRound)
                 
                 // Chama maybeFinishGame para calcular vencedor
                 const finishResult = maybeFinishGame(turnData.nextPlayers, turnData.nextRound, turnIdx)
