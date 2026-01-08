@@ -86,13 +86,9 @@ export function useTurnEngine({
   // Isso garante que há um delay antes de mudar o turno, dando tempo para todas as modais serem fechadas
   const lastModalClosedTimeRef = React.useRef(null)
   
-  // ✅ CORREÇÃO A.2: Fila de modais para serializar chamadas (evitar modalLocks > 1)
+  // ✅ CORREÇÃO OBRIGATÓRIA 1: Fila de modais para serializar chamadas (evitar modalLocks > 1)
+  // Garante que apenas uma modal aguarda por vez, evitando sobrescrita de resolverRef no ModalContext
   const modalQueueRef = React.useRef(Promise.resolve())
-  
-  function enqueueModal(fn) {
-    modalQueueRef.current = modalQueueRef.current.then(fn).catch(() => {})
-    return modalQueueRef.current
-  }
 
   // ✅ CORREÇÃO: Normaliza players para garantir ordem consistente
   // Seat é IMUTÁVEL após atribuído no start - nunca reatribui seat existente
@@ -270,91 +266,80 @@ export function useTurnEngine({
   }, [turnIdx, players, myUid, lockOwner])
 
   // helper: abrir modal e "travar"/"destravar" o contador
-  const openModalAndWait = async (element) => {
-    if (!(pushModal && awaitTop)) return null
-    
-    // ✅ CORREÇÃO A.2: Serializa chamadas via fila (evita modalLocks > 1)
-    return enqueueModal(async () => {
-      // ✅ CORREÇÃO: Marca que uma modal está sendo aberta ANTES de qualquer coisa
-      openingModalRef.current = true
-      
-      // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
-      let currentLockCount = 0
-      setModalLocks(prev => {
-        currentLockCount = prev
-        const newLockCount = prev + 1
-        modalLocksRef.current = newLockCount
-        lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
-        console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', newLockCount, 'openingModalRef:', openingModalRef.current)
-        return newLockCount
-      })
-      
+  // ✅ CORREÇÃO OBRIGATÓRIA 1: Serialização via fila + decremento único no finally
+  const openModalAndWait = React.useCallback((element) => {
+    if (!pushModal || !awaitTop) return Promise.resolve(null)
+
+    const job = async () => {
       let modalResolved = false
+
       try {
+        openingModalRef.current = true
+
+        setModalLocks(prev => {
+          const next = prev + 1
+          modalLocksRef.current = next
+          lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
+          console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', next, 'openingModalRef:', openingModalRef.current)
+          return next
+        })
+
         pushModal(element)
+        
         // ✅ CORREÇÃO: Pequeno delay para garantir que a modal foi renderizada
         await new Promise(resolve => setTimeout(resolve, 100))
         openingModalRef.current = false
         console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
-        
-        // ✅ CORREÇÃO A.3: Timeout de segurança (15s) para evitar travamentos
+
+        // ✅ CORREÇÃO: Timeout de segurança (15s) para evitar travamentos
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Modal timeout')), 15000)
         )
         
-        const res = await Promise.race([awaitTop(), timeoutPromise])
+        const payload = await Promise.race([awaitTop(), timeoutPromise])
         modalResolved = true
+        
         // ✅ CORREÇÃO: Pequeno delay após resolver para garantir que a modal foi completamente fechada
         await new Promise(resolve => setTimeout(resolve, 50))
-        return res
-      } catch (error) {
-        console.error('[DEBUG] ❌ ERRO ao abrir/aguardar modal:', error)
+        return payload ?? null
+      } catch (err) {
+        console.error('[DEBUG] openModalAndWait - erro aguardando modal:', err)
         
-        // ✅ CORREÇÃO A.3: Se timeout, força fechamento
-        if (error.message === 'Modal timeout') {
+        // ✅ CORREÇÃO: Se timeout, força fechamento
+        if (err.message === 'Modal timeout') {
           console.warn('[WARN] modal timeout -> auto-close')
           try {
             closeTop?.({ action: 'SKIP' })
           } catch {}
         }
         
-        modalResolved = true
-        // ✅ CORREÇÃO: Em caso de erro, garante que o contador seja decrementado
-        openingModalRef.current = false
-        setModalLocks(prev => {
-          const newLockCountAfter = Math.max(0, prev - 1)
-          modalLocksRef.current = newLockCountAfter
-          // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
-          if (newLockCountAfter === 0) {
-            lastModalClosedTimeRef.current = Date.now()
-          }
-          console.log('[DEBUG] openModalAndWait - ERRO, decrementando modalLocks:', prev, '->', newLockCountAfter)
-          return newLockCountAfter
-        })
+        // ✅ CORREÇÃO OBRIGATÓRIA 1: NUNCA decrementar no catch - apenas marcar para finally decrementar
+        modalResolved = true // garante decremento no finally
         return null
       } finally {
-        // ✅ CORREÇÃO: Garante que openingModalRef seja sempre resetado
-        if (!modalResolved) {
-          openingModalRef.current = false
-        }
-        // ✅ CORREÇÃO: Usa função de atualização para garantir que sempre pega o valor mais recente
-        // Só decrementa se a modal foi realmente resolvida (não decrementa duas vezes)
+        openingModalRef.current = false
+
+        // ✅ CORREÇÃO OBRIGATÓRIA 1: Decrementa UMA ÚNICA VEZ apenas no finally, se modalResolved === true
         if (modalResolved) {
           setModalLocks(prev => {
-            const newLockCountAfter = Math.max(0, prev - 1)
-            modalLocksRef.current = newLockCountAfter
-            // ✅ CORREÇÃO: Se fechou a última modal, marca o timestamp
-            if (newLockCountAfter === 0) {
+            const next = Math.max(0, prev - 1)
+            modalLocksRef.current = next
+            if (next === 0) {
               lastModalClosedTimeRef.current = Date.now()
               console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
             }
-            console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', newLockCountAfter)
-            return newLockCountAfter
+            console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', next)
+            return next
           })
         }
       }
-    })
-  }
+    }
+
+    // ✅ CORREÇÃO OBRIGATÓRIA 1: Serialização via fila de promises
+    const p = modalQueueRef.current.then(job, job)
+    modalQueueRef.current = p.catch(() => {})
+    return p
+  }, [pushModal, awaitTop, closeTop])
 
 
   // ========= regras auxiliares de saldo =========
