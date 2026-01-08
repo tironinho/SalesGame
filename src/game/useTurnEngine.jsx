@@ -4,6 +4,9 @@ import React from 'react'
 // Pista
 import { TRACK_LEN } from '../data/track'
 
+// ✅ CORREÇÃO: Constante para máximo de rodadas
+const MAX_ROUNDS = 5
+
 // Modal system
 import { useModal } from '../modals/ModalContext'
 
@@ -336,28 +339,20 @@ export function useTurnEngine({
   }, [canPay, appendLog])
 
   // ========= fim de jogo =========
+  // ✅ CORREÇÃO: Retorna objeto com { finished, winner, finalRound } em vez de apenas boolean
   const maybeFinishGame = React.useCallback((finalPlayers, nextRound, finalTurnIdx) => {
-    // nextRound = 6 significa: a 5ª rodada terminou agora
-    if (nextRound <= 5) return false
+    // ✅ CORREÇÃO: Usa MAX_ROUNDS em vez de hardcode 5
+    // Se nextRound > MAX_ROUNDS, significa que a última rodada (MAX_ROUNDS) terminou agora
+    if (nextRound <= MAX_ROUNDS) {
+      return { finished: false, winner: null, finalRound: nextRound }
+    }
 
     const alivePlayers = (finalPlayers || []).filter(p => !p?.bankrupt)
 
     // caso extremo: ninguém vivo
     if (alivePlayers.length === 0) {
       console.log('[DEBUG] 🏁 FIM DE JOGO - Nenhum jogador vivo restante')
-      setPlayers(finalPlayers)
-      setWinner(null)
-      setGameOver(true)
-      setRound(5)
-      currentRoundRef.current = 5
-      appendLog('Fim de jogo! Todos os jogadores falidos.')
-      pendingTurnDataRef.current = null
-      setTurnLockBroadcast(false)
-
-      try {
-        broadcastState(finalPlayers || [], finalTurnIdx || turnIdx, 5, true, null, { round: 5, gameOver: true, winner: null })
-      } catch {}
-      return true
+      return { finished: true, winner: null, finalRound: MAX_ROUNDS }
     }
 
     // vencedor: maior patrimônio (cash + bens). Desempate: cash, depois nome.
@@ -375,24 +370,10 @@ export function useTurnEngine({
 
     const champ = ranked[0]?.player || null
 
-    console.log("[ENDGAME] finalizando: vencedor=", champ?.name || "N/A", ", round=5")
+    console.log("[ENDGAME] finalizando: vencedor=", champ?.name || "N/A", ", round=", MAX_ROUNDS)
 
-    setPlayers(finalPlayers)
-    setWinner(champ)
-    setGameOver(true)
-    setRound(5)
-    currentRoundRef.current = 5
-    appendLog(`Fim de jogo! 5 rodadas completas. Vencedor: ${champ?.name || '—'}`)
-    pendingTurnDataRef.current = null
-    setTurnLockBroadcast(false)
-
-    // ✅ propaga fim do jogo para todos os clientes
-    try {
-      broadcastState(finalPlayers || [], finalTurnIdx || turnIdx, 5, true, champ, { round: 5, gameOver: true, winner: champ })
-    } catch {}
-
-    return true
-  }, [appendLog, broadcastState, setGameOver, setRound, setTurnLockBroadcast, setWinner, turnIdx])
+    return { finished: true, winner: champ, finalRound: MAX_ROUNDS }
+  }, [])
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
@@ -801,12 +782,7 @@ export function useTurnEngine({
         nextRound = computedNextRound
         shouldIncrementRound = true
         
-        // ✅ FIM DE JOGO: quando round===5 e shouldIncrementRound, finaliza
-        if (currentRoundValue === 5 && shouldIncrementRound) {
-          console.log("[ENDGAME] detectado: fim da 5ª (tentaria round=6)");
-          maybeFinishGame(nextPlayers, 6, turnIdx);
-          return;
-        }
+        // ✅ CORREÇÃO: Não finaliza aqui - será detectado no tick() quando shouldIncrementRound && nextRound > MAX_ROUNDS
         
         console.log('[DEBUG] 🔄 Calculando incremento - round (ref):', currentRoundValue, 'round (closure):', round, 'nextRound:', nextRound)
         
@@ -912,16 +888,7 @@ export function useTurnEngine({
     
     // NÃO muda o turno aqui - aguarda todas as modais serem fechadas
     // O turno será mudado na função tick() quando modalLocks === 0
-
-    // ✅ Fim de jogo por rodada (correto):
-    // Se a próxima rodada calculada for 6, significa que a 5ª rodada terminou agora.
-    if (maybeFinishGame(nextPlayers, nextRound, turnIdx)) {
-      // evita deixar o motor "travado" esperando tick
-      pendingTurnDataRef.current = null
-      turnChangeInProgressRef.current = false
-      openingModalRef.current = false
-      return
-    }
+    // ✅ CORREÇÃO: Finalização por rodada será detectada no tick() quando shouldIncrementRound && nextRound > MAX_ROUNDS
 
     const landedOneBased = newPos + 1
     const crossedStart1 = crossedTile(oldPos, newPos, 0)
@@ -1702,48 +1669,45 @@ export function useTurnEngine({
             const finalTimeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
             const finalCanChangeTurn = finalModalLocks === 0 && !finalOpening && (finalTimeSinceLastModalClosed >= 200 || !lastModalClosedTimeRef.current)
             
-            // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
-            if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
-              console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
+              // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
+              if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
+                console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
               
-              // ✅ FIM DE JOGO: quando a rodada tentaria ir para 6, encerramos mantendo Rodada:5
-              if (turnData.endGame) {
-                const finalRoundToBroadcast = Math.min(5, Number(turnData.nextRound || 5))
-
-                // Determina vencedor (apenas jogadores vivos), pelo maior patrimônio (cash + bens)
-                const alivePlayers = players.filter(p => !p?.bankrupt)
-                let finalWinner = null
-                if (alivePlayers.length > 0) {
-                  const ranked = alivePlayers
-                    .map(p => ({ ...p, patrimonio: (p.cash || 0) + (p.bens || 0) }))
-                    .sort((a, b) => b.patrimonio - a.patrimonio)
-                  finalWinner = ranked[0] || null
+              // ✅ CORREÇÃO: Detecta finalização por rodada ANTES de mudar turno
+              // Se shouldIncrementRound === true e nextRound > MAX_ROUNDS, finaliza o jogo
+              if (turnData.shouldIncrementRound && turnData.nextRound > MAX_ROUNDS) {
+                console.log('[DEBUG] 🏁 FIM DE JOGO detectado no tick - próxima rodada seria:', turnData.nextRound, 'MAX_ROUNDS:', MAX_ROUNDS)
+                
+                // Chama maybeFinishGame para calcular vencedor
+                const finishResult = maybeFinishGame(turnData.nextPlayers, turnData.nextRound, turnIdx)
+                
+                if (finishResult.finished) {
+                  console.log('[DEBUG] 🏁 FIM DE JOGO finalizando - Rodada:', finishResult.finalRound, 'Vencedor:', finishResult.winner?.name || null)
+                  
+                  // Atualiza estado local
+                  setPlayers(turnData.nextPlayers)
+                  setWinner(finishResult.winner)
+                  setGameOver(true)
+                  setRound(finishResult.finalRound)
+                  currentRoundRef.current = finishResult.finalRound
+                  appendLog(`Fim de jogo! ${MAX_ROUNDS} rodadas completas. Vencedor: ${finishResult.winner?.name || '—'}`)
+                  
+                  // Prepara patch para broadcast
+                  const patch = {}
+                  if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
+                  patch.round = finishResult.finalRound
+                  patch.gameOver = true
+                  patch.winner = finishResult.winner
+                  
+                  // Broadcast estado final (não muda turnIdx ao encerrar)
+                  broadcastState(turnData.nextPlayers, turnIdx, finishResult.finalRound, true, finishResult.winner, patch)
+                  
+                  // Limpa estado e libera lock
+                  pendingTurnDataRef.current = null
+                  setTurnLockBroadcast(false)
+                  turnChangeInProgressRef.current = false
+                  return
                 }
-
-                console.log('[DEBUG] 🏁 FIM DE JOGO no tick - Rodada:', finalRoundToBroadcast, 'Vencedor:', finalWinner?.name || null)
-                setWinner(finalWinner)
-                setGameOver(true)
-                appendLog('Fim de jogo! 5 rodadas completas.')
-
-                // Garante que HUD fique travado em 5
-                setRound(prev => {
-                  const finalRound = Math.min(5, Math.max(prev, finalRoundToBroadcast))
-                  currentRoundRef.current = finalRound
-                  return finalRound
-                })
-
-                const patch = {}
-                if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
-                patch.round = finalRoundToBroadcast
-                patch.gameOver = true
-                patch.winner = finalWinner
-
-                // Não muda turnIdx ao encerrar
-                broadcastState(players, turnIdx, finalRoundToBroadcast, true, finalWinner, patch)
-                pendingTurnDataRef.current = null
-                setTurnLockBroadcast(false)
-                turnChangeInProgressRef.current = false
-                return
               }
               
               // ✅ CORREÇÃO: Marca que mudança de turno está em progresso
