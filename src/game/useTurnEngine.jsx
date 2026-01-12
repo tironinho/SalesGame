@@ -581,27 +581,124 @@ export function useTurnEngine({
             const selections = recoveryModalRes.items || []
             let totalCredit = 0
             console.log('[DEBUG] Seleções para reduzir:', selections)
+            
+            // ✅ CORREÇÃO: Helper para calcular nível atual baseado em owned
+            const letterFromOwned = (owned) => {
+              if (owned?.A === true) return 'A'
+              if (owned?.B === true) return 'B'
+              if (owned?.C === true) return 'C'
+              return 'D'
+            }
+            
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             updatedPlayers = currentPlayers.map((p, i) => {
               if (i !== curIdx) return p
               let next = { ...p }
+              
+              // Inicializa mixOwned e erpOwned se não existirem
+              let mixOwned = { A: false, B: false, C: false, D: false, ...(next.mixOwned || next.mix || {}) }
+              let erpOwned = { A: false, B: false, C: false, D: false, ...(next.erpOwned || next.erp || {}) }
+              
+              // ✅ CORREÇÃO: Se owned estiver vazio, infere de mixProdutos/erpLevel
+              const currentMixLevel = String(next.mixProdutos || 'D').toUpperCase()
+              const currentErpLevel = String(next.erpLevel || next.erpSistemas || 'D').toUpperCase()
+              
+              // Se mixOwned está vazio mas tem mixProdutos, infere
+              if (!mixOwned.A && !mixOwned.B && !mixOwned.C && !mixOwned.D && currentMixLevel) {
+                if (currentMixLevel === 'A') {
+                  mixOwned = { A: true, B: true, C: true, D: true }
+                } else if (currentMixLevel === 'B') {
+                  mixOwned = { A: false, B: true, C: true, D: true }
+                } else if (currentMixLevel === 'C') {
+                  mixOwned = { A: false, B: false, C: true, D: true }
+                } else {
+                  mixOwned = { A: false, B: false, C: false, D: true }
+                }
+              }
+              
+              // Se erpOwned está vazio mas tem erpLevel, infere
+              if (!erpOwned.A && !erpOwned.B && !erpOwned.C && !erpOwned.D && currentErpLevel) {
+                if (currentErpLevel === 'A') {
+                  erpOwned = { A: true, B: true, C: true, D: true }
+                } else if (currentErpLevel === 'B') {
+                  erpOwned = { A: false, B: true, C: true, D: true }
+                } else if (currentErpLevel === 'C') {
+                  erpOwned = { A: false, B: false, C: true, D: true }
+                } else {
+                  erpOwned = { A: false, B: false, C: false, D: true }
+                }
+              }
+              
+              let currentMixLevelAfter = currentMixLevel
+              let currentErpLevelAfter = currentErpLevel
+              
               for (const sel of selections) {
                 if (sel.selected) {
                   totalCredit += Number(sel.credit || 0)
                   if (sel.group === 'MIX') {
-                    next.mixOwned = { ...(next.mixOwned || {}), [sel.level]: false }
+                    // Remove o nível do owned
+                    mixOwned[sel.level] = false
+                    // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade
+                    if (sel.level === currentMixLevelAfter) {
+                      const levels = ['A', 'B', 'C', 'D']
+                      const currentIdx = levels.indexOf(currentMixLevelAfter)
+                      // Vai para o próximo nível disponível
+                      for (let idx = currentIdx + 1; idx < levels.length; idx++) {
+                        const nextLevel = levels[idx]
+                        if (mixOwned[nextLevel] || nextLevel === 'D') {
+                          currentMixLevelAfter = nextLevel
+                          break
+                        }
+                      }
+                    }
                   } else if (sel.group === 'ERP') {
-                    next.erpOwned = { ...(next.erpOwned || {}), [sel.level]: false }
+                    // Remove o nível do owned
+                    erpOwned[sel.level] = false
+                    // ✅ CORREÇÃO: Se está reduzindo o nível atual, faz downgrade
+                    if (sel.level === currentErpLevelAfter) {
+                      const levels = ['A', 'B', 'C', 'D']
+                      const currentIdx = levels.indexOf(currentErpLevelAfter)
+                      // Vai para o próximo nível disponível
+                      for (let idx = currentIdx + 1; idx < levels.length; idx++) {
+                        const nextLevel = levels[idx]
+                        if (erpOwned[nextLevel] || nextLevel === 'D') {
+                          currentErpLevelAfter = nextLevel
+                          break
+                        }
+                      }
+                    }
                   }
                 }
               }
+              
+              // ✅ CORREÇÃO: Recalcula mixProdutos e erpLevel após redução
+              const finalMixLevel = letterFromOwned(mixOwned) || currentMixLevelAfter || 'D'
+              const finalErpLevel = letterFromOwned(erpOwned) || currentErpLevelAfter || 'D'
+              
+              next.mixOwned = mixOwned
+              next.mix = mixOwned
+              next.erpOwned = erpOwned
+              next.erp = erpOwned
+              next.mixProdutos = finalMixLevel
+              next.erpLevel = finalErpLevel
+              next.erpSistemas = finalErpLevel
+              // Aliases adicionais
+              next.mixLevel = finalMixLevel
+              next.mixProducts = finalMixLevel
+              next.mixLevelLetter = finalMixLevel
+              next.erpLevelLetter = finalErpLevel
+              
               next.cash = (Number(next.cash) || 0) + totalCredit
               // ✅ CORREÇÃO: Preserva a posição original
               next.pos = p.pos
+              
+              console.log('[DEBUG] Redução aplicada - mixProdutos:', finalMixLevel, 'erpLevel:', finalErpLevel, 'crédito:', totalCredit)
+              
               return next
             })
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
             console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Novo mixProdutos:', updatedPlayers[curIdx]?.mixProdutos, 'Novo erpLevel:', updatedPlayers[curIdx]?.erpLevel)
             setPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else {

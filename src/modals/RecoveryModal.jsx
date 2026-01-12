@@ -127,34 +127,86 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     )
   }, [snapshot.raw])
 
-  // --------- conjunto de posses reais (D só se nada detectado) ---------
+  // --------- conjunto de posses reais (derivado de mixProdutos/erpLevel quando mixOwned vazio) ---------
   const ownedMix = useMemo(() => {
     const p = snapshot.raw || {}
     const mixOwnedObj = p.mixOwned ?? p.mix ?? {}
-    // ✅ CORREÇÃO: Só adiciona níveis que estão explicitamente true (não false ou undefined)
     const set = new Set()
-    if (mixOwnedObj.A === true) set.add('A')
-    if (mixOwnedObj.B === true) set.add('B')
-    if (mixOwnedObj.C === true) set.add('C')
-    if (mixOwnedObj.D === true) set.add('D')
-    // Se não detectamos nada, considera o D como base inicial
+    
+    // ✅ CORREÇÃO: Se mixOwned vier como objeto válido, usa diretamente
+    if (typeof mixOwnedObj === 'object' && !Array.isArray(mixOwnedObj) && mixOwnedObj !== null) {
+      if (mixOwnedObj.A === true) set.add('A')
+      if (mixOwnedObj.B === true) set.add('B')
+      if (mixOwnedObj.C === true) set.add('C')
+      if (mixOwnedObj.D === true) set.add('D')
+    }
+    
+    // ✅ CORREÇÃO: Se mixOwned estiver vazio mas mixProdutos existir, infere os níveis
+    // Se está no nível B, possui B e C
+    // Se está no nível A, possui A, B e C
+    // Se está no nível C, possui C
+    // D sempre está disponível (básico, não reduz)
+    if (set.size === 0 && mixLetter) {
+      // Sempre adiciona D (básico)
+      set.add('D')
+      
+      if (mixLetter === 'A') {
+        set.add('A')
+        set.add('B')
+        set.add('C')
+      } else if (mixLetter === 'B') {
+        set.add('B')
+        set.add('C')
+      } else if (mixLetter === 'C') {
+        set.add('C')
+      }
+    }
+    
+    // Fallback: se não detectamos nada, considera o D como base inicial
     if (set.size === 0) set.add('D')
+    
     return set
-  }, [snapshot.raw])
+  }, [snapshot.raw, mixLetter])
 
   const ownedErp = useMemo(() => {
     const p = snapshot.raw || {}
     const erpOwnedObj = p.erpOwned ?? p.erp ?? {}
-    // ✅ CORREÇÃO: Só adiciona níveis que estão explicitamente true (não false ou undefined)
     const set = new Set()
-    if (erpOwnedObj.A === true) set.add('A')
-    if (erpOwnedObj.B === true) set.add('B')
-    if (erpOwnedObj.C === true) set.add('C')
-    if (erpOwnedObj.D === true) set.add('D')
-    // Se não detectamos nada, considera o D como base inicial
+    
+    // ✅ CORREÇÃO: Se erpOwned vier como objeto válido, usa diretamente
+    if (typeof erpOwnedObj === 'object' && !Array.isArray(erpOwnedObj) && erpOwnedObj !== null) {
+      if (erpOwnedObj.A === true) set.add('A')
+      if (erpOwnedObj.B === true) set.add('B')
+      if (erpOwnedObj.C === true) set.add('C')
+      if (erpOwnedObj.D === true) set.add('D')
+    }
+    
+    // ✅ CORREÇÃO: Se erpOwned estiver vazio mas erpLevel existir, infere os níveis
+    // Se está no nível B, possui B e C
+    // Se está no nível A, possui A, B e C
+    // Se está no nível C, possui C
+    // D sempre está disponível (básico, não reduz)
+    if (set.size === 0 && erpLetter) {
+      // Sempre adiciona D (básico)
+      set.add('D')
+      
+      if (erpLetter === 'A') {
+        set.add('A')
+        set.add('B')
+        set.add('C')
+      } else if (erpLetter === 'B') {
+        set.add('B')
+        set.add('C')
+      } else if (erpLetter === 'C') {
+        set.add('C')
+      }
+    }
+    
+    // Fallback: se não detectamos nada, considera o D como base inicial
     if (set.size === 0) set.add('D')
+    
     return set
-  }, [snapshot.raw])
+  }, [snapshot.raw, erpLetter])
 
   useEffect(() => {
     console.group('[RecoveryModal] owned detect')
