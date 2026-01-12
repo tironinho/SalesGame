@@ -1073,7 +1073,7 @@ export default function App() {
           const keysToCheck = ['pos', 'cash', 'bankrupt', 'clients', 'vendedoresComuns', 'fieldSales', 'insideSales', 
                                'gestores', 'gestoresComerciais', 'manutencao', 'bens', 'mixProdutos', 'erpLevel',
                                'az', 'am', 'rox', 'onboarding', 'trainingByVendor', 'trainingsByVendor', 'loanPending',
-                               'waitingAtRevenue', 'revenue', 'erpOwned', 'erp', 'mixOwned', 'mix']
+                               'waitingAtRevenue', 'revenue', 'erpOwned', 'erp', 'mixOwned', 'mix', 'lastRevenueRound']
           for (const key of keysToCheck) {
             if (JSON.stringify(currentPlayer[key]) !== JSON.stringify(nextPlayer[key])) {
               delta[key] = nextPlayer[key]
