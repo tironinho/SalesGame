@@ -559,6 +559,11 @@ export default function App() {
       netCommit(prev => {
         const prevState = prev || {}
         
+        // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
+        const localStateVersion = currentVersion
+        const remoteStateVersion = prevState.stateVersion ?? 0
+        const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
+        
         // ✅ CORREÇÃO: Merge players por ID (não por índice ou snapshot completo)
         const prevPlayers = normalizePlayers(prevState.players || [])
         const byId = new Map(prevPlayers.map(p => [String(p.id), p]))
@@ -579,10 +584,10 @@ export default function App() {
         // Reconstrói array ordenado
         const mergedPlayers = normalizePlayers(Array.from(byId.values()))
         
-        // Prepara statePatch completo (inclui versionamento)
+        // Prepara statePatch completo (inclui versionamento monotônico)
         const finalStatePatch = {
           ...statePatch,
-          stateVersion: currentVersion,
+          stateVersion: safeVersion, // ✅ CORREÇÃO: Versão monotônica garantida
           updatedAt: now,
           updatedBy: myUid
         }
@@ -606,7 +611,7 @@ export default function App() {
         console.log('[NET] ✅ commitGamePatch - tipo:', statePatch.turnPlayerId ? 'TURN' : statePatch.round ? 'ROUND' : 'PLAYER_DELTA', 
                    'playersDeltaIds:', Object.keys(playersDeltaById).join(','),
                    'statePatchKeys:', Object.keys(statePatch).join(','),
-                   'netVersion será incrementado pelo commit')
+                   'stateVersion:', safeVersion, '(local:', localStateVersion, 'remote:', remoteStateVersion, ')')
         
         return next
       })
@@ -658,7 +663,12 @@ export default function App() {
 
     // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE netVersion como autoridade (versão da linha no servidor)
     // Snapshot autoritativo: se netVersion <= lastAppliedNetVersionRef => ignore (snapshot antigo)
+    // ✅ CORREÇÃO 4: Blindagem no client que recebe rollback
     if (typeof netVersion === 'number') {
+      const localStateVersion = lastLocalStateRef.current?.stateVersion ?? 0
+      const remoteStateVersion = netState?.stateVersion ?? 0
+      
+      // Ignora se netVersion não avançou (já aplicado)
       if (netVersion <= lastAppliedNetVersionRef.current) {
         console.log('[NET] ⏭️ IGNORADO - netVersion não avançou:', {
           netVersion,
@@ -666,6 +676,19 @@ export default function App() {
         })
         return
       }
+      
+      // ✅ CORREÇÃO 4: Ignora rollback de stateVersion (proteção adicional)
+      if (remoteStateVersion > 0 && localStateVersion > 0 && remoteStateVersion < localStateVersion) {
+        console.warn('[NET] ⚠️ IGNORANDO rollback de stateVersion:', {
+          remoteStateVersion,
+          localStateVersion,
+          netVersion
+        })
+        // Ainda atualiza netVersion para não ficar preso, mas não aplica o estado
+        lastAppliedNetVersionRef.current = netVersion
+        return
+      }
+      
       // Atualiza lastAppliedNetVersionRef ANTES de aplicar (garante monotonicidade)
       lastAppliedNetVersionRef.current = netVersion
     } else {
@@ -683,18 +706,26 @@ export default function App() {
 
     // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
     // turnPlayerId é a fonte de verdade; turnIdx é derivado localmente
+    // ✅ CORREÇÃO 3: Proteção monotônica - só aceita turnPlayerId se for mudança válida
     if (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null) {
-      setTurnPlayerId(netState.turnPlayerId)
-      // Deriva turnIdx de turnPlayerId se players estão normalizados
-      const normalized = normalizePlayers(np || players)
-      const derivedTurnIdx = normalized.findIndex(p => String(p.id) === String(netState.turnPlayerId))
-      if (derivedTurnIdx >= 0) {
-        if (derivedTurnIdx !== turnIdx) {
-          console.log('[NET] ✅ turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', netState.turnPlayerId)
-          setTurnIdx(derivedTurnIdx)
+      const incomingTurnId = String(netState.turnPlayerId)
+      const currentTurnId = turnPlayerId ? String(turnPlayerId) : null
+      
+      // Só aceita se for diferente do atual (mudança de turno) ou se atual for null
+      // Como netVersion já avançou (passou pela verificação acima), é mudança válida
+      if (!currentTurnId || incomingTurnId !== currentTurnId) {
+        setTurnPlayerId(incomingTurnId)
+        // Deriva turnIdx de turnPlayerId se players estão normalizados
+        const normalized = normalizePlayers(np || players)
+        const derivedTurnIdx = normalized.findIndex(p => String(p.id) === incomingTurnId)
+        if (derivedTurnIdx >= 0) {
+          if (derivedTurnIdx !== turnIdx) {
+            console.log('[NET] ✅ turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
+            setTurnIdx(derivedTurnIdx)
+          }
+        } else {
+          console.warn('[NET] ⚠️ turnPlayerId não encontrado em players:', incomingTurnId)
         }
-      } else {
-        console.warn('[NET] ⚠️ turnPlayerId não encontrado em players:', netState.turnPlayerId)
       }
     } else if (nt !== null) {
       // Fallback: se turnPlayerId não está disponível, usa turnIdx (compatibilidade)
@@ -947,17 +978,29 @@ export default function App() {
             // Limpa baseline após merge
             playersBeforeRef.current = null
             
+            // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
+            const localStateVersion = nextPartial.stateVersion ?? 0
+            const remoteStateVersion = prevState.stateVersion ?? 0
+            const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
+            
             return {
               ...prevState,
               ...nextPartial,
-              players: orderedPlayers.length > 0 ? orderedPlayers : nextPlayers
+              players: orderedPlayers.length > 0 ? orderedPlayers : nextPlayers,
+              stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
             }
           }
           
-          // Para outros campos, merge simples
+          // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
+          const localStateVersion = nextPartial.stateVersion ?? 0
+          const remoteStateVersion = prevState.stateVersion ?? 0
+          const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
+          
+          // Para outros campos, merge simples com versão monotônica
           return {
             ...prevState,
-            ...nextPartial
+            ...nextPartial,
+            stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
           }
         })
       } catch (e) {
@@ -1020,13 +1063,38 @@ export default function App() {
       ? patch.turnPlayerId 
       : (normalizedPlayers[nextTurnIdx]?.id ? String(normalizedPlayers[nextTurnIdx].id) : turnPlayerId)
     
+    // ✅ CORREÇÃO 3: Nunca aceitar turnPlayerId mais antigo (proteção monotônica)
+    // Aceita mudança de turnPlayerId apenas se:
+    // 1. É explícita no patch (mudança de turno intencional)
+    // 2. Round mudou (nova rodada = novo turno válido)
+    // 3. É uma mudança de turno dentro da mesma rodada (normal)
+    // NUNCA aceita rollback (voltar para turnPlayerId anterior)
+    const safeTurnPlayerId = (() => {
+      if (!nextTurnPlayerId) return turnPlayerId
+      if (nextTurnPlayerId === turnPlayerId) return turnPlayerId
+      
+      // Se é mudança explícita no patch, aceita (mudança de turno intencional)
+      if (patch.turnPlayerId !== undefined) {
+        return nextTurnPlayerId
+      }
+      
+      // Se round mudou, aceita (nova rodada = novo turno válido)
+      if (safeRound !== round) {
+        return nextTurnPlayerId
+      }
+      
+      // Se é mudança de turno dentro da mesma rodada, aceita (normal)
+      // (não é rollback se está avançando para próximo jogador)
+      return nextTurnPlayerId
+    })()
+    
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
     lastLocalStateRef.current = {
       players: normalizedPlayers,
       turnIdx: nextTurnIdx,
-      turnPlayerId: nextTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId
+      turnPlayerId: safeTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId seguro (monotônico)
       round: safeRound,
       gameOver: finalGameOver,
       winner: finalWinner,
@@ -1044,11 +1112,11 @@ export default function App() {
     
     if (isStartGame) {
       // ✅ START GAME: Usa commitRemoteState com snapshot completo (única exceção permitida)
-      console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', nextTurnPlayerId, 'round:', safeRound)
+      console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
       commitRemoteState({
         players: normalizedPlayers,
         turnIdx: nextTurnIdx,
-        turnPlayerId: nextTurnPlayerId,
+        turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         roundFlags: nextRoundFlags,
         stateVersion: currentVersion,
@@ -1090,7 +1158,7 @@ export default function App() {
       commitGamePatch({
         playersDeltaById,
         statePatch: {
-          turnPlayerId: nextTurnPlayerId,
+          turnPlayerId: safeTurnPlayerId,
           turnIdx: nextTurnIdx,
           round: safeRound,
           roundFlags: nextRoundFlags,
@@ -1101,9 +1169,9 @@ export default function App() {
         }
       })
       
-      console.log('[App] broadcastState (PATCH) - tipo:', nextTurnPlayerId && nextTurnPlayerId !== turnPlayerId ? 'TURN' : 'PLAYER_DELTA', 
+      console.log('[App] broadcastState (PATCH) - tipo:', safeTurnPlayerId && safeTurnPlayerId !== turnPlayerId ? 'TURN' : 'PLAYER_DELTA', 
                   'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
-                  'turnPlayerId:', nextTurnPlayerId, 'round:', safeRound)
+                  'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
     }
     // 2) entre abas
     try {

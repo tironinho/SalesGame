@@ -230,18 +230,31 @@ function GameNetProvider({ roomCode, hostId, children }) {
                          !updated // Se não retornou row, é conflito de versão
       
       if (isConflict && attempt < MAX_ATTEMPTS) {
-        console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2 || 'no rows updated', '- retrying with fresh state...')
+        console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2 || 'no rows updated', '- retrying with merge monotônico...')
         
-        // ✅ CORREÇÃO: Re-fetch estado mais recente e re-aplica updater
+        // ✅ CORREÇÃO 2: Retry robusto com merge monotônico
+        // Re-fetch estado mais recente
         const fresh = await getLatestRoomByCode(code)
         if (fresh) {
           current = fresh
           activeRoomIdRef.current = fresh.id
           latestKnownUpdatedAtRef.current = fresh.updated_at
           
-          // Re-aplica updater no estado mais recente
+          // Re-aplica updater no estado mais recente (faz merge)
           base = fresh.state || {}
-          next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
+          const localState = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
+          
+          // ✅ CORREÇÃO: Merge monotônico - garante que versão sempre avança
+          const freshStateVersion = fresh.state?.stateVersion ?? 0
+          const localStateVersion = localState?.stateVersion ?? 0
+          const mergedStateVersion = Math.max(freshStateVersion, localStateVersion) + 1
+          
+          // Merge: preserva campos do fresh que não foram alterados localmente
+          next = {
+            ...base, // Estado remoto como base
+            ...localState, // Aplica mudanças locais
+            stateVersion: mergedStateVersion // ✅ Versão monotônica garantida
+          }
         }
         
         // Pequeno delay antes de re-tentar para evitar race condition
