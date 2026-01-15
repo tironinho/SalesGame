@@ -51,6 +51,7 @@ export function useTurnEngine({
   players, setPlayers,
   round, setRound,
   turnIdx, setTurnIdx,
+  turnPlayerId, setTurnPlayerId,
   roundFlags, setRoundFlags,
   isMyTurn,
   isMine,
@@ -546,6 +547,7 @@ export function useTurnEngine({
               const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
               setPlayers(updatedPlayers)
               setTurnIdx(nextIdx)
+              if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
               setTurnLockBroadcast(false)
               broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
                 turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
@@ -748,6 +750,7 @@ export function useTurnEngine({
         const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
         setPlayers(updatedPlayers)
         setTurnIdx(nextIdx)
+        if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
         setTurnLockBroadcast(false)
         broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
           turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
@@ -1845,6 +1848,7 @@ export function useTurnEngine({
               // ✅ CORREÇÃO: Atualiza turnIdx e rodada antes de fazer broadcast
               // O broadcastState atualiza lastLocalStateRef com o novo turnIdx e rodada, protegendo contra estados remotos antigos
               setTurnIdx(turnData.nextTurnIdx)
+              if (setTurnPlayerId) setTurnPlayerId(turnData.nextTurnPlayerId ?? null)
               // ✅ FIX: round monotônico no tick (NUNCA soma +1 aqui)
               // roundToBroadcast já é o valor correto calculado no advanceAndMaybeLap.
               // ✅ PROTEÇÃO DEFENSIVA: Clamp para garantir que nunca exiba round > MAX_ROUNDS
@@ -2014,10 +2018,11 @@ export function useTurnEngine({
     const nextPlayer = players[nextTurnIdx]
     const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
     setTurnIdx(nextTurnIdx)
+    if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
     broadcastState(players, nextTurnIdx, currentRoundRef.current, false, null, {
       turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
     })
-  }, [broadcastState, gameOver, players, round, setTurnIdx, turnIdx])
+  }, [broadcastState, gameOver, players, round, setTurnIdx, setTurnPlayerId, turnIdx])
 
   const onAction = React.useCallback((act) => {
     if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
@@ -2573,6 +2578,10 @@ export function useTurnEngine({
       const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
       setPlayers(updatedPlayers)
       setTurnIdx(nextIdx)
+      if (setTurnPlayerId) {
+        const np = updatedPlayers[nextIdx]
+        setTurnPlayerId(np?.id ? String(np.id) : null)
+      }
       setTurnLockBroadcast(false)
       broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
       console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)

@@ -506,30 +506,34 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
   
-  // ====== "é minha vez?" (movido para antes do useEffect do watchdog para evitar TDZ)
+  // ====== "é minha vez?" (turnPlayerId é a fonte de verdade; fallback legado para turnIdx)
   const isMyTurn = useMemo(() => {
-    // ✅ CORREÇÃO: Verifica se turnIdx é válido
-    if (turnIdx < 0 || turnIdx >= players.length) {
-      console.warn('[App] isMyTurn - turnIdx inválido:', turnIdx, 'players.length:', players.length)
-      return false
+    const me = String(myUid || meId || "")
+    if (!me) return false
+
+    if (turnPlayerId) {
+      return String(turnPlayerId) === me
     }
-    
-    const owner = players[turnIdx]
-    if (!owner) {
-      console.log('[App] isMyTurn - owner não encontrado, turnIdx:', turnIdx, 'players.length:', players.length)
-      return false
+
+    // fallback legado
+    const current = players[turnIdx]
+    return current && String(current.id) === me
+  }, [turnPlayerId, myUid, meId, players, turnIdx])
+
+  // ✅ coerência: mantém turnIdx <-> turnPlayerId sincronizados (evita desync UI vs engine)
+  useEffect(() => {
+    if (!players?.length) return
+
+    if (turnPlayerId) {
+      const idx = players.findIndex(p => String(p.id) === String(turnPlayerId))
+      if (idx >= 0 && idx !== turnIdx) {
+        setTurnIdx(idx)
+      }
+    } else {
+      const fallback = players[turnIdx]?.id || players[0]?.id
+      if (fallback) setTurnPlayerId(String(fallback))
     }
-    
-    // ✅ CORREÇÃO: Verifica se o jogador não está falido
-    if (owner.bankrupt) {
-      console.log('[App] isMyTurn - owner está falido:', owner.name)
-      return false
-    }
-    
-    const isMine = owner.id != null && String(owner.id) === String(myUid)
-    console.log('[App] isMyTurn - owner:', owner.name, 'id:', owner.id, 'myUid:', myUid, 'isMine:', isMine)
-    return isMine
-  }, [turnIdx, players, myUid])
+  }, [players, turnPlayerId, turnIdx])
   
   // ✅ CORREÇÃO: Ref para rastrear quando uma mudança local foi feita recentemente
   const localChangeRef = React.useRef(null)
@@ -1307,6 +1311,7 @@ export default function App() {
     players, setPlayers,
     round, setRound,
     turnIdx, setTurnIdx,
+    turnPlayerId, setTurnPlayerId,
     roundFlags, setRoundFlags,
     isMyTurn,
     isMine,
