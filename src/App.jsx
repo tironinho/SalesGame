@@ -564,8 +564,19 @@ export default function App() {
         const remoteStateVersion = prevState.stateVersion ?? 0
         const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
         
-        // ✅ CORREÇÃO: Merge players por ID (não por índice ou snapshot completo)
-        const prevPlayers = normalizePlayers(prevState.players || [])
+        // ✅ CORREÇÃO CRÍTICA: nunca deixe o patch "encolher" players para 1 só jogador.
+        // Em commits iniciais, prevState.players pode vir vazio/stale (antes do primeiro snapshot).
+        // Então usamos um seed robusto vindo de refs locais (lastLocalStateRef / playersBeforeRef).
+        const seedPlayersRaw =
+          (Array.isArray(prevState.players) && prevState.players.length > 0)
+            ? prevState.players
+            : (Array.isArray(lastLocalStateRef.current?.players) && lastLocalStateRef.current.players.length > 0)
+              ? lastLocalStateRef.current.players
+              : (Array.isArray(playersBeforeRef.current) && playersBeforeRef.current.length > 0)
+                ? playersBeforeRef.current
+                : []
+
+        const prevPlayers = normalizePlayers(seedPlayersRaw)
         const byId = new Map(prevPlayers.map(p => [String(p.id), p]))
         
         // Aplica deltas por ID
@@ -1062,6 +1073,13 @@ export default function App() {
     const nextTurnPlayerId = patch.turnPlayerId !== undefined 
       ? patch.turnPlayerId 
       : (normalizedPlayers[nextTurnIdx]?.id ? String(normalizedPlayers[nextTurnIdx].id) : turnPlayerId)
+
+    // ✅ FIX: mantém turnPlayerId em sync imediato no cliente (evita UI travar/bloquear dados)
+    // O net snapshot pode demorar; sem isso, turnIdx muda mas turnPlayerId pode ficar stale.
+    if (nextTurnPlayerId !== undefined && nextTurnPlayerId !== null) {
+      const nextIdStr = String(nextTurnPlayerId)
+      if (String(turnPlayerId || '') !== nextIdStr) setTurnPlayerId(nextIdStr)
+    }
     
     // ✅ CORREÇÃO 3: Nunca aceitar turnPlayerId mais antigo (proteção monotônica)
     // Aceita mudança de turnPlayerId apenas se:
@@ -1193,23 +1211,27 @@ export default function App() {
   }
 
   function broadcastStart(nextPlayers) {
-    // ✅ CORREÇÃO: Normaliza players antes de broadcast
-    const normalized = normalizePlayers(nextPlayers)
-    
-    // ✅ CORREÇÃO: Define turnPlayerId no start (fonte autoritativa)
+    let normalized = normalizePlayers(nextPlayers)
+
+    // HOST (quem clicou iniciar) joga primeiro:
+    const hostIdx = normalized.findIndex(p => String(p?.id) === String(myUid))
+    if (hostIdx > 0) {
+      normalized = [normalized[hostIdx], ...normalized.slice(0, hostIdx), ...normalized.slice(hostIdx + 1)]
+    }
+
     const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
     
     // rede
     broadcastState(normalized, 0, 1, false, null, {
       turnPlayerId: firstPlayerId,
-      roundFlags: Array(nextPlayers.length).fill(false),
+      roundFlags: Array(normalized.length).fill(false),
       isStartGame: true // ✅ CORREÇÃO: Marca como START GAME (snapshot completo permitido)
     })
     // entre abas
     try {
       bcRef.current?.postMessage?.({
         type: 'START',
-        players: nextPlayers,
+        players: normalized,
         source: meId,
       })
     } catch (e) { console.warn('[App] broadcastStart failed:', e) }
