@@ -791,63 +791,8 @@ export default function App() {
       }
     }
 
-    // ✅ CORREÇÃO: Aplica campos de controle de turno e estado do jogo
-    if (typeof netState.turnLock === 'boolean') {
-      setTurnLock(netState.turnLock)
-      // ✅ BUG 2 FIX: Rastreia quando turnLock vira true para watchdog
-      if (netState.turnLock && !lockSinceRef.current) {
-        lockSinceRef.current = Date.now()
-      } else if (!netState.turnLock) {
-        lockSinceRef.current = null
-      }
-      // ✅ BUG 1 FIX: Log quando detectar travamento por lockOwner/turnLock
-      if (netState.turnLock && netState.lockOwner) {
-        console.log('[LOCK] bloqueado: turnLockBroadcast=true lockOwner=', netState.lockOwner, 'myId=', myUid)
-      }
-    }
-    if (netState.lockOwner !== undefined) {
-      setLockOwner(netState.lockOwner)
-      // ✅ BUG 1 FIX: Armazena lockOwner no lastLocalStateRef para preservar em próximos broadcasts
-      if (lastLocalStateRef.current) {
-        lastLocalStateRef.current.lockOwner = netState.lockOwner
-      }
-      console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
-    }
-    // ✅ CORREÇÃO MULTIPLAYER: Aplica roundFlags do snapshot autoritativo
-    if (netState.roundFlags !== undefined) {
-      if (Array.isArray(netState.roundFlags)) {
-        setRoundFlags(netState.roundFlags)
-        console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
-      } else if (typeof netState.roundFlags === 'object') {
-        // Se for objeto, converte para array (compatibilidade)
-        const flagsArray = Object.values(netState.roundFlags)
-        setRoundFlags(flagsArray)
-        console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
-      }
-    }
-
-    // ✅ CORREÇÃO MULTIPLAYER: Aplica campos de controle de turno e estado do jogo do snapshot autoritativo
-    if (typeof netState.turnLock === 'boolean') {
-      setTurnLock(netState.turnLock)
-      // ✅ BUG 2 FIX: Rastreia quando turnLock vira true para watchdog
-      if (netState.turnLock && !lockSinceRef.current) {
-        lockSinceRef.current = Date.now()
-      } else if (!netState.turnLock) {
-        lockSinceRef.current = null
-      }
-      // ✅ BUG 1 FIX: Log quando detectar travamento por lockOwner/turnLock
-      if (netState.turnLock && netState.lockOwner) {
-        console.log('[LOCK] bloqueado: turnLockBroadcast=true lockOwner=', netState.lockOwner, 'myId=', myUid)
-      }
-    }
-    if (netState.lockOwner !== undefined) {
-      setLockOwner(netState.lockOwner)
-      // ✅ BUG 1 FIX: Armazena lockOwner no lastLocalStateRef para preservar em próximos broadcasts
-      if (lastLocalStateRef.current) {
-        lastLocalStateRef.current.lockOwner = netState.lockOwner
-      }
-      console.log('[NET] applied remote includes lockOwner?', true, 'value:', netState.lockOwner)
-    }
+    // ✅ IMPORTANTE: turnLock/lockOwner são APENAS LOCAIS (anti-spam).
+    // Nunca aplicar do Supabase (netState) para evitar travas e rollback de turno.
     lastNetApplyAtRef.current = Date.now()
     
     // ✅ CORREÇÃO MULTIPLAYER: Aplica round do snapshot autoritativo
@@ -1041,8 +986,9 @@ export default function App() {
     
     // ✅ CORREÇÃO: Usa patch para obter valores atualizados (evita stale closure)
     const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
+    // turnLock/lockOwner são LOCAIS: ainda podem existir no patch para BroadcastChannel (mesma máquina),
+    // mas NÃO serão persistidos no Supabase.
     const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
-    // ✅ BUG 1 FIX: Preserva lockOwner atual quando patch não vem (evita zerar lock)
     const lastKnownLockOwner = lastLocalStateRef.current?.lockOwner ?? null
     const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : lastKnownLockOwner
     const patchedGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
@@ -1110,6 +1056,11 @@ export default function App() {
       return nextTurnPlayerId
     })()
     
+    // ✅ PATCH KIND: separa atualização de turno (TURN) de atualização de players (PLAYER_DELTA)
+    const patchKind =
+      patch.kind ||
+      ((patch.turnPlayerId !== undefined || nextTurnIdx !== turnIdx) ? 'TURN' : 'PLAYER_DELTA')
+
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
@@ -1120,7 +1071,7 @@ export default function App() {
       round: safeRound,
       gameOver: finalGameOver,
       winner: finalWinner,
-      lockOwner: nextLockOwner, // ✅ BUG 1 FIX: Armazena lockOwner para preservar em próximos broadcasts
+      lockOwner: nextLockOwner, // local only
       timestamp: now,
       version: currentVersion,
       stateVersion: currentVersion, // ✅ CORREÇÃO: Versionamento autoritativo
@@ -1177,21 +1128,26 @@ export default function App() {
       }
       
       // ✅ CORREÇÃO MULTIPLAYER: Usa commitGamePatch para fazer merge por delta
+      // PLAYER_DELTA nunca altera turno (turnPlayerId/turnIdx/round/roundFlags)
+      const statePatch = {
+        ...(finalGameOver ? { gameOver: true, winner: finalWinner } : {}),
+        ...(patchKind === 'TURN'
+          ? {
+              turnPlayerId: nextTurnPlayerId,
+              turnIdx: nextTurnIdx,
+              round: safeRound,
+              roundFlags: nextRoundFlags,
+              gameOver: finalGameOver,
+              winner: finalWinner,
+            }
+          : {}),
+      }
       commitGamePatch({
         playersDeltaById,
-        statePatch: {
-          turnPlayerId: safeTurnPlayerId,
-          turnIdx: nextTurnIdx,
-          round: safeRound,
-          roundFlags: nextRoundFlags,
-          turnLock: nextTurnLock,
-          lockOwner: nextLockOwner,
-          gameOver: finalGameOver,
-          winner: finalWinner
-        }
+        statePatch
       })
       
-      console.log('[App] broadcastState (PATCH) - tipo:', safeTurnPlayerId && safeTurnPlayerId !== turnPlayerId ? 'TURN' : 'PLAYER_DELTA', 
+      console.log('[App] broadcastState (PATCH) - kind:', patchKind,
                   'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
                   'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
     }
@@ -1204,6 +1160,7 @@ export default function App() {
         turnIdx: nextTurnIdx,
         round: safeRound,
         roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
+        // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
         turnLock: nextTurnLock,
         lockOwner: nextLockOwner,
         gameOver: finalGameOver,
