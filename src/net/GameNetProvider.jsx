@@ -6,12 +6,8 @@ import { supabase } from '../lib/supabaseClient.js'
 const Ctx = createContext(null)
 // ✅ CORREÇÃO: useGameNet retorna null de forma segura se não houver provider
 export const useGameNet = () => {
-  try {
-    return useContext(Ctx)
-  } catch {
-    // Se não houver provider, retorna null (não explode)
-    return null
-  }
+  // useContext NÃO lança erro sem provider; ele retorna o default do createContext (null aqui).
+  return useContext(Ctx)
 }
 
 /**

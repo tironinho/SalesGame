@@ -655,7 +655,16 @@ export default function App() {
       
       // Se foi atualizado muito recentemente pelo broadcastState, não sobrescreve
       if (timeSinceLastUpdate > 100) {
-        lastLocalStateRef.current = { players, turnIdx, round, timestamp: now }
+        // ✅ FIX: não sobrescreve o ref com um "shape" menor (isso apagava stateVersion/turnPlayerId/winner etc.)
+        lastLocalStateRef.current = {
+          ...(current || {}),
+          players,
+          turnIdx,
+          round,
+          timestamp: now,
+          // mantém stateVersion consistente caso ainda não exista no ref
+          stateVersion: (current?.stateVersion ?? stateVersionRef.current ?? 0),
+        }
         if (turnIdxChanged) {
           console.log('[App] lastLocalStateRef atualizado via useEffect - turnIdx mudou:', current?.turnIdx, '->', turnIdx)
         }
@@ -680,7 +689,8 @@ export default function App() {
     // Snapshot autoritativo: se netVersion <= lastAppliedNetVersionRef => ignore (snapshot antigo)
     // ✅ CORREÇÃO 4: Blindagem no client que recebe rollback
     if (typeof netVersion === 'number') {
-      const localStateVersion = lastLocalStateRef.current?.stateVersion ?? 0
+      // ✅ FIX: lastLocalStateRef pode ser sobrescrito por effects; stateVersionRef é a fonte local mais confiável
+      const localStateVersion = (stateVersionRef.current ?? lastLocalStateRef.current?.stateVersion ?? 0)
       const remoteStateVersion = netState?.stateVersion ?? 0
       
       // Ignora se netVersion não avançou (já aplicado)
@@ -794,35 +804,13 @@ export default function App() {
     // ✅ IMPORTANTE: turnLock/lockOwner são APENAS LOCAIS (anti-spam).
     // Nunca aplicar do Supabase (netState) para evitar travas e rollback de turno.
     lastNetApplyAtRef.current = Date.now()
-    
-    // ✅ CORREÇÃO MULTIPLAYER: Aplica round do snapshot autoritativo
-    if (nr !== null) {
-      // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
-      const isResetState = (
-        nr === 1 &&
-        (nt === 0 || nt === null) &&
-        Array.isArray(np) && np.length > 0 &&
-        np.every(p => Number(p?.pos ?? 0) === 0) &&
-        (netState.gameOver === false || netState.gameOver == null)
-      )
-      const safeNr = clampRound(nr)
-      setRound(prev => {
-        const finalRound = isResetState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr))
-        return finalRound
-      })
-    }
-    
-    // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
-    if (netState.gameOver === true || netState.winner) {
-      setRound(MAX_ROUNDS)
-    }
-    
+
     // ✅ Monotônico: gameOver nunca volta para false
     setGameOver(prev => prev || !!netState.gameOver);
     
     // ✅ Monotônico: winner nunca some depois que gameOver=true
     setWinner(prev => {
-      const willBeGameOver = (gameOver || netState.gameOver);
+      const willBeGameOver = (!!netState.gameOver || !!netState.winner);
       if (willBeGameOver && prev && (!netState.winner)) return prev;
       return netState.winner ?? prev;
     });
