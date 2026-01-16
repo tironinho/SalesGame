@@ -1091,10 +1091,13 @@ export function useTurnEngine({
               const price = Number(r2.compra || 0)
               const level = String(r2.level || 'D')
               if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
+              const cost = Math.max(0, -(-price)) // mantém padrão: custo positivo
               setPlayers(ps => {
                 const upd = ps.map((p,i)=>
                   i!==curIdx ? p : applyDeltas(p, {
                     cashDelta: -price,
+                    // ✅ BUG 2 FIX: compra de MIX vira patrimônio (bens)
+                    bensDelta: cost,
                     mixProdutosSet: level,
                     mixBaseSet: {
                       despesaPorCliente: Number(r2.despesa || 0),
@@ -1465,12 +1468,15 @@ export function useTurnEngine({
         const price = Number(res.compra || 0)
         if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
         const level = String(res.level || 'D')
+        const cost = Math.max(0, price)
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx
               ? p
               : applyDeltas(p, {
                   cashDelta: -price,
+                  // ✅ BUG 2 FIX: compra de MIX vira patrimônio (bens)
+                  bensDelta: cost,
                   mixProdutosSet: level,
                   mixBaseSet: {
                     despesaPorCliente: Number(res.despesa || 0),
@@ -1501,16 +1507,21 @@ export function useTurnEngine({
         // O modal já calculou os efeitos baseados no estado do jogador
         // Não precisamos verificar novamente aqui
 
+        // ✅ BUG 1 FIX (CRÍTICO): evita cobrar 2x quando cashDelta < 0
+        // handleInsufficientFunds já debita o requiredAmount; então não devemos aplicar o cashDelta negativo novamente.
+        let cashDeltaEffective = cashDelta
         if (cashDelta < 0) {
-          const need = -cashDelta
-          await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', nextPlayers)
+          const need = Math.abs(cashDelta)
+          const canPay = await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', nextPlayers)
+          if (!canPay) return
+          cashDeltaEffective = 0
         }
 
         setPlayers(ps => {
           const upd = ps.map((p,i) => {
             if (i !== curIdx) return p
             let next = { ...p }
-            if (cashDelta)    next.cash    = Math.max(0, (next.cash    ?? 0) + cashDelta)
+            if (cashDeltaEffective) next.cash = Math.max(0, (next.cash ?? 0) + cashDeltaEffective)
             if (clientsDelta) {
               const oldClients = next.clients || 0
               next.clients = Math.max(0, oldClients + clientsDelta)
@@ -2288,6 +2299,8 @@ export function useTurnEngine({
           return {
             ...p,
             cash: Math.max(0, (Number(p.cash) || 0) - price),
+            // ✅ BUG 2 FIX: custo da compra vira bens (patrimônio), mantendo Saldo + Bens coerente
+            bens: (Number(p.bens) || 0) + price,
             mixOwned,
             mix: mixOwned,
             mixLevel: level,

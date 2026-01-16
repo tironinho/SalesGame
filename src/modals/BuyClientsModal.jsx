@@ -80,6 +80,7 @@ export default function BuyClientsModal({
       unitAcquisition: pricePer,
       totalCost,
       unitMaintenance: mPer,
+      // ✅ EXTRA: manutenção deve ser POSITIVA (despesa mensal adicionada). O restante do jogo trata manutencao como número positivo.
       maintenanceDelta,
       bensDelta: totalCost,   // bens aumentam pelo valor da aquisição
       clientsAdded: qtyNum,   // útil para cálculos externos
