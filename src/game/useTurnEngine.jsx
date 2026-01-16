@@ -76,6 +76,26 @@ export function useTurnEngine({
   
   // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
   const openingModalRef = React.useRef(false)
+
+  // ✅ MULTIPLAYER/TURNO: fila única para serializar eventos/modais por ROLL (evita IIFEs concorrentes)
+  const eventsInProgressRef = React.useRef(false)
+  const actionQueueRef = React.useRef(Promise.resolve())
+  const enqueueAction = React.useCallback((job) => {
+    const wrapped = async () => {
+      eventsInProgressRef.current = true
+      try {
+        return await job()
+      } finally {
+        eventsInProgressRef.current = false
+      }
+    }
+    const p = actionQueueRef.current.then(wrapped, wrapped)
+    // mantém a cadeia viva mesmo se der erro
+    actionQueueRef.current = p.catch((err) => {
+      console.error('[DEBUG] actionQueue error:', err)
+    })
+    return p
+  }, [])
   
   // ✅ CORREÇÃO: Ref para rastrear se há uma mudança de turno em progresso
   const turnChangeInProgressRef = React.useRef(false)
@@ -129,6 +149,11 @@ export function useTurnEngine({
 
   // ✅ CORREÇÃO: Players ordenados (memoizado) para uso em toda a lógica
   const playersOrdered = React.useMemo(() => normalizePlayers(players), [players, normalizePlayers])
+
+  // Helpers por ID (evita bugs por índice quando players é reordenado)
+  const idxById = React.useCallback((arr, id) => (arr || []).findIndex(p => String(p?.id) === String(id)), [])
+  const getById = React.useCallback((arr, id) => (arr || []).find(p => String(p?.id) === String(id)), [])
+  const mapById = React.useCallback((arr, id, fn) => (arr || []).map(p => (String(p?.id) === String(id) ? fn(p) : p)), [])
 
   // 🔄 Sincronização de modalLocks entre jogadores
   React.useEffect(() => {
@@ -444,7 +469,8 @@ export function useTurnEngine({
 
     // ========= função recursiva para lidar com saldo insuficiente =========
     const handleInsufficientFunds = async (requiredAmount, context, action, currentPlayers = players) => {
-      const currentCash = Number(currentPlayers[curIdx]?.cash || 0)
+      const curById = getById(currentPlayers, ownerId) || {}
+      const currentCash = Number(curById?.cash || 0)
       
       if (currentCash >= requiredAmount) {
         // Processa o pagamento já que tem saldo suficiente
@@ -478,8 +504,8 @@ export function useTurnEngine({
       
       if (recoveryRes.action === 'RECOVERY') {
         // Abre modal de recuperação financeira (não pode ser fechada)
-        console.log('[DEBUG] Abrindo RecoveryModal para jogador:', currentPlayers[curIdx])
-        const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={currentPlayers[curIdx]} canClose={false} />)
+        console.log('[DEBUG] Abrindo RecoveryModal para jogador:', curById)
+        const recoveryModalRes = await openModalAndWait(<RecoveryModal currentPlayer={curById} canClose={false} />)
         console.log('[DEBUG] RecoveryModal retornou:', recoveryModalRes)
         if (recoveryModalRes) {
           // Processa a ação de recuperação
@@ -497,27 +523,25 @@ export function useTurnEngine({
             }
             console.log('[DEBUG] Deltas de demissão:', deltas)
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-            updatedPlayers = currentPlayers.map((p, i) => {
-              if (i !== curIdx) return p
+            updatedPlayers = mapById(currentPlayers, ownerId, (p) => {
               const updated = applyDeltas(p, deltas)
-              // Preserva a posição original
               return { ...updated, pos: p.pos }
             })
-            console.log('[DEBUG] Novo saldo após demissões:', updatedPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Novo saldo após demissões:', getById(updatedPlayers, ownerId)?.cash)
             setPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'LOAN') {
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
             
             // Verifica se o jogador já tem um empréstimo pendente
-            const currentLoan = currentPlayers[curIdx]?.loanPending
+            const currentLoan = (getById(currentPlayers, ownerId) || {}).loanPending
             if (currentLoan && Number(currentLoan.amount) > 0) {
               console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
               // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
               const loanModalRes = await openModalAndWait(
                 <InsufficientFundsModal
                   requiredAmount={requiredAmount}
-                  currentCash={currentPlayers[curIdx]?.cash || 0}
+                  currentCash={Number((getById(currentPlayers, ownerId) || {}).cash || 0)}
                   title="Empréstimo já realizado"
                   message={`Você já possui um empréstimo pendente de R$ ${Number(currentLoan.amount).toLocaleString()}. Cada jogador só pode ter um empréstimo por vez.`}
                   showRecoveryOptions={false}
@@ -530,7 +554,7 @@ export function useTurnEngine({
                 return false
               }
               // Processa falência
-              const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+              const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
               const alive = countAlivePlayers(updatedPlayers)
               if (alive <= 1) {
                 const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
@@ -541,7 +565,8 @@ export function useTurnEngine({
                 broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
                 return false
               }
-              const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+              const ownerIdx = idxById(updatedPlayers, ownerId)
+              const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
               // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
               const nextPlayer = updatedPlayers[nextIdx]
               const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
@@ -557,25 +582,22 @@ export function useTurnEngine({
             
             const amt = Number(recoveryModalRes.amount || 0)
             console.log('[DEBUG] Valor do empréstimo:', amt)
-            console.log('[DEBUG] Saldo atual do jogador:', currentPlayers[curIdx]?.cash)
+            console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
             // Não usa dueRound baseado em rodada, mas sim uma flag para indicar que deve ser cobrado na próxima passagem
-            updatedPlayers = currentPlayers.map((p, i) =>
-              i !== curIdx ? p : {
-                ...p,
-                cash: (Number(p.cash) || 0) + amt,
-                loanPending: { 
-                  amount: amt, 
-                  charged: false,
-                  // ✅ CORREÇÃO: Marca que o empréstimo deve ser cobrado na próxima passagem pela casa de despesas
-                  shouldChargeOnNextExpenses: true
-                },
-                pos: p.pos // ✅ CORREÇÃO: Preserva a posição
-              }
-            )
-            console.log('[DEBUG] Novo saldo do jogador:', updatedPlayers[curIdx]?.cash)
-            console.log('[DEBUG] Novo loanPending:', updatedPlayers[curIdx]?.loanPending)
+            updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
+              ...p,
+              cash: (Number(p.cash) || 0) + amt,
+              loanPending: {
+                amount: amt,
+                charged: false,
+                shouldChargeOnNextExpenses: true,
+              },
+              pos: p.pos
+            }))
+            console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
+            console.log('[DEBUG] Novo loanPending:', getById(updatedPlayers, ownerId)?.loanPending)
             setPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'REDUCE') {
@@ -593,9 +615,8 @@ export function useTurnEngine({
             }
             
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-            updatedPlayers = currentPlayers.map((p, i) => {
-              if (i !== curIdx) return p
-              let next = { ...p }
+            updatedPlayers = mapById(currentPlayers, ownerId, (p0) => {
+              let next = { ...p0 }
               
               // Inicializa mixOwned e erpOwned se não existirem
               let mixOwned = { A: false, B: false, C: false, D: false, ...(next.mixOwned || next.mix || {}) }
@@ -692,15 +713,15 @@ export function useTurnEngine({
               
               next.cash = (Number(next.cash) || 0) + totalCredit
               // ✅ CORREÇÃO: Preserva a posição original
-              next.pos = p.pos
+              next.pos = p0.pos
               
               console.log('[DEBUG] Redução aplicada - mixProdutos:', finalMixLevel, 'erpLevel:', finalErpLevel, 'crédito:', totalCredit)
               
               return next
             })
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
-            console.log('[DEBUG] Novo saldo após redução:', updatedPlayers[curIdx]?.cash)
-            console.log('[DEBUG] Novo mixProdutos:', updatedPlayers[curIdx]?.mixProdutos, 'Novo erpLevel:', updatedPlayers[curIdx]?.erpLevel)
+            console.log('[DEBUG] Novo saldo após redução:', getById(updatedPlayers, ownerId)?.cash)
+            console.log('[DEBUG] Novo mixProdutos:', getById(updatedPlayers, ownerId)?.mixProdutos, 'Novo erpLevel:', getById(updatedPlayers, ownerId)?.erpLevel)
             setPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else {
@@ -708,17 +729,15 @@ export function useTurnEngine({
           }
           
           // Verifica se agora tem saldo suficiente após a recuperação
-          const newCash = Number(updatedPlayers[curIdx]?.cash || 0)
+          const newCash = Number((getById(updatedPlayers, ownerId) || {}).cash || 0)
           console.log('[DEBUG] Verificando saldo após recuperação - Novo saldo:', newCash, 'Necessário:', requiredAmount)
           
           if (newCash >= requiredAmount) {
             console.log('[DEBUG] ✅ Saldo suficiente após recuperação! Processando pagamento de:', requiredAmount)
             // Processa o pagamento já que tem saldo suficiente
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-            const finalPlayers = updatedPlayers.map((p, i) => 
-              i !== curIdx ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
-            )
-            console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', updatedPlayers[curIdx]?.cash, 'Valor a pagar:', requiredAmount, 'Saldo após:', finalPlayers[curIdx]?.cash)
+            const finalPlayers = mapById(updatedPlayers, ownerId, (p) => ({ ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }))
+            console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', Number((getById(updatedPlayers, ownerId) || {}).cash || 0), 'Valor a pagar:', requiredAmount, 'Saldo após:', Number((getById(finalPlayers, ownerId) || {}).cash || 0))
             setPlayers(finalPlayers)
             broadcastState(finalPlayers, turnIdx, currentRoundRef.current)
             return true
@@ -733,7 +752,7 @@ export function useTurnEngine({
         }
       } else if (recoveryRes.action === 'BANKRUPT') {
         // Processa falência
-        const updatedPlayers = currentPlayers.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
+        const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
         const alive = countAlivePlayers(updatedPlayers)
         if (alive <= 1) {
           const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
@@ -744,7 +763,8 @@ export function useTurnEngine({
           broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
           return false
         }
-        const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
+        const ownerIdx = idxById(updatedPlayers, ownerId)
+        const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
         // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
         const nextPlayer = updatedPlayers[nextIdx]
         const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
@@ -1022,9 +1042,7 @@ export function useTurnEngine({
         const price = Number(res.values?.compra || 0)
         if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level })
-          )
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level }))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais (não nextTurnIdx/nextRound) para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -1055,14 +1073,12 @@ export function useTurnEngine({
         if (!res || res.action !== 'BUY') return
         const trainCost = Number(res.grandTotal || 0)
         if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
-          setPlayers(ps => {
-            const upd = ps.map((p, i) =>
-              i !== curIdx ? p : applyTrainingPurchase(p, res)
-            )
-            // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-            broadcastState(upd, turnIdx, currentRoundRef.current)
-            return upd
-          })
+        setPlayers(ps => {
+          const upd = mapById(ps, ownerId, (p) => applyTrainingPurchase(p, res))
+          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+          broadcastState(upd, turnIdx, currentRoundRef.current)
+          return upd
+        })
       })()
     }
 
@@ -1093,8 +1109,7 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
               const cost = Math.max(0, -(-price)) // mantém padrão: custo positivo
               setPlayers(ps => {
-                const upd = ps.map((p,i)=>
-                  i!==curIdx ? p : applyDeltas(p, {
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
                     cashDelta: -price,
                     // ✅ BUG 2 FIX: compra de MIX vira patrimônio (bens)
                     bensDelta: cost,
@@ -1103,8 +1118,7 @@ export function useTurnEngine({
                       despesaPorCliente: Number(r2.despesa || 0),
                       faturamentoPorCliente: Number(r2.faturamento || 0),
                     }
-                  })
-                )
+                  }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1125,7 +1139,7 @@ export function useTurnEngine({
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
               const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0)
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
                   cashDelta,
                   gestoresDelta: qty,
                   manutencaoDelta: mexp
@@ -1144,7 +1158,7 @@ export function useTurnEngine({
               if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
               const qty  = Number(r2.headcount ?? r2.qty ?? 1)
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1165,7 +1179,7 @@ export function useTurnEngine({
               const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1186,7 +1200,7 @@ export function useTurnEngine({
               const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, deltas))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1206,7 +1220,7 @@ export function useTurnEngine({
               const price = Number(r2.values?.compra || 0)
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1223,7 +1237,7 @@ export function useTurnEngine({
               const mAdd  = Number(r2.maintenanceDelta || 0)
               const bensD = Number(r2.bensDelta || cost)
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyDeltas(p, {
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
                   cashDelta: -cost,
                   clientsDelta: qty,
                   manutencaoDelta: mAdd,
@@ -1256,7 +1270,7 @@ export function useTurnEngine({
               const trainCost = Number(r2.grandTotal || 0)
               if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
-                const upd = ps.map((p,i)=> i!==curIdx ? p : applyTrainingPurchase(p, r2))
+                const upd = mapById(ps, ownerId, (p) => applyTrainingPurchase(p, r2))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1330,9 +1344,7 @@ export function useTurnEngine({
         if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
         const qty  = Number(res.headcount ?? res.qty ?? 1)
         setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty })
-          )
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -1387,9 +1399,7 @@ export function useTurnEngine({
         if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
         const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
         setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp })
-          )
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp }))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -1414,9 +1424,7 @@ export function useTurnEngine({
           const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
           if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Field Sales')) { setTurnLockBroadcast(false); return }
           setPlayers(ps => {
-            const upd = ps.map((p, i) =>
-              i !== curIdx ? p : applyDeltas(p, deltas)
-            )
+            const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
             // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
             broadcastState(upd, turnIdx, currentRoundRef.current)
             return upd
@@ -1442,9 +1450,7 @@ export function useTurnEngine({
         const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
         if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx ? p : applyDeltas(p, deltas)
-          )
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -1491,189 +1497,143 @@ export function useTurnEngine({
       })()
     }
 
-    // Sorte & Revés
+    // ====== EVENTOS SEQUENCIAIS POR ROLL (sem IIFEs concorrentes) ======
+    // Ordem garantida: eventos cruzados (Faturamento/Despesas) -> evento da casa final (Sorte & Revés)
     const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
-    if (isLuckMisfortuneTile && isMyTurn && pushModal && awaitTop) {
-      openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
-      ;(async () => {
-        const res = await openModalAndWait(<SorteRevesModal />)
-        if (!res || res.action !== 'APPLY_CARD') return
-
-        const meNow = nextPlayers[curIdx] || players.find(isMine) || {}
-
-        let cashDelta    = Number.isFinite(res.cashDelta)    ? Number(res.cashDelta)    : 0
-        let clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
-
-        // O modal já calculou os efeitos baseados no estado do jogador
-        // Não precisamos verificar novamente aqui
-
-        // ✅ BUG 1 FIX (CRÍTICO): evita cobrar 2x quando cashDelta < 0
-        // handleInsufficientFunds já debita o requiredAmount; então não devemos aplicar o cashDelta negativo novamente.
-        let cashDeltaEffective = cashDelta
-        if (cashDelta < 0) {
-          const need = Math.abs(cashDelta)
-          const canPay = await handleInsufficientFunds(need, 'Sorte & Revés', 'pagar', nextPlayers)
-          if (!canPay) return
-          cashDeltaEffective = 0
-        }
-
-        setPlayers(ps => {
-          const upd = ps.map((p,i) => {
-            if (i !== curIdx) return p
-            let next = { ...p }
-            if (cashDeltaEffective) next.cash = Math.max(0, (next.cash ?? 0) + cashDeltaEffective)
-            if (clientsDelta) {
-              const oldClients = next.clients || 0
-              next.clients = Math.max(0, oldClients + clientsDelta)
-              console.log('[DEBUG] SorteReves - Clientes alterados:', oldClients, '->', next.clients, 'delta:', clientsDelta)
-            }
-            if (res.gainSpecialCell) {
-              next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
-              next.support    = (next.support    || 0) + (res.gainSpecialCell.support    || 0)
-              next.gestores   = (next.gestores   || 0) + (res.gainSpecialCell.manager    || 0)
-              next.gestoresComerciais = (next.gestoresComerciais || 0) + (res.gainSpecialCell.manager || 0)
-              next.managers   = (next.managers   || 0) + (res.gainSpecialCell.manager    || 0)
-            }
-            if (res.id === 'casa_change_cert_blue') {
-              next.az = (next.az || 0) + 1
-              const curSet = new Set((next.trainingsByVendor?.comum || []))
-              curSet.add('personalizado')
-              next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
-            }
-            return next
-          })
-          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, currentRoundRef.current)
-          return upd
-        })
-
-        const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
-        if (anyDerived) {
-          const me2 = nextPlayers[curIdx] || players.find(isMine) || {}
-          let extra = 0
-          if (res.perClientBonus)           extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
-          if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
-          if (res.mixLevelBonusABOnly) {
-            const level = String(me2.mixProdutos || '').toUpperCase()
-            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
-          }
-          if (extra) {
-            setPlayers(ps => {
-              const upd = ps.map((p,i) => i===curIdx ? { ...p, cash: (Number(p.cash)||0) + extra } : p)
-              // ✅ CORREÇÃO: Usa turnIdx e round atuais para bônus durante o turno
-              broadcastState(upd, turnIdx, currentRoundRef.current); return upd
-            })
-          }
-        }
-      })()
-    }
-
-    // === AUTO-MODAIS (Faturamento / Despesas) ===
-    if (crossedStart1 && isMyTurn && pushModal && awaitTop) {
-      // ✅ CORREÇÃO A.1: Idempotência por jogada (evita reabrir modal no mesmo pendingTurnDataRef)
+    const canRunSequenced = isMyTurn && !!pushModal && !!awaitTop
+    if (canRunSequenced && (crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile)) {
       const td = pendingTurnDataRef.current
       td._once = td._once || {}
-      if (!td._once.faturamento) {
-        td._once.faturamento = true
-        openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
-        const meNow = nextPlayers[curIdx] || {}
-        const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
-        ;(async () => {
-          await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
-          setPlayers(ps => {
-            const upd = ps.map((p,i)=> i!==curIdx ? p : { ...p, cash: (p.cash||0) + fat })
-            // ✅ CORREÇÃO: Usa turnIdx e round atuais para faturamento durante o turno
-            broadcastState(upd, turnIdx, currentRoundRef.current); return upd
-          })
-          appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
-          try { setTimeout(() => closeTop?.({ action:'AUTO_CLOSE_BELOW' }), 0) } catch {}
-        })()
-      } else {
-        console.log('[MODAL] skip duplicate faturamento (tdId=' + (td?.timestamp || 'unknown') + ')')
+
+      const forwardDist = (from, to, len) => {
+        const d = (to - from + len) % len
+        return d === 0 ? len : d
       }
-    }
 
-    if (crossedExpenses23 && isMyTurn && pushModal && awaitTop) {
-      // ✅ CORREÇÃO A.1: Idempotência por jogada (evita reabrir modal no mesmo pendingTurnDataRef)
-      const td = pendingTurnDataRef.current
-      td._once = td._once || {}
-      if (!td._once.expenses23) {
+      const events = []
+      if (crossedStart1 && !td._once.faturamento) {
+        td._once.faturamento = true
+        events.push({ type: 'REVENUE', at: forwardDist(oldPos, 0, TRACK_LEN) })
+      }
+      if (crossedExpenses23 && !td._once.expenses23) {
         td._once.expenses23 = true
-        openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
-        console.log('[DEBUG] 💰 DESPESAS OPERACIONAIS - Jogador:', nextPlayers[curIdx]?.name, 'Posição atual:', nextPlayers[curIdx]?.pos)
-        const meNow = nextPlayers[curIdx] || {}
-        const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
+        events.push({ type: 'EXPENSES', at: forwardDist(oldPos, 22, TRACK_LEN) })
+      }
+      if (isLuckMisfortuneTile && !td._once.luck) {
+        td._once.luck = true
+        events.push({ type: 'LUCK', at: steps })
+      }
 
-        const lp = meNow.loanPending || {}
-        // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
-        // Verifica se há empréstimo pendente e se deve ser cobrado nesta passagem
-        const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
-        const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+      events.sort((a, b) => a.at - b.at)
 
-        console.log('[DEBUG] 💰 DESPESAS - Valor:', expense, 'Empréstimo a cobrar:', loanCharge, 'Total:', expense + loanCharge)
-        console.log('[DEBUG] 💰 EMPRÉSTIMO - Detalhes:', {
-          amount: Number(lp.amount),
-          charged: lp.charged,
-          shouldChargeOnNextExpenses: lp.shouldChargeOnNextExpenses,
-          currentRound: round,
-          shouldCharge: shouldChargeLoan
-        })
+      enqueueAction(async () => {
+        let localPlayers = Array.isArray(playersRef.current) ? playersRef.current : nextPlayers
+        for (const ev of events) {
+          const meNow = getById(localPlayers, ownerId) || {}
+          if (!meNow?.id) break
 
-        ;(async () => {
-          await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
-        const totalCharge = expense + loanCharge
-        
-        console.log('[DEBUG] 💰 ANTES handleInsufficientFunds - Saldo atual:', nextPlayers[curIdx]?.cash, 'Total a pagar:', totalCharge, 'Posição:', nextPlayers[curIdx]?.pos)
-        // ✅ CORREÇÃO: Preserva a posição do jogador ao passar nextPlayers
-        const canPayExpenses = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', nextPlayers)
-        console.log('[DEBUG] 💰 APÓS handleInsufficientFunds - canPayExpenses:', canPayExpenses, 'Posição atual:', nextPlayers[curIdx]?.pos)
-        if (!canPayExpenses) {
-          // ✅ CORREÇÃO: Não libera o turno aqui - deixa o tick() gerenciar
-          // O handleInsufficientFunds já gerencia o turno quando necessário (falência, etc)
-          console.log('[DEBUG] 💰 canPayExpenses é false - não liberando turno aqui, deixando tick() gerenciar')
-          return
-        }
-        
-        // O handleInsufficientFunds já processou o pagamento, não precisa duplicar
-        // Apenas marca o empréstimo como cobrado se necessário
-        if (shouldChargeLoan) {
-          setPlayers(ps => {
-            const upd = ps.map((p,i)=>{
-              if (i!==curIdx) return p
-              const next = { ...p }
-              // ✅ CORREÇÃO: Marca o empréstimo como cobrado e remove a flag de cobrança
-              next.loanPending = { 
-                ...(p.loanPending||{}), 
-                charged: true, 
-                chargedAtRound: round,
-                shouldChargeOnNextExpenses: false // ✅ CORREÇÃO: Remove flag após cobrar
+          if (ev.type === 'REVENUE') {
+            openingModalRef.current = true
+            const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
+            await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
+            localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + fat }))
+            setPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
+            continue
+          }
+
+          if (ev.type === 'EXPENSES') {
+            openingModalRef.current = true
+            const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
+            const lp = meNow.loanPending || {}
+            const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
+            const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+
+            await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
+            const totalCharge = expense + loanCharge
+            const ok = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', localPlayers)
+            if (!ok) return
+
+            // Sincroniza snapshot local (handleInsufficientFunds pode ter feito recovery)
+            localPlayers = Array.isArray(playersRef.current) ? playersRef.current : localPlayers
+
+            if (shouldChargeLoan) {
+              localPlayers = mapById(localPlayers, ownerId, (p) => ({
+                ...p,
+                loanPending: {
+                  ...(p.loanPending || {}),
+                  charged: true,
+                  chargedAtRound: currentRoundRef.current,
+                  shouldChargeOnNextExpenses: false,
+                },
+              }))
+              setPlayers(localPlayers)
+              broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            }
+
+            appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
+            if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+            continue
+          }
+
+          if (ev.type === 'LUCK') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<SorteRevesModal />)
+            if (!res || res.action !== 'APPLY_CARD') continue
+
+            let cashDelta = Number.isFinite(res.cashDelta) ? Number(res.cashDelta) : 0
+            const clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
+
+            // ✅ Revés sem cash: usa recuperação e, se falhar, pode levar a falência (handleInsufficientFunds retorna false)
+            if (cashDelta < 0) {
+              const ok = await handleInsufficientFunds(Math.abs(cashDelta), 'Sorte & Revés', 'pagar', localPlayers)
+              if (!ok) return
+              cashDelta = 0 // ✅ evita cobrar 2x
+              localPlayers = Array.isArray(playersRef.current) ? playersRef.current : localPlayers
+            }
+
+            localPlayers = mapById(localPlayers, ownerId, (p) => {
+              let next = { ...p }
+              if (cashDelta) next.cash = Math.max(0, (Number(next.cash) || 0) + cashDelta)
+              if (clientsDelta) next.clients = Math.max(0, (Number(next.clients) || 0) + clientsDelta)
+              if (res.gainSpecialCell) {
+                next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
+                next.support = (next.support || 0) + (res.gainSpecialCell.support || 0)
+                next.gestores = (next.gestores || 0) + (res.gainSpecialCell.manager || 0)
+                next.gestoresComerciais = (next.gestoresComerciais || 0) + (res.gainSpecialCell.manager || 0)
+                next.managers = (next.managers || 0) + (res.gainSpecialCell.manager || 0)
               }
-              // ✅ CORREÇÃO: Preserva a posição original do nextPlayers
-              next.pos = nextPlayers[curIdx]?.pos ?? p.pos
+              if (res.id === 'casa_change_cert_blue') {
+                next.az = (next.az || 0) + 1
+                const curSet = new Set((next.trainingsByVendor?.comum || []))
+                curSet.add('personalizado')
+                next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
+              }
               return next
             })
-            // ✅ CORREÇÃO: Usa turnIdx e round atuais para despesas durante o turno
-            broadcastState(upd, turnIdx, currentRoundRef.current); return upd
-          })
+            setPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+
+            const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
+            if (anyDerived) {
+              const me2 = getById(localPlayers, ownerId) || {}
+              let extra = 0
+              if (res.perClientBonus) extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
+              if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
+              if (res.mixLevelBonusABOnly) {
+                const level = String(me2.mixProdutos || '').toUpperCase()
+                if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
+              }
+              if (extra) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + extra }))
+                setPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+              }
+            }
+          }
         }
-        appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
-        if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
-        // ✅ CORREÇÃO: Garante que a posição seja preservada após o processamento
-        setPlayers(ps => {
-          const upd = ps.map((p, i) => {
-            if (i !== curIdx) return p
-            // Preserva a posição original do nextPlayers
-            return { ...p, pos: nextPlayers[curIdx]?.pos ?? p.pos }
-          })
-          console.log('[DEBUG] 💰 DESPESAS FINALIZADAS - Jogador:', upd[curIdx]?.name, 'Posição final:', upd[curIdx]?.pos, 'Saldo final:', upd[curIdx]?.cash)
-          return upd
-        })
-        // ✅ CORREÇÃO: Não precisa fechar modal aqui - a modal de despesas já foi fechada pelo openModalAndWait
-        // O closeTop pode causar problemas com o modalLocks
-        })()
-      } else {
-        console.log('[MODAL] skip duplicate expenses23 (tdId=' + (td?.timestamp || 'unknown') + ')')
-      }
+      })
     }
 
     // fail-safe: solta o cadeado quando todas as modais fecharem
@@ -1704,7 +1664,7 @@ export function useTurnEngine({
       }
       
       const currentModalLocks = modalLocksRef.current
-      const currentOpening = openingModalRef.current
+      const currentOpening = openingModalRef.current || eventsInProgressRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
       
@@ -2227,8 +2187,9 @@ export function useTurnEngine({
       };
 
       const curIdx = turnIdx;
+      const ownerIdNow = String(players[curIdx]?.id ?? '')
       setPlayers(ps => {
-        const upd = ps.map((p, i) => (i !== curIdx ? p : applyDeltas(p, deltas)));
+        const upd = ownerIdNow ? mapById(ps, ownerIdNow, (p) => applyDeltas(p, deltas)) : ps
         broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
