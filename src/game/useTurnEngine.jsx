@@ -1229,22 +1229,32 @@ export function useTurnEngine({
           }
 
           if (open === 'CLIENTS') {
-            const r2 = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+            const buyerCash = Number(nextPlayers.find(p => String(p.id) === ownerId)?.cash ?? myCash)
+            const r2 = await openModalAndWait(<ClientsModal currentCash={buyerCash} />)
             if (r2 && r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
-              if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+              if (buyerCash < cost) {
+                appendLog('Saldo insuficiente para comprar Clientes.')
+                setTurnLockBroadcast(false)
+                return
+              }
               const qty   = Number(r2.qty || 0)
               const mAdd  = Number(r2.maintenanceDelta || 0)
               const bensD = Number(r2.bensDelta || cost)
+
               setPlayers(ps => {
-                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
-                  cashDelta: -cost,
-                  clientsDelta: qty,
-                  manutencaoDelta: mAdd,
-                  bensDelta: bensD
-                }))
-                // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-                broadcastState(upd, turnIdx, currentRoundRef.current); return upd
+                const upd = ps.map(p =>
+                  String(p.id) !== ownerId
+                    ? p
+                    : applyDeltas(p, {
+                        cashDelta: -cost,
+                        clientsDelta: qty,
+                        manutencaoDelta: mAdd,
+                        bensDelta: bensD
+                      })
+                )
+                broadcastState(upd, turnIdx, currentRoundRef.current)
+                return upd
               })
             }
             return
@@ -1291,14 +1301,15 @@ export function useTurnEngine({
 
           if (isClientsBuy) {
             const cost  = Number(res.totalCost ?? res.total ?? res.amount ?? 0)
-            if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+            const buyerCash = Number(nextPlayers.find(p => String(p.id) === ownerId)?.cash ?? myCash)
+            if (buyerCash < cost) { appendLog('Saldo insuficiente para comprar Clientes.'); setTurnLockBroadcast(false); return }
             const qty   = Number(res.clientsQty ?? res.numClients ?? res.qty ?? 0)
             const mAdd  = Number(res.maintenanceDelta ?? res.maintenance ?? res.mexp ?? 0)
             const bensD = Number(res.bensDelta ?? cost)
 
             setPlayers(ps => {
-              const upd = ps.map((p, i) =>
-                i !== curIdx
+              const upd = ps.map(p =>
+                String(p.id) !== ownerId
                   ? p
                   : applyDeltas(p, {
                       cashDelta: -cost,
@@ -1357,16 +1368,24 @@ export function useTurnEngine({
     if (isClientsTile && isMyTurn && pushModal && awaitTop) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const res = await openModalAndWait(<ClientsModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        const buyerCash = Number(nextPlayers.find(p => String(p.id) === ownerId)?.cash ?? myCash)
+        const res = await openModalAndWait(<ClientsModal currentCash={buyerCash} />)
         if (!res || res.action !== 'BUY') return
+
         const cost  = Number(res.totalCost || 0)
-        if (!requireFunds(curIdx, cost, 'comprar Clientes')) { setTurnLockBroadcast(false); return }
+        if (buyerCash < cost) {
+          appendLog('Saldo insuficiente para comprar Clientes.')
+          setTurnLockBroadcast(false)
+          return
+        }
+
         const qty   = Number(res.qty || 0)
         const mAdd  = Number(res.maintenanceDelta || 0)
         const bensD = Number(res.bensDelta || cost)
+
         setPlayers(ps => {
-          const upd = ps.map((p, i) =>
-            i !== curIdx
+          const upd = ps.map(p =>
+            String(p.id) !== ownerId
               ? p
               : applyDeltas(p, {
                   cashDelta: -cost,
@@ -1375,7 +1394,6 @@ export function useTurnEngine({
                   bensDelta: bensD
                 })
           )
-          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
         })
