@@ -76,7 +76,7 @@ export function useTurnEngine({
   
   // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
   const openingModalRef = React.useRef(false)
-
+  
   // ✅ MULTIPLAYER/TURNO: fila única para serializar eventos/modais por ROLL (evita IIFEs concorrentes)
   const eventsInProgressRef = React.useRef(false)
   const actionQueueRef = React.useRef(Promise.resolve())
@@ -587,11 +587,11 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
             // Não usa dueRound baseado em rodada, mas sim uma flag para indicar que deve ser cobrado na próxima passagem
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
-              ...p,
-              cash: (Number(p.cash) || 0) + amt,
-              loanPending: {
-                amount: amt,
-                charged: false,
+                ...p,
+                cash: (Number(p.cash) || 0) + amt,
+                loanPending: { 
+                  amount: amt, 
+                  charged: false,
                 shouldChargeOnNextExpenses: true,
               },
               pos: p.pos
@@ -1073,12 +1073,12 @@ export function useTurnEngine({
         if (!res || res.action !== 'BUY') return
         const trainCost = Number(res.grandTotal || 0)
         if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
-        setPlayers(ps => {
+          setPlayers(ps => {
           const upd = mapById(ps, ownerId, (p) => applyTrainingPurchase(p, res))
-          // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
-          broadcastState(upd, turnIdx, currentRoundRef.current)
-          return upd
-        })
+            // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
+            broadcastState(upd, turnIdx, currentRoundRef.current)
+            return upd
+          })
       })()
     }
 
@@ -1247,10 +1247,10 @@ export function useTurnEngine({
                   String(p.id) !== ownerId
                     ? p
                     : applyDeltas(p, {
-                        cashDelta: -cost,
-                        clientsDelta: qty,
-                        manutencaoDelta: mAdd,
-                        bensDelta: bensD
+                  cashDelta: -cost,
+                  clientsDelta: qty,
+                  manutencaoDelta: mAdd,
+                  bensDelta: bensD
                       })
                 )
                 broadcastState(upd, turnIdx, currentRoundRef.current)
@@ -1597,14 +1597,18 @@ export function useTurnEngine({
 
           if (ev.type === 'LUCK') {
             openingModalRef.current = true
-            const res = await openModalAndWait(<SorteRevesModal />)
+            const curPlayer =
+              getById(Array.isArray(playersRef.current) ? playersRef.current : localPlayers, ownerId) ||
+              getById(localPlayers, ownerId) ||
+              meNow
+            const res = await openModalAndWait(<SorteRevesModal player={curPlayer} />)
             if (!res || res.action !== 'APPLY_CARD') continue
 
             let cashDelta = Number.isFinite(res.cashDelta) ? Number(res.cashDelta) : 0
             const clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
 
             // ✅ Revés sem cash: usa recuperação e, se falhar, pode levar a falência (handleInsufficientFunds retorna false)
-            if (cashDelta < 0) {
+        if (cashDelta < 0) {
               const ok = await handleInsufficientFunds(Math.abs(cashDelta), 'Sorte & Revés', 'pagar', localPlayers)
               if (!ok) return
               cashDelta = 0 // ✅ evita cobrar 2x
@@ -1612,38 +1616,38 @@ export function useTurnEngine({
             }
 
             localPlayers = mapById(localPlayers, ownerId, (p) => {
-              let next = { ...p }
+            let next = { ...p }
               if (cashDelta) next.cash = Math.max(0, (Number(next.cash) || 0) + cashDelta)
               if (clientsDelta) next.clients = Math.max(0, (Number(next.clients) || 0) + clientsDelta)
-              if (res.gainSpecialCell) {
-                next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
+            if (res.gainSpecialCell) {
+              next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
                 next.support = (next.support || 0) + (res.gainSpecialCell.support || 0)
                 next.gestores = (next.gestores || 0) + (res.gainSpecialCell.manager || 0)
-                next.gestoresComerciais = (next.gestoresComerciais || 0) + (res.gainSpecialCell.manager || 0)
+              next.gestoresComerciais = (next.gestoresComerciais || 0) + (res.gainSpecialCell.manager || 0)
                 next.managers = (next.managers || 0) + (res.gainSpecialCell.manager || 0)
-              }
-              if (res.id === 'casa_change_cert_blue') {
-                next.az = (next.az || 0) + 1
-                const curSet = new Set((next.trainingsByVendor?.comum || []))
-                curSet.add('personalizado')
-                next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
-              }
-              return next
-            })
+            }
+            if (res.id === 'casa_change_cert_blue') {
+              next.az = (next.az || 0) + 1
+              const curSet = new Set((next.trainingsByVendor?.comum || []))
+              curSet.add('personalizado')
+              next.trainingsByVendor = { ...(next.trainingsByVendor || {}), comum: Array.from(curSet) }
+            }
+            return next
+          })
             setPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
 
-            const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
-            if (anyDerived) {
+        const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
+        if (anyDerived) {
               const me2 = getById(localPlayers, ownerId) || {}
-              let extra = 0
+          let extra = 0
               if (res.perClientBonus) extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
-              if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
-              if (res.mixLevelBonusABOnly) {
-                const level = String(me2.mixProdutos || '').toUpperCase()
-                if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
-              }
-              if (extra) {
+          if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
+          if (res.mixLevelBonusABOnly) {
+            const level = String(me2.mixProdutos || '').toUpperCase()
+            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
+          }
+          if (extra) {
                 localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + extra }))
                 setPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)

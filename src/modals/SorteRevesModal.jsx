@@ -24,7 +24,27 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
   const get = (v, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d
   const hasYellowCert = (p) => get(p.am, 0) > 0
   const hasBlueCert   = (p) => get(p.az, 0) > 0
-  const hasPurpleCert = (p) => get(p.rox, 0) > 0
+  // ✅ robusto: certificado roxo pode vir em chaves diferentes dependendo do estado
+  const hasPurpleCert = (p) => {
+    const v =
+      p?.certPurple ??
+      p?.certs?.purple ??
+      p?.certificates?.purple ??
+      p?.cert_roxo ??
+      p?.rox ??
+      0
+    return v === true || Number(v) > 0
+  }
+  const getMixLevel = (p) => {
+    const lvl =
+      p?.mixLevel ??
+      p?.mixProdutos?.level ??
+      p?.mixProdutos ??
+      p?.mix ??
+      'D'
+    return String(lvl || 'D').toUpperCase()
+  }
+  const hasMixA = (p) => getMixLevel(p) === 'A'
   const erpLevelA     = (p) => String(p.erpLevel || p.erpSistemas || 'D').toUpperCase() === 'A'
   const mixIsAB       = (p) => {
     const lvl = String(p.mixProdutos || 'D').toUpperCase()
@@ -127,9 +147,10 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
       text:'Multa governamental. Pague R$ 3.000,00.',
       cashDelta:-3000 },
 
-    { id:'office_renovation', kind:'REVES', title:'Renovação Custosa',
-      text:'Gastos de obra. Pague R$ 7.000,00.',
-      cashDelta:-7000 },
+    // ✅ REVÉS solicitado: paga 7000 se NÃO tiver Mix nível A
+    { id:'no_mix_a_pay_7000', kind:'REVES', title:'Mix A Ausente',
+      text:'Se não tiver Mix nível A, pague R$ 7.000,00.',
+      _compute:(p)=>({ cashDelta: hasMixA(p) ? 0 : -7000 }) },
 
     { id:'env_fine_20k', kind:'REVES', title:'Impacto Ambiental',
       text:'Multa ambiental. Pague R$ 20.000,00.',
