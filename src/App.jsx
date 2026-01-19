@@ -384,23 +384,24 @@ export default function App() {
                 }
               }
               
-              // Se não há compras locais, aceita snapshot remoto mas preserva o maior valor de recursos
+              // Se não há compras locais, aceita snapshot remoto COMO AUTORITATIVO.
+              // ⚠️ Nunca usar Math.max em cash/recursos aqui, senão multas/pagamentos "voltam" em testes com múltiplas abas.
               return {
                 ...syncedPlayer, // Aceita estado sincronizado autoritativo (pos, bankrupt, etc)
-                // Preserva o maior valor de recursos
-                cash: Math.max(Number(localPlayer.cash || 0), Number(syncedPlayer.cash || 0)),
-                clients: Math.max(localClients, remoteClients),
-                mixProdutos: localPlayer.mixProdutos ?? syncedPlayer.mixProdutos,
-                erpLevel: localPlayer.erpLevel ?? syncedPlayer.erpLevel,
-                vendedoresComuns: Math.max(localVendedores, remoteVendedores),
-                fieldSales: Math.max(localFieldSales, remoteFieldSales),
-                insideSales: Math.max(localInsideSales, remoteInsideSales),
-                gestores: Math.max(Number(localPlayer.gestores ?? localPlayer.gestoresComerciais ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0)),
-                gestoresComerciais: Math.max(Number(localPlayer.gestoresComerciais ?? localPlayer.gestores ?? localPlayer.managers ?? 0), Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0)),
-                managers: Math.max(Number(localPlayer.managers ?? localPlayer.gestores ?? localPlayer.gestoresComerciais ?? 0), Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0)),
-                bens: Math.max(Number(localPlayer.bens || 0), Number(syncedPlayer.bens || 0)),
-                manutencao: localPlayer.manutencao ?? syncedPlayer.manutencao,
-                loanPending: localPlayer.loanPending ?? syncedPlayer.loanPending,
+                // Recursos autoritativos (do snapshot recebido)
+                cash: Number(syncedPlayer.cash || 0),
+                clients: remoteClients,
+                mixProdutos: syncedPlayer.mixProdutos,
+                erpLevel: syncedPlayer.erpLevel,
+                vendedoresComuns: remoteVendedores,
+                fieldSales: remoteFieldSales,
+                insideSales: remoteInsideSales,
+                gestores: Number(syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? syncedPlayer.managers ?? 0),
+                gestoresComerciais: Number(syncedPlayer.gestoresComerciais ?? syncedPlayer.gestores ?? syncedPlayer.managers ?? 0),
+                managers: Number(syncedPlayer.managers ?? syncedPlayer.gestores ?? syncedPlayer.gestoresComerciais ?? 0),
+                bens: Number(syncedPlayer.bens || 0),
+                manutencao: syncedPlayer.manutencao,
+                loanPending: syncedPlayer.loanPending,
                 // Preserva dados de progresso local
                 az: localPlayer.az || syncedPlayer.az || 0,
                 am: localPlayer.am || syncedPlayer.am || 0,
