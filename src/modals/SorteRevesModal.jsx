@@ -178,7 +178,7 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
       cashDelta:-5000 },
 
     { id:'discount_pressure_1k', kind:'REVES', title:'Descontos Forçados',
-      text:'Sem certificado verde: perca R$ 1.000,00 de lucro.',
+      text:'Pressão por descontos reduziu sua margem. Pague R$ 1.000,00.',
       cashDelta:-1000 },
 
     { id:'domino_2k', kind:'REVES', title:'Efeito Dominó',

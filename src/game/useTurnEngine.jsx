@@ -1772,6 +1772,11 @@ export function useTurnEngine({
           const turnData = pendingTurnDataRef.current
           console.log('[DEBUG] 🔍 tick - verificando pendingTurnDataRef:', turnData ? `próximo turno: ${turnData.nextTurnIdx}` : 'null')
           if (turnData) {
+            const latestPlayers =
+              (Array.isArray(playersRef.current) && playersRef.current.length)
+                ? playersRef.current
+                : (turnData.nextPlayers || [])
+
             // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
             const finalModalLocks = modalLocksRef.current
             const finalOpening = openingModalRef.current
@@ -1798,13 +1803,13 @@ export function useTurnEngine({
                 console.log('[ENDGAME] detectado: fim da 5ª - currentRound:', currentRoundRef.current, 'shouldIncrementRound:', turnData.shouldIncrementRound, 'nextRound:', turnData.nextRound)
                 
                 // Chama maybeFinishGame para calcular vencedor
-                const finishResult = maybeFinishGame(turnData.nextPlayers, turnData.nextRound, turnIdx)
+                const finishResult = maybeFinishGame(latestPlayers, turnData.nextRound, turnIdx)
                 
                 if (finishResult.finished) {
                   console.log('[DEBUG] 🏁 FIM DE JOGO finalizando - Rodada:', finishResult.finalRound, 'Vencedor:', finishResult.winner?.name || null)
                   
                   // Atualiza estado local
-                  setPlayers(turnData.nextPlayers)
+                  setPlayers(latestPlayers)
                   setWinner(finishResult.winner)
                   setGameOver(true)
                   setRound(finishResult.finalRound)
@@ -1819,7 +1824,7 @@ export function useTurnEngine({
                   patch.winner = finishResult.winner
                   
                   // Broadcast estado final (não muda turnIdx ao encerrar)
-                  broadcastState(turnData.nextPlayers, turnIdx, finishResult.finalRound, true, finishResult.winner, patch)
+                  broadcastState(latestPlayers, turnIdx, finishResult.finalRound, true, finishResult.winner, patch)
                   
                   // Limpa estado e libera lock
                   pendingTurnDataRef.current = null
@@ -1865,7 +1870,7 @@ export function useTurnEngine({
               if (turnData.nextTurnPlayerId) {
                 patch.turnPlayerId = turnData.nextTurnPlayerId // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId autoritativo
               }
-              broadcastState(turnData.nextPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
+              broadcastState(latestPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
               turnChangeInProgressRef.current = false
