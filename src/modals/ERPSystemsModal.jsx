@@ -2,12 +2,13 @@
 import React, { useEffect, useRef } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import { ERP_RULES } from '../game/gameRules'
 
 const LEVELS = {
-  A: { compra: 10000, despesa: 400, faturamento: 1000, color:'#1d4ed8', pill:'NÍVEL A' },
-  B: { compra: 4000,  despesa: 200, faturamento: 500,  color:'#16a34a', pill:'NÍVEL B' },
-  C: { compra: 1500,  despesa: 100, faturamento: 200,  color:'#f59e0b', pill:'NÍVEL C' },
-  D: { compra: 500,   despesa:  50, faturamento:  70,  color:'#6b7280', pill:'NÍVEL D' } // agora comprável
+  A: { compra: 10000, despesa: ERP_RULES.A.desp, faturamento: ERP_RULES.A.fat, color:'#1d4ed8', pill:'NÍVEL A' },
+  B: { compra: 4000,  despesa: ERP_RULES.B.desp, faturamento: ERP_RULES.B.fat, color:'#16a34a', pill:'NÍVEL B' },
+  C: { compra: 1500,  despesa: ERP_RULES.C.desp, faturamento: ERP_RULES.C.fat, color:'#f59e0b', pill:'NÍVEL C' },
+  D: { compra: 500,   despesa: ERP_RULES.D.desp, faturamento: ERP_RULES.D.fat, color:'#6b7280', pill:'NÍVEL D' } // agora comprável
 }
 
 /**

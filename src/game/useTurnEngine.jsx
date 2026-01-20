@@ -43,6 +43,16 @@ import {
   findNextAliveIdx,
 } from './gameMath'
 
+// ===== Engine V2 (refactor incremental) =====
+// IMPORTANTE:
+// - Mantém contrato externo de `useTurnEngine` intacto.
+// - Por padrão, ENGINE_V2 fica DESLIGADO (fallback total para lógica atual).
+// - Objetivo: migrar por etapas, reduzindo risco no multiplayer.
+import { reduceGame } from './engine/gameReducer'
+import { runEvents } from './engine/gameEffects'
+
+const ENGINE_V2 = false
+
 /**
  * Hook do motor de turnos.
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
@@ -2052,6 +2062,32 @@ export function useTurnEngine({
         console.warn('[DEBUG] ⚠️ onAction ROLL - há modais abertas, ignorando')
         return
       }
+
+      // ===== ENGINE V2 (DESLIGADO por padrão) =====
+      // Nesta etapa, o V2 ainda é conservador e não substitui toda a lógica de modais/commit.
+      // A migração real será feita por "events" em `runEvents` (effects).
+      if (ENGINE_V2) {
+        try {
+          const snapshot = {
+            players,
+            turnIdx,
+            // turnPlayerId é fonte autoritativa no App; aqui usamos current?.id como fallback conservador
+            turnPlayerId: String(current?.id ?? players?.[turnIdx]?.id ?? ''),
+            turnLock: !!turnLock,
+            lockOwner,
+          }
+          const { nextState, events } = reduceGame(snapshot, { type: 'ROLL', steps: act.steps }, { myUid, trackLen: TRACK_LEN })
+          if (nextState?.players) setPlayers(nextState.players)
+          // efeitos noop seguros nesta etapa (não abre modal nem commita)
+          runEvents(events, { logger: console })
+        } catch (e) {
+          console.error('[ENGINE_V2] erro, caindo no fallback legacy:', e)
+          // fallback legacy
+          try { advanceAndMaybeLap(act.steps, act.cashDelta, act.note) } catch {}
+        }
+        return
+      }
+
       // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock
       try {
         advanceAndMaybeLap(act.steps, act.cashDelta, act.note)

@@ -84,12 +84,12 @@ export const runCompleteTestSuite = () => {
     
     // Despesas iniciais
     const despesas = computeDespesasFor(player)
-    console.log(`✅ Despesas iniciais: ${despesas} (esperado: 1200)`)
+    console.log(`✅ Despesas iniciais: ${despesas} (esperado: 2100)`)
     report.results.push({
       test: 'Despesas Iniciais',
-      expected: 1200,
+      expected: 2100,
       actual: despesas,
-      status: despesas === 1200 ? 'PASS' : 'FAIL'
+      status: despesas === 2100 ? 'PASS' : 'FAIL'
     })
     
     // Capacidade e atendimento

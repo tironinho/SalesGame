@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import { VENDOR_RULES } from '../game/gameRules'
 
 /**
  * onResolve(payload)
@@ -24,10 +25,14 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
   const [qty, setQty] = useState('')
   const { pushModal, awaitTop } = useModal()
 
-  // Valores base (conforme manual)
+  // Valores base (conforme regra centralizada; contratação é CAPEX e não faz parte do gameMath)
   const unitHire = 3000
-  const baseExpense = 2000
-  const baseRevenue = 1500
+  const baseExpense = VENDOR_RULES.inside.baseDesp
+  const baseRevenue = VENDOR_RULES.inside.baseFat
+
+  const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
+  const expenseAt = (certs) => VENDOR_RULES.inside.baseDesp + VENDOR_RULES.inside.incDesp * Math.max(0, certs)
+  const revenueAt = (certs) => VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * Math.max(0, certs)
 
   const qtyNum = useMemo(() => {
     const n = Number(qty)
@@ -151,8 +156,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
             pill="BASE"
             lines={[
               `Contratação: $ ${unitHire.toLocaleString()}`,
-              `Despesa: $ ${baseExpense.toLocaleString()}`,
-              `Faturamento: $ ${baseRevenue.toLocaleString()}`
+              `Despesa: ${money(expenseAt(0))}`,
+              `Faturamento: ${money(revenueAt(0))}`
             ]}
           />
           <Card
@@ -162,8 +167,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
             dark
             lines={[
               'Contratação: —',
-              'Despesa: $ 2.100',
-              'Faturamento: $ 2.000'
+              `Despesa: ${money(expenseAt(1))}`,
+              `Faturamento: ${money(revenueAt(1))}`
             ]}
           />
           <Card
@@ -173,8 +178,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
             dark
             lines={[
               'Contratação: —',
-              'Despesa: $ 2.200',
-              'Faturamento: $ 2.500'
+              `Despesa: ${money(expenseAt(2))}`,
+              `Faturamento: ${money(revenueAt(2))}`
             ]}
           />
           <Card
@@ -184,8 +189,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
             dark
             lines={[
               'Contratação: —',
-              'Despesa: $ 2.300',
-              'Faturamento: $ 3.000'
+              `Despesa: ${money(expenseAt(3))}`,
+              `Faturamento: ${money(revenueAt(3))}`
             ]}
           />
         </div>

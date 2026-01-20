@@ -1,16 +1,42 @@
 // src/game/gameMath.js
 
-// ======= Tabelas / Constantes =======
+// ======= Tabelas / Constantes (single source of truth) =======
+import {
+  VENDOR_RULES,
+  ERP_RULES,
+  MIX_RULES,
+  MANAGER_BOOST_BY_CERT,
+  MANAGER_MANAGES_UP_TO,
+} from './gameRules'
+
+// Back-compat: alguns testes/dev-tools podem importar estas constantes do gameMath.
+// Mantemos os exports, mas a fonte real está em `gameRules.js`.
 export const VENDOR_CONF = {
-  comum:  { cap: 2, baseFat:  600, incFat: 100, baseDesp: 100, incDesp: 100 },
-  inside: { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
-  field:  { cap: 5, baseFat: 1500, incFat: 500, baseDesp: 2000, incDesp: 100 },
-};
+  comum:  { cap: VENDOR_RULES.comum.cap,  baseFat: VENDOR_RULES.comum.baseFat,  incFat: VENDOR_RULES.comum.incFat,  baseDesp: VENDOR_RULES.comum.baseDesp,  incDesp: VENDOR_RULES.comum.incDesp },
+  inside: { cap: VENDOR_RULES.inside.cap, baseFat: VENDOR_RULES.inside.baseFat, incFat: VENDOR_RULES.inside.incFat, baseDesp: VENDOR_RULES.inside.baseDesp, incDesp: VENDOR_RULES.inside.incDesp },
+  field:  { cap: VENDOR_RULES.field.cap,  baseFat: VENDOR_RULES.field.baseFat,  incFat: VENDOR_RULES.field.incFat,  baseDesp: VENDOR_RULES.field.baseDesp,  incDesp: VENDOR_RULES.field.incDesp },
+}
 
-export const GESTOR = { baseDesp: 3000, incDesp: 500, boostByCert: [0.20, 0.30, 0.40, 0.60] };
+export const GESTOR = {
+  baseDesp: VENDOR_RULES.gestor.baseDesp,
+  incDesp: VENDOR_RULES.gestor.incDesp,
+  boostByCert: MANAGER_BOOST_BY_CERT,
+  managesUpTo: MANAGER_MANAGES_UP_TO,
+}
 
-export const MIX = { A:{ fat:1200, desp:700 }, B:{ fat:600, desp:400 }, C:{ fat:300, desp:200 }, D:{ fat:100, desp:50 } };
-export const ERP = { A:{ fat:1000, desp:400 }, B:{ fat:500, desp:200 }, C:{ fat:200, desp:100 }, D:{ fat:70, desp:50 } };
+export const MIX = {
+  A: { fat: MIX_RULES.A.fatPerClient, desp: MIX_RULES.A.despPerClient },
+  B: { fat: MIX_RULES.B.fatPerClient, desp: MIX_RULES.B.despPerClient },
+  C: { fat: MIX_RULES.C.fatPerClient, desp: MIX_RULES.C.despPerClient },
+  D: { fat: MIX_RULES.D.fatPerClient, desp: MIX_RULES.D.despPerClient },
+}
+
+export const ERP = {
+  A: { fat: ERP_RULES.A.fat, desp: ERP_RULES.A.desp },
+  B: { fat: ERP_RULES.B.fat, desp: ERP_RULES.B.desp },
+  C: { fat: ERP_RULES.C.fat, desp: ERP_RULES.C.desp },
+  D: { fat: ERP_RULES.D.fat, desp: ERP_RULES.D.desp },
+}
 
 export const num = (v) => Number(v || 0);
 
@@ -30,9 +56,9 @@ export function capacityAndAttendance(player = {}) {
   const qField  = Math.max(0, num(player.fieldSales));
   
   // ✅ CORREÇÃO: Cálculo detalhado da capacidade
-  const capComum = qComum * VENDOR_CONF.comum.cap;
-  const capInside = qInside * VENDOR_CONF.inside.cap;
-  const capField = qField * VENDOR_CONF.field.cap;
+  const capComum = qComum * VENDOR_RULES.comum.cap
+  const capInside = qInside * VENDOR_RULES.inside.cap
+  const capField = qField * VENDOR_RULES.field.cap
   const cap = capComum + capInside + capField;
   
   const clients = Math.max(0, num(player.clients));
@@ -69,24 +95,26 @@ export function computeFaturamentoFor(player = {}) {
   const cGestor = certCount(player, 'gestor');
 
   // faturamento não usa utilização
-  const fatComum  = qComum  * (VENDOR_CONF.comum.baseFat  + VENDOR_CONF.comum.incFat  * cComum );
-  const fatInside = qInside * (VENDOR_CONF.inside.baseFat + VENDOR_CONF.inside.incFat * cInside);
-  const fatField  = qField  * (VENDOR_CONF.field.baseFat  + VENDOR_CONF.field.incFat  * cField );
+  const fatComum  = qComum  * (VENDOR_RULES.comum.baseFat  + VENDOR_RULES.comum.incFat  * cComum )
+  const fatInside = qInside * (VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * cInside)
+  const fatField  = qField  * (VENDOR_RULES.field.baseFat  + VENDOR_RULES.field.incFat  * cField )
 
   let vendorRevenue = fatComum + fatInside + fatField;
 
   // bônus gestor
   const colaboradores = qComum + qInside + qField;
-  const cobertura = colaboradores > 0 ? Math.min(1, (qGestor * 7) / colaboradores) : 0;
-  const boost = GESTOR.boostByCert[Math.min(3, Math.max(0, cGestor))] || 0;
-  vendorRevenue = vendorRevenue * (1 + cobertura * boost);
+  const cobertura = colaboradores > 0 ? Math.min(1, (qGestor * MANAGER_MANAGES_UP_TO) / colaboradores) : 0
+  // CORREÇÃO B: 0 certificados => 0% boost (array começa com 0 no índice 0).
+  const c = Math.max(0, cGestor)
+  const boost = MANAGER_BOOST_BY_CERT[Math.min(c, MANAGER_BOOST_BY_CERT.length - 1)] || 0
+  vendorRevenue = vendorRevenue * (1 + cobertura * boost)
 
   const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
-  const mixFat = (MIX[mixLvl]?.fat || 0) * num(player.clients);
+  const mixFat = (MIX_RULES[mixLvl]?.fatPerClient || 0) * num(player.clients)
 
   const erpLvl = String(player.erpLevel || 'D').toUpperCase();
   const staff = colaboradores + qGestor; // por colaborador (inclui gestores)
-  const erpFat = (ERP[erpLvl]?.fat || 0) * staff;
+  const erpFat = (ERP_RULES[erpLvl]?.fat || 0) * staff
 
   const dynamicRevenue = num(player.revenue);
 
@@ -105,17 +133,18 @@ export function computeDespesasFor(player = {}) {
   const cField  = certCount(player, 'field');
   const cGestor = certCount(player, 'gestor');
 
-  const dComum  = qComum  * (VENDOR_CONF.comum.baseDesp  + VENDOR_CONF.comum.incDesp  * cComum );
-  const dInside = qInside * (VENDOR_CONF.inside.baseDesp + VENDOR_CONF.inside.incDesp * cInside);
-  const dField  = qField  * (VENDOR_CONF.field.baseDesp  + VENDOR_CONF.field.incDesp  * cField );
-  const dGestor = qGestor * (GESTOR.baseDesp + GESTOR.incDesp * cGestor);
+  // CORREÇÃO A: VENDEDOR COMUM baseDesp = 1000 (vem de VENDOR_RULES.comum.baseDesp).
+  const dComum  = qComum  * (VENDOR_RULES.comum.baseDesp  + VENDOR_RULES.comum.incDesp  * cComum )
+  const dInside = qInside * (VENDOR_RULES.inside.baseDesp + VENDOR_RULES.inside.incDesp * cInside)
+  const dField  = qField  * (VENDOR_RULES.field.baseDesp  + VENDOR_RULES.field.incDesp  * cField )
+  const dGestor = qGestor * (VENDOR_RULES.gestor.baseDesp + VENDOR_RULES.gestor.incDesp * cGestor)
 
   const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
-  const mixDesp = (MIX[mixLvl]?.desp || 0) * num(player.clients);
+  const mixDesp = (MIX_RULES[mixLvl]?.despPerClient || 0) * num(player.clients)
 
   const erpLvl = String(player.erpLevel || 'D').toUpperCase();
   const colaboradores = qComum + qInside + qField + qGestor;
-  const erpDesp = (ERP[erpLvl]?.desp || 0) * colaboradores;
+  const erpDesp = (ERP_RULES[erpLvl]?.desp || 0) * colaboradores
 
   const extras = 0;
   const baseMaintenance = 1000; // Valor base de manutenção inicial

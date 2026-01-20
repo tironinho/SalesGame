@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
+import { VENDOR_RULES } from '../game/gameRules'
 
 /**
  * Modal de compra de Vendedores Comuns (faz tudo)
@@ -27,8 +28,8 @@ import { useModal } from './ModalContext'
 export default function BuyCommonSellersModal({
   onResolve,
   unitHire = 1500,
-  unitExpense = 1000,
-  attendsUpTo = 2,
+  unitExpense = VENDOR_RULES.comum.baseDesp,
+  attendsUpTo = VENDOR_RULES.comum.cap,
   currentCash = 0,
 }) {
   const [qty, setQty] = useState('')
@@ -42,8 +43,12 @@ export default function BuyCommonSellersModal({
   const monthly   = Number(unitExpense || 0)
   const cashNow   = Number(currentCash || 0)
 
-  // Receita base por vendedor (S/ Certificado) conforme tabela exibida
-  const revenuePerSeller = 600
+  // Receita base por vendedor (S/ Certificado) conforme regra centralizada
+  const revenuePerSeller = VENDOR_RULES.comum.baseFat
+
+  const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
+  const expenseAt = (certs) => VENDOR_RULES.comum.baseDesp + VENDOR_RULES.comum.incDesp * Math.max(0, certs)
+  const revenueAt = (certs) => VENDOR_RULES.comum.baseFat + VENDOR_RULES.comum.incFat * Math.max(0, certs)
 
   const qtyNum = useMemo(() => {
     const n = Math.floor(Number(qty))
@@ -214,16 +219,16 @@ export default function BuyCommonSellersModal({
               <div style={styles.th}>Despesa</div>
               <div style={styles.th}>Faturamento</div>
             </div>
-            <Row label="S/ Certificado"    hire="$ 1.500" expense="$ 1.000" revenue="$ 600" />
-            <Row label="Com 1 certificado" hire="-"       expense="$ 1.100" revenue="$ 700" />
-            <Row label="Com 2 certificados"hire="-"       expense="$ 1.200" revenue="$ 800" />
-            <Row label="Com 3 certificados"hire="-"       expense="$ 1.300" revenue="$ 900" />
+            <Row label="S/ Certificado"     hire={money(unitHire)} expense={money(expenseAt(0))} revenue={money(revenueAt(0))} />
+            <Row label="Com 1 certificado"  hire="-"               expense={money(expenseAt(1))} revenue={money(revenueAt(1))} />
+            <Row label="Com 2 certificados" hire="-"               expense={money(expenseAt(2))} revenue={money(revenueAt(2))} />
+            <Row label="Com 3 certificados" hire="-"               expense={money(expenseAt(3))} revenue={money(revenueAt(3))} />
           </div>
         </div>
 
         <div style={styles.summary}>
-          <div>Custo de contratação: <b>$ {Number(unitHire).toLocaleString()}</b> / vendedor</div>
-          <div>Despesa mensal: <b>$ {Number(unitExpense).toLocaleString()}</b> / vendedor</div>
+          <div>Custo de contratação (pagamento único): <b>$ {Number(unitHire).toLocaleString()}</b> / vendedor</div>
+          <div>Despesa mensal recorrente (OPEX): <b>$ {Number(unitExpense).toLocaleString()}</b> / vendedor</div>
         </div>
 
         <div style={styles.summaryStrong}>

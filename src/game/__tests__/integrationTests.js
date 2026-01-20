@@ -333,7 +333,7 @@ export const testResourceManagement = () => {
   const { cap, inAtt } = capacityAndAttendance(player)
   
   console.assert(faturamento > 770, 'Faturamento deve aumentar com mais vendedores')
-  console.assert(despesas > 1200, 'Despesas devem aumentar com mais vendedores')
+  console.assert(despesas > 2100, 'Despesas devem aumentar com mais vendedores')
   console.assert(cap > 2, 'Capacidade deve aumentar com mais vendedores')
   
   console.log('✅ Gerenciamento de recursos testado')

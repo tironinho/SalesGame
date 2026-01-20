@@ -67,7 +67,7 @@ export const testBasicCalculations = () => {
   
   // Teste 2: Despesas iniciais
   const despesas = computeDespesasFor(player)
-  console.assert(despesas === 1200, `Despesas iniciais devem ser 1200, mas foram ${despesas}`)
+  console.assert(despesas === 2100, `Despesas iniciais devem ser 2100, mas foram ${despesas}`)
   
   // Teste 3: Capacidade e atendimento
   const { cap, inAtt } = capacityAndAttendance(player)

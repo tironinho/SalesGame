@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import { MIX_RULES } from '../game/gameRules'
 
 /**
  * Modal de escolha do Mix de Produtos (A/B/C/D)
@@ -23,10 +24,10 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
 
   // Mantém os mesmos valores do print/implementação anterior
   const LEVELS = {
-    A: { compra: 12000, despesa: 700, faturamento: 1200, color:'#1d4ed8', pill:'NÍVEL A', label:'100 produtos' },
-    B: { compra:  6000, despesa: 400, faturamento:  600, color:'#16a34a', pill:'NÍVEL B', label:'50 produtos'  },
-    C: { compra:  3000, despesa: 200, faturamento:  300, color:'#f59e0b', pill:'NÍVEL C', label:'20 produtos'  },
-    D: { compra:  1000, despesa:  50, faturamento:  100, color:'#6b7280', pill:'NÍVEL D', label:'5 produtos'   },
+    A: { compra: 12000, despesa: MIX_RULES.A.despPerClient, faturamento: MIX_RULES.A.fatPerClient, color:'#1d4ed8', pill:'NÍVEL A', label:'100 produtos' },
+    B: { compra:  6000, despesa: MIX_RULES.B.despPerClient, faturamento: MIX_RULES.B.fatPerClient, color:'#16a34a', pill:'NÍVEL B', label:'50 produtos'  },
+    C: { compra:  3000, despesa: MIX_RULES.C.despPerClient, faturamento: MIX_RULES.C.fatPerClient, color:'#f59e0b', pill:'NÍVEL C', label:'20 produtos'  },
+    D: { compra:  1000, despesa: MIX_RULES.D.despPerClient, faturamento: MIX_RULES.D.fatPerClient, color:'#6b7280', pill:'NÍVEL D', label:'5 produtos'   },
   }
 
   async function resolveBuy(level){

@@ -29,12 +29,12 @@ const createTestPlayer = (overrides = {}) => ({
 
 describe('Game Math Validation', () => {
   describe('computeDespesasFor', () => {
-    test('deve calcular manutenção inicial corretamente (1150)', () => {
+    test('deve calcular manutenção inicial corretamente (2100)', () => {
       const player = createTestPlayer()
       const manutencao = computeDespesasFor(player)
       
-      // Valor base: 1000 + Vendedor Comum: 100 + Mix D: 50 + ERP D: 50 = 1150
-      expect(manutencao).toBe(1150)
+      // Valor base: 1000 + Vendedor Comum: 1000 + Mix D: 50 + ERP D: 50 = 2100
+      expect(manutencao).toBe(2100)
     })
 
     test('deve calcular manutenção com múltiplos vendedores', () => {
@@ -44,20 +44,20 @@ describe('Game Math Validation', () => {
       })
       const manutencao = computeDespesasFor(player)
       
-      // Base: 1000 + Vendedores: 3*100 + Mix: 5*50 + ERP: 3*50 = 1000+300+250+150 = 1700
-      expect(manutencao).toBe(1700)
+      // Base: 1000 + Vendedores: 3*1000 + Mix: 5*50 + ERP: 3*50 = 1000+3000+250+150 = 4400
+      expect(manutencao).toBe(4400)
     })
 
     test('deve calcular manutenção com certificados', () => {
       const player = createTestPlayer({
         vendedoresComuns: 2,
-        az: 1, // certificado azul para vendedores comuns
+        trainingsByVendor: { comum: ['personalizado'] }, // 1 certificado para vendedores comuns
         clients: 3
       })
       const manutencao = computeDespesasFor(player)
       
-      // Base: 1000 + Vendedores: 2*(100+100) + Mix: 3*50 + ERP: 2*50 = 1000+400+150+100 = 1650
-      expect(manutencao).toBe(1650)
+      // Base: 1000 + Vendedores: 2*(1000+100) + Mix: 3*50 + ERP: 2*50 = 1000+2200+150+100 = 3450
+      expect(manutencao).toBe(3450)
     })
 
     test('deve calcular manutenção com gestores', () => {
@@ -67,8 +67,8 @@ describe('Game Math Validation', () => {
       })
       const manutencao = computeDespesasFor(player)
       
-      // Base: 1000 + Vendedor: 100 + Mix: 2*50 + ERP: 3*50 + Gestores: 2*500 = 1000+100+100+150+1000 = 2350
-      expect(manutencao).toBe(2350)
+      // Base: 1000 + Vendedor: 1000 + Mix: 2*50 + ERP: 3*50 + Gestores: 2*3000 = 1000+1000+100+150+6000 = 8250
+      expect(manutencao).toBe(8250)
     })
   })
 
@@ -94,13 +94,35 @@ describe('Game Math Validation', () => {
     test('deve calcular faturamento com certificados', () => {
       const player = createTestPlayer({
         vendedoresComuns: 2,
-        az: 1, // certificado azul
+        trainingsByVendor: { comum: ['personalizado'] }, // 1 certificado para vendedores comuns
         clients: 3
       })
       const faturamento = computeFaturamentoFor(player)
       
       // Vendedores: 2*(600+100) + Mix: 3*100 + ERP: 2*70 = 1400+300+140 = 1840
       expect(faturamento).toBe(1840)
+    })
+
+    test('gestor com 0 certificados não dá boost (boost=0)', () => {
+      const player = createTestPlayer({
+        clients: 0, // evita MIX
+        vendedoresComuns: 1,
+        gestores: 1,
+        trainingsByVendor: { gestor: [] },
+      })
+      // vendorRevenue=600, cobertura=1, boost=0 => 600; ERP D: staff=2 => 140; total=740
+      expect(computeFaturamentoFor(player)).toBe(740)
+    })
+
+    test('gestor com 1 certificado dá boost de 20% (boost=0.20)', () => {
+      const player = createTestPlayer({
+        clients: 0, // evita MIX
+        vendedoresComuns: 1,
+        gestores: 1,
+        trainingsByVendor: { gestor: ['personalizado'] },
+      })
+      // vendorRevenue=600, cobertura=1, boost=0.20 => 720; ERP D: staff=2 => 140; total=860
+      expect(computeFaturamentoFor(player)).toBe(860)
     })
   })
 

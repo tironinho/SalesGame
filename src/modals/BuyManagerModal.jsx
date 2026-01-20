@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import { MANAGER_BOOST_BY_CERT, MANAGER_MANAGES_UP_TO, VENDOR_RULES } from '../game/gameRules'
 
 /**
  * Modal para compra de Gestor Comercial.
@@ -21,8 +22,8 @@ import InsufficientFundsModal from './InsufficientFundsModal'
 export default function BuyManagerModal({
   onResolve,
   unitHire = 5000,
-  unitExpense = 3000,
-  managesUpTo = 7,
+  unitExpense = VENDOR_RULES.gestor.baseDesp,
+  managesUpTo = MANAGER_MANAGES_UP_TO,
   currentCash = 0,
 }) {
   const closeRef = useRef(null)
@@ -49,6 +50,13 @@ export default function BuyManagerModal({
   const totalHire    = qtyNum * priceHire
   const totalExpense = qtyNum * monthly
   const canBuy       = qtyNum > 0
+
+  const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
+  const expenseAt = (certs) => VENDOR_RULES.gestor.baseDesp + VENDOR_RULES.gestor.incDesp * Math.max(0, certs)
+  const boostAt = (certs) => {
+    const c = Math.max(0, certs)
+    return (MANAGER_BOOST_BY_CERT[Math.min(c, MANAGER_BOOST_BY_CERT.length - 1)] || 0) * 100
+  }
 
   const setBoundedQty = (val) => {
     const n = Math.floor(Number(val) || 0)
@@ -194,16 +202,36 @@ export default function BuyManagerModal({
               <div style={styles.th}>Despesa</div>
               <div style={styles.th}>Efeito</div>
             </div>
-            <Row label="Sem Certificado"    hire={5000} expense={3000} revenue="potencializa colaboradores em 20%" />
-            <Row label="Com 1 certificado"  hire="-"   expense={3500} revenue="potencializa colaboradores em 30%" />
-            <Row label="Com 2 certificados" hire="-"   expense={4000} revenue="potencializa colaboradores em 40%" />
-            <Row label="Com 3 certificados" hire="-"   expense={4500} revenue="potencializa colaboradores em 60%" />
+            <Row
+              label="Sem Certificado"
+              hire={money(unitHire)}
+              expense={money(expenseAt(0))}
+              revenue={`potencializa colaboradores em ${boostAt(0)}%`}
+            />
+            <Row
+              label="Com 1 certificado"
+              hire="-"
+              expense={money(expenseAt(1))}
+              revenue={`potencializa colaboradores em ${boostAt(1)}%`}
+            />
+            <Row
+              label="Com 2 certificados"
+              hire="-"
+              expense={money(expenseAt(2))}
+              revenue={`potencializa colaboradores em ${boostAt(2)}%`}
+            />
+            <Row
+              label="Com 3 certificados"
+              hire="-"
+              expense={money(expenseAt(3))}
+              revenue={`potencializa colaboradores em ${boostAt(3)}%`}
+            />
           </div>
         </div>
 
         <div style={styles.summary}>
-          <div>Custo de contratação: <b>$ {Number(unitHire).toLocaleString()}</b> / gestor</div>
-          <div>Despesa mensal: <b>$ {Number(unitExpense).toLocaleString()}</b> / gestor</div>
+          <div>Custo de contratação (pagamento único): <b>$ {Number(unitHire).toLocaleString()}</b> / gestor</div>
+          <div>Despesa mensal recorrente (OPEX): <b>$ {Number(unitExpense).toLocaleString()}</b> / gestor</div>
         </div>
 
         <div style={styles.summaryStrong}>

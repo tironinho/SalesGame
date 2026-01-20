@@ -285,9 +285,9 @@ window.testSpecificRules = function() {
   }
   
   const manutencao = computeDespesasFor(initialPlayer)
-  console.log(`Manutenção inicial: ${manutencao} (esperado: 1150)`)
+  console.log(`Manutenção inicial: ${manutencao} (esperado: 2100)`)
   
-  if (manutencao === 1150) {
+  if (manutencao === 2100) {
     console.log('✅ Regra de manutenção inicial correta')
   } else {
     console.log('❌ Regra de manutenção inicial incorreta')
