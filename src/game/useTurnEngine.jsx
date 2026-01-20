@@ -472,7 +472,7 @@ export function useTurnEngine({
     // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock em caso de erro
     // Bloqueia os próximos jogadores até esta ação (e todas as modais) terminar
     turnChangeInProgressRef.current = true
-    setTurnLockBroadcast(true)
+    setTurnLockBroadcast(true, String(myUid))
     setLockOwner(String(myUid))
     
     try {
@@ -1963,19 +1963,23 @@ export function useTurnEngine({
     // Isso evita que o tick rode antes das modais serem realmente abertas
     // Verifica se há modais sendo abertas antes de iniciar o tick
     let checkAttempts = 0
-    const maxCheckAttempts = 50 // Limita a 10 segundos (50 * 200ms)
+    const maxCheckAttempts = 50 // ~10s com backoff
     const checkBeforeTick = () => {
       checkAttempts++
       const hasOpening = openingModalRef.current
       const hasLocks = modalLocksRef.current > 0
       if ((hasOpening || hasLocks) && checkAttempts < maxCheckAttempts) {
-        console.log('[DEBUG] ⚠️ checkBeforeTick - modal sendo aberta ou já aberta, aguardando...', { 
-          hasOpening, 
-          hasLocks, 
-          modalLocks: modalLocksRef.current,
-          attempt: checkAttempts 
-        })
-        setTimeout(checkBeforeTick, 200)
+        // reduz spam: loga só a cada 5 tentativas
+        if (checkAttempts % 5 === 1) {
+          console.log('[DEBUG] ⚠️ checkBeforeTick - aguardando modais...', {
+            hasOpening,
+            hasLocks,
+            modalLocks: modalLocksRef.current,
+            attempt: checkAttempts
+          })
+        }
+        const delay = Math.min(1000, Math.floor(150 * Math.pow(1.35, checkAttempts)))
+        setTimeout(checkBeforeTick, delay)
         return
       }
       // ✅ CORREÇÃO: Se excedeu tentativas ou não há modais, força o avanço do turno
@@ -2109,7 +2113,7 @@ export function useTurnEngine({
         } catch (e) {
           console.error('[ENGINE_V2] erro, caindo no fallback legacy:', e)
           // fallback legacy
-          try { advanceAndMaybeLap(act.steps, act.cashDelta, act.note) } catch {}
+      try { advanceAndMaybeLap(act.steps, act.cashDelta, act.note) } catch {}
         }
         return
       }

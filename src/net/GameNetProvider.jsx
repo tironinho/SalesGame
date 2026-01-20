@@ -219,6 +219,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
 
       // ✅ CORREÇÃO: Trata conflito de versão, "0 rows", ou "Cannot coerce" como conflito e re-tenta
       const isConflict = e2?.code === 'PGRST116' || 
+                         e2?.status === 406 || // ✅ trata 406 (no rows / single mismatch) como conflito de versão
                          e2?.message?.includes('0 rows') ||
                          e2?.message?.includes('Cannot coerce') ||
                          e2?.code === '23505' || // unique violation

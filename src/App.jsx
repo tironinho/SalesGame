@@ -95,15 +95,19 @@ export default function App() {
     // Cria cópia para não mutar o original
     const arr = [...players].filter(Boolean)
     
-    // Verifica se TODOS possuem seat válido
+    // ✅ DETERMINÍSTICO: nunca ordenar por campos mutáveis (cash/name/clients/etc).
+    // Regra: usa joinOrder (persistido no player) e fallback por seat e depois por id.
+    const hasJoinOrder = arr.every(p => Number.isInteger(p.joinOrder))
     const hasSeat = arr.every(p => Number.isInteger(p.seat))
+
+    // 1) ordena por joinOrder se todos tiverem; senão usa seat se todos tiverem; senão fallback por id.
+    let ordered = hasJoinOrder
+      ? arr.sort((a, b) => (a.joinOrder - b.joinOrder) || String(a?.id ?? '').localeCompare(String(b?.id ?? '')))
+      : hasSeat
+        ? arr.sort((a, b) => (a.seat - b.seat) || String(a?.id ?? '').localeCompare(String(b?.id ?? '')))
+        : arr.sort((a, b) => String(a?.id ?? a?.player_id ?? '').localeCompare(String(b?.id ?? b?.player_id ?? '')))
     
-    // Ordena: se todos têm seat, ordena por seat; senão, ordena por id
-    let ordered = hasSeat 
-      ? arr.sort((a, b) => a.seat - b.seat)
-      : arr.sort((a, b) => String(a?.id ?? a?.player_id ?? '').localeCompare(String(b?.id ?? b?.player_id ?? '')))
-    
-    // Preenche seats faltantes SEM alterar os existentes
+    // Preenche seats faltantes SEM alterar os existentes (determinístico)
     let nextSeat = 0
     const used = new Set(ordered.filter(p => Number.isInteger(p.seat)).map(p => p.seat))
     
@@ -116,9 +120,17 @@ export default function App() {
       used.add(nextSeat)
       return { ...p, seat: nextSeat++ }
     })
+
+    // ✅ joinOrder persistido: se faltante, deriva de seat (imutável) para estabilizar ordenação entre clientes
+    ordered = ordered.map(p => {
+      if (Number.isInteger(p.joinOrder)) return p
+      if (Number.isInteger(p.seat)) return { ...p, joinOrder: p.seat }
+      return { ...p, joinOrder: 0 }
+    })
     
     // Reordena por seat após preencher faltantes
-    ordered = ordered.sort((a, b) => a.seat - b.seat)
+    // Importante: a ordem global passa a ser joinOrder (determinístico)
+    ordered = ordered.sort((a, b) => (a.joinOrder - b.joinOrder) || String(a?.id ?? '').localeCompare(String(b?.id ?? '')))
     
     console.log('[App] normalizePlayers - ordenados:', ordered.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
     return ordered
@@ -183,6 +195,19 @@ export default function App() {
   // ✅ BUG 2 FIX: Refs para watchdog anti-trava
   const lockSinceRef = useRef(null)
   const lastNetApplyAtRef = useRef(0)
+
+  // ✅ Invariante: turnLock=true nunca pode ficar com lockOwner null.
+  useEffect(() => {
+    if (!turnLock) return
+    if (lockOwner) return
+    if (turnPlayerId) {
+      console.warn('[LOCK_INVARIANT] turnLock=true com lockOwner=null -> corrigindo owner para turnPlayerId', { turnPlayerId })
+      setLockOwner(String(turnPlayerId))
+    } else {
+      console.warn('[LOCK_INVARIANT] turnLock=true sem turnPlayerId -> desligando turnLock')
+      setTurnLock(false)
+    }
+  }, [turnLock, lockOwner, turnPlayerId])
 
   // ====== “quem sou eu” no array de players
   const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
@@ -264,6 +289,12 @@ export default function App() {
 
         if (d.type === 'TURNLOCK') {
           setTurnLock(!!d.value)
+          // ✅ Invariante: turnLock=true deve ter owner
+          if (d.value) {
+            if (d.owner) setLockOwner(String(d.owner))
+          } else {
+            setLockOwner(null)
+          }
           return
         }
 
@@ -529,11 +560,39 @@ export default function App() {
     }
   }, [phase, currentLobbyId, myUid])
 
-  const setTurnLockBroadcast = (value) => {
+  const setTurnLockBroadcast = (value, owner = undefined) => {
     const v = !!value
+    const nextOwner =
+      v
+        ? String(owner ?? myUid ?? turnPlayerId ?? '')
+        : null
+
+    // ✅ Invariante: turnLock=true nunca deve coexistir com lockOwner null/''.
     setTurnLock(v)
+    if (v) {
+      if (nextOwner) setLockOwner(nextOwner)
+    } else {
+      setLockOwner(null)
+    }
+
+    // ✅ Propaga para abas (mesma máquina)
     try {
-      bcRef.current?.postMessage?.({ type: 'TURNLOCK', value: v, source: meId })
+      bcRef.current?.postMessage?.({ type: 'TURNLOCK', value: v, owner: nextOwner, ts: Date.now(), source: meId })
+    } catch {}
+
+    // ✅ Propaga para Supabase (estado compartilhado) — sem depender de turnIdx
+    try {
+      if (net?.enabled && net?.ready && typeof netCommit === 'function') {
+        commitGamePatch({
+          playersDeltaById: {},
+          statePatch: {
+            kind: 'LOCK',
+            turnLock: v,
+            lockOwner: nextOwner,
+            lockTs: Date.now(),
+          }
+        })
+      }
     } catch {}
   }
 
@@ -544,26 +603,13 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
   
-  // ====== "é minha vez?" (turnPlayerId é a fonte de verdade; fallback legado para turnIdx)
+  // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {
     const me = String(myUid || meId || "")
     if (!me) return false
-
-    // ✅ MULTIPLAYER: quando net está ativo, não permita fallback por turnIdx.
-    // Sem turnPlayerId autoritativo => ninguém rola (evita janela de corrida no join).
-    if (net?.enabled && net?.ready) {
-      if (!turnPlayerId) return false
-      return String(turnPlayerId) === me
-    }
-
-    if (turnPlayerId) {
-      return String(turnPlayerId) === me
-    }
-
-    // fallback legado
-    const current = players[turnIdx]
-    return current && String(current.id) === me
-  }, [turnPlayerId, myUid, meId, players, turnIdx])
+    if (!turnPlayerId) return false
+    return String(turnPlayerId) === me
+  }, [turnPlayerId, myUid, meId])
 
   // ✅ coerência: mantém turnIdx <-> turnPlayerId sincronizados (evita desync UI vs engine)
   useEffect(() => {
@@ -575,8 +621,7 @@ export default function App() {
         setTurnIdx(idx)
       }
     } else {
-      // ✅ INIT_GUARD: em multiplayer (net ativo), NÃO inventa turnPlayerId local.
-      // Ele deve vir do snapshot autoritativo (ou do START do host).
+      // ✅ Sem turnPlayerId: não inventa em multiplayer. Em local, pode usar fallback.
       if (!net?.enabled || !net?.ready) {
         const fallback = players[turnIdx]?.id || players[0]?.id
         if (fallback) setTurnPlayerId(String(fallback))
@@ -632,16 +677,37 @@ export default function App() {
         const prevPlayers = normalizePlayers(seedPlayersRaw)
         const byId = new Map(prevPlayers.map(p => [String(p.id), p]))
         
-        // Aplica deltas por ID
+        // Aplica deltas por ID (idempotente por actionId)
         for (const [id, delta] of Object.entries(playersDeltaById)) {
           const playerId = String(id)
           const existing = byId.get(playerId)
           if (existing) {
-            // Merge do delta sobre o player existente
-            byId.set(playerId, applyStarterKit({ ...existing, ...delta }))
+            const actionId = delta?._actionId || statePatch?.actionId || null
+            if (actionId) {
+              const lastActions = (existing.lastActions && typeof existing.lastActions === 'object') ? existing.lastActions : {}
+              if (lastActions[actionId]) {
+                console.warn('[IDEMPOTENCY] ignorando delta já aplicado', { playerId, actionId })
+                continue
+              }
+              // registra actionId com limite (50)
+              const nextActions = { ...lastActions, [actionId]: now }
+              const keys = Object.keys(nextActions)
+              if (keys.length > 50) {
+                keys
+                  .sort((a, b) => Number(nextActions[a] || 0) - Number(nextActions[b] || 0))
+                  .slice(0, keys.length - 50)
+                  .forEach(k => { try { delete nextActions[k] } catch {} })
+              }
+              const { _actionId, ...cleanDelta } = (delta || {})
+              byId.set(playerId, applyStarterKit({ ...existing, ...cleanDelta, lastActions: nextActions }))
+            } else {
+              const { _actionId, ...cleanDelta } = (delta || {})
+              byId.set(playerId, applyStarterKit({ ...existing, ...cleanDelta }))
+            }
           } else {
             // Novo player (não deve acontecer, mas trata)
-            byId.set(playerId, applyStarterKit({ id: playerId, ...delta }))
+            const { _actionId, ...cleanDelta } = (delta || {})
+            byId.set(playerId, applyStarterKit({ id: playerId, ...cleanDelta }))
           }
         }
         
@@ -666,6 +732,8 @@ export default function App() {
           ...prevState,
           ...finalStatePatch
         }
+        // ✅ TURNO: turnIdx não é mais persistido no estado compartilhado
+        try { delete next.turnIdx } catch {}
         
         // Garante que players sempre está normalizado
         if (next.players) {
@@ -775,35 +843,16 @@ export default function App() {
     // O servidor (netVersion) é a única autoridade
     
     const np = Array.isArray(netState.players) ? netState.players : null
-    const nt = Number.isInteger(netState.turnIdx) ? netState.turnIdx : null
+    // turnIdx remoto é legado e NÃO é fonte de verdade
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
-    // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
-    // turnPlayerId é a fonte de verdade; turnIdx é derivado localmente
-    // ✅ CORREÇÃO 3: Proteção monotônica - só aceita turnPlayerId se for mudança válida
-    if (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null) {
-      const incomingTurnId = String(netState.turnPlayerId)
-      const currentTurnId = turnPlayerId ? String(turnPlayerId) : null
-      
-      // Só aceita se for diferente do atual (mudança de turno) ou se atual for null
-      // Como netVersion já avançou (passou pela verificação acima), é mudança válida
-      if (!currentTurnId || incomingTurnId !== currentTurnId) {
-        setTurnPlayerId(incomingTurnId)
-        // Deriva turnIdx de turnPlayerId se players estão normalizados
-        const normalized = normalizePlayers(np || players)
-        const derivedTurnIdx = normalized.findIndex(p => String(p.id) === incomingTurnId)
-        if (derivedTurnIdx >= 0) {
-          if (derivedTurnIdx !== turnIdx) {
-            console.log('[NET] ✅ turnIdx derivado de turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
-            setTurnIdx(derivedTurnIdx)
-          }
-        } else {
-          console.warn('[NET] ⚠️ turnPlayerId não encontrado em players:', incomingTurnId)
-        }
-      }
-    } else if (nt !== null) {
-      // Fallback: se turnPlayerId não está disponível, usa turnIdx (compatibilidade)
-      setTurnIdx(nt)
+    // ✅ TURNO: turnPlayerId é a ÚNICA fonte de verdade.
+    const incomingTurnId =
+      (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== '')
+        ? String(netState.turnPlayerId)
+        : null
+    if (incomingTurnId && String(turnPlayerId || '') !== incomingTurnId) {
+      setTurnPlayerId(incomingTurnId)
     }
 
     // ✅ CORREÇÃO MULTIPLAYER: Aplica players SEMPRE quando netVersion avançar (snapshot autoritativo)
@@ -814,13 +863,21 @@ export default function App() {
       // Atualiza baseline para próximo merge
       playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
       console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
+
+      // turnIdx é DERIVADO localmente do turnPlayerId (nunca do remoto)
+      if (incomingTurnId) {
+        const derivedTurnIdx = normalizedPlayers.findIndex(p => String(p.id) === String(incomingTurnId))
+        if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
+          console.log('[NET] ✅ derived turnIdx from turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
+          setTurnIdx(derivedTurnIdx)
+        }
+      }
     }
     
     if (nr !== null) {
       // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
       const isResetState = (
         nr === 1 &&
-        (nt === 0 || nt === null) &&
         Array.isArray(np) && np.length > 0 &&
         np.every(p => Number(p?.pos ?? 0) === 0) &&
         (netState.gameOver === false || netState.gameOver == null)
@@ -850,8 +907,16 @@ export default function App() {
       }
     }
 
-    // ✅ IMPORTANTE: turnLock/lockOwner são APENAS LOCAIS (anti-spam).
-    // Nunca aplicar do Supabase (netState) para evitar travas e rollback de turno.
+    // ✅ LOCKS: aplicar do Supabase (estado compartilhado) e sanar invariantes
+    if (typeof netState.turnLock !== 'undefined') {
+      setTurnLock(!!netState.turnLock)
+    }
+    if (typeof netState.lockOwner !== 'undefined') {
+      setLockOwner(netState.lockOwner ? String(netState.lockOwner) : null)
+    }
+    if (netState.turnLock === true && (!netState.lockOwner) && incomingTurnId) {
+      setLockOwner(incomingTurnId)
+    }
     lastNetApplyAtRef.current = Date.now()
 
     // ✅ Monotônico: gameOver nunca volta para false
@@ -870,7 +935,7 @@ export default function App() {
     }
 
     // ✅ CORREÇÃO MULTIPLAYER: Log de aplicação do snapshot autoritativo
-    console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'turnIdx:', nt, 'round:', nr)
+    console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'round:', nr)
 
     // ✅ INIT_GUARD: marca hidratação real quando há turno/players válidos vindos da rede
     try {
@@ -989,12 +1054,15 @@ export default function App() {
             const remoteStateVersion = prevState.stateVersion ?? 0
             const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
             
-            return {
+            const next = {
               ...prevState,
               ...nextPartial,
               players: orderedPlayers.length > 0 ? orderedPlayers : nextPlayers,
               stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
             }
+            // ✅ TURNO: turnIdx não é mais persistido
+            try { delete next.turnIdx } catch {}
+            return next
           }
           
           // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
@@ -1003,11 +1071,14 @@ export default function App() {
           const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
           
           // Para outros campos, merge simples com versão monotônica
-          return {
+          const next = {
             ...prevState,
             ...nextPartial,
             stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
           }
+          // ✅ TURNO: turnIdx não é mais persistido
+          try { delete next.turnIdx } catch {}
+          return next
         })
       } catch (e) {
         console.warn('[NET] commit failed:', e?.message || e)
@@ -1032,8 +1103,7 @@ export default function App() {
     
     // ✅ CORREÇÃO: Usa patch para obter valores atualizados (evita stale closure)
     const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
-    // turnLock/lockOwner são LOCAIS: ainda podem existir no patch para BroadcastChannel (mesma máquina),
-    // mas NÃO serão persistidos no Supabase.
+    // lock fields podem existir no patch (e são persistidos quando kind='LOCK')
     const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
     const lastKnownLockOwner = lastLocalStateRef.current?.lockOwner ?? null
     const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : lastKnownLockOwner
@@ -1065,10 +1135,13 @@ export default function App() {
     // ✅ CORREÇÃO: Normaliza players antes de broadcast
     const normalizedPlayers = normalizePlayers(nextPlayers)
     
-    // ✅ CORREÇÃO: Deriva turnPlayerId de turnIdx se não estiver no patch
-    const nextTurnPlayerId = patch.turnPlayerId !== undefined 
-      ? patch.turnPlayerId 
-      : (normalizedPlayers[nextTurnIdx]?.id ? String(normalizedPlayers[nextTurnIdx].id) : turnPlayerId)
+    // ✅ TURNO: turnPlayerId é a ÚNICA fonte de verdade.
+    // - TURN: patch.turnPlayerId deve vir explícito
+    // - PLAYER_DELTA: nunca mexe em turnPlayerId
+    const nextTurnPlayerId =
+      (patch.turnPlayerId !== undefined && patch.turnPlayerId !== null)
+        ? String(patch.turnPlayerId)
+        : String(turnPlayerId || '')
 
     // ✅ FIX: mantém turnPlayerId em sync imediato no cliente (evita UI travar/bloquear dados)
     // O net snapshot pode demorar; sem isso, turnIdx muda mas turnPlayerId pode ficar stale.
@@ -1105,14 +1178,21 @@ export default function App() {
     // ✅ PATCH KIND: separa atualização de turno (TURN) de atualização de players (PLAYER_DELTA)
     const patchKind =
       patch.kind ||
-      ((patch.turnPlayerId !== undefined || nextTurnIdx !== turnIdx) ? 'TURN' : 'PLAYER_DELTA')
+      (patch.turnPlayerId !== undefined ? 'TURN' : 'PLAYER_DELTA')
+
+    // ✅ actionId (idempotência): gera se não vier do chamador
+    const actionId = String(patch.actionId || `${String(myUid || 'anon')}-${Date.now()}-${currentVersion}`)
 
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
     // Isso protege contra estados remotos que chegam logo após a mudança local
     const now = Date.now()
+    const derivedTurnIdxForLocal = nextTurnPlayerId
+      ? normalizedPlayers.findIndex(p => String(p.id) === String(nextTurnPlayerId))
+      : nextTurnIdx
+
     lastLocalStateRef.current = {
       players: normalizedPlayers,
-      turnIdx: nextTurnIdx,
+      turnIdx: derivedTurnIdxForLocal,
       turnPlayerId: safeTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId seguro (monotônico)
       round: safeRound,
       gameOver: finalGameOver,
@@ -1134,10 +1214,11 @@ export default function App() {
       console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
       commitRemoteState({
         players: normalizedPlayers,
-        turnIdx: nextTurnIdx,
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         roundFlags: nextRoundFlags,
+        actionId,
+        kind: 'START',
         stateVersion: currentVersion,
         updatedAt: now,
         updatedBy: myUid
@@ -1153,7 +1234,7 @@ export default function App() {
         const currentPlayer = currentPlayersMap.get(playerId)
         if (!currentPlayer) {
           // Novo player (não deve acontecer em ações, mas trata)
-          playersDeltaById[playerId] = nextPlayer
+          playersDeltaById[playerId] = { ...nextPlayer, _actionId: actionId }
         } else {
           // Compara propriedades para detectar mudanças
           const delta = {}
@@ -1170,23 +1251,39 @@ export default function App() {
           }
           // Se há mudanças, inclui no delta
           if (Object.keys(delta).length > 0) {
-            playersDeltaById[playerId] = delta
+            playersDeltaById[playerId] = { ...delta, _actionId: actionId }
           }
         }
       }
+
+      // ✅ evita spam/dedup: se nada mudou e não há patch de estado, não commita/broadcast
+      const hasPlayerDelta = Object.keys(playersDeltaById).length > 0
+      const hasStateChange = patchKind === 'TURN' || patchKind === 'LOCK' || patch.round !== undefined || patch.roundFlags !== undefined || patch.gameOver !== undefined || patch.winner !== undefined
+      if (!hasPlayerDelta && !hasStateChange) {
+        console.log('[App] broadcastState skipped (no-op)', { actionId, patchKind })
+        return
+      }
       
       // ✅ CORREÇÃO MULTIPLAYER: Usa commitGamePatch para fazer merge por delta
-      // PLAYER_DELTA nunca altera turno (turnPlayerId/turnIdx/round/roundFlags)
+      // PLAYER_DELTA nunca altera turno (turnPlayerId/round/roundFlags)
       const statePatch = {
+        kind: patchKind,
+        actionId,
         ...(finalGameOver ? { gameOver: true, winner: finalWinner } : {}),
         ...(patchKind === 'TURN'
           ? {
               turnPlayerId: nextTurnPlayerId,
-              turnIdx: nextTurnIdx,
               round: safeRound,
               roundFlags: nextRoundFlags,
               gameOver: finalGameOver,
               winner: finalWinner,
+            }
+          : {}),
+        ...(patchKind === 'LOCK'
+          ? {
+              turnLock: nextTurnLock,
+              lockOwner: nextLockOwner,
+              lockTs: Date.now(),
             }
           : {}),
       }
@@ -1205,7 +1302,6 @@ export default function App() {
         type: 'SYNC',
         version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
         players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
-        turnIdx: nextTurnIdx,
         round: safeRound,
         roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
         // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
@@ -1477,12 +1573,19 @@ export default function App() {
   // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
   const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
   // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId é a fonte autoritativa para "é minha vez?"
-  const isMyTurnFromId = turnPlayerId !== null && turnPlayerId !== undefined && String(turnPlayerId) === String(myUid)
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
-  const lockOwnerOk = lockOwner == null || lockOwner === myUid
-  // ✅ CORREÇÃO: controlsCanRoll usa turnPlayerId como fonte autoritativa (não depender de array index)
-  const controlsCanRoll = isMyTurnFromId && modalLocks === 0 && !turnLock && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
-  console.log('[App] controlsCanRoll - turnPlayerId:', turnPlayerId, 'myUid:', myUid, 'isMyTurnFromId:', isMyTurnFromId, 'modalLocks:', modalLocks, 'turnLock:', turnLock, 'lockOwner:', lockOwner, 'lockOwnerOk:', lockOwnerOk, 'isBankrupt:', isCurrentPlayerBankrupt, 'gameOver:', gameOver, 'isWaitingRevenue:', isWaitingRevenue, 'result:', controlsCanRoll)
+  // ✅ LOCK RULE: lockOwnerOk só pode ser true quando (!turnLock) OU (lockOwner === myUid). Nunca aceita null com lock ativo.
+  const lockOwnerOk = (!turnLock) || (lockOwner != null && String(lockOwner) === String(myUid))
+  // ✅ Fonte única de turno: isMyTurn (derivado de turnPlayerId)
+  const controlsCanRoll = isMyTurn && modalLocks === 0 && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
+  if (controlsCanRoll) {
+    console.log('[CAN_ROLL_TRUE]', { turnPlayerId, myUid, isMyTurn, turnLock, lockOwner, modalLocks, round })
+  } else if (!isMyTurn && (modalLocks === 0) && !gameOver) {
+    // útil para flagrar UI bug
+    if (String(turnPlayerId || '') === String(myUid || '') && !isMyTurn) {
+      console.error('[CAN_ROLL_BUG] turnPlayerId==myUid mas isMyTurn=false', { turnPlayerId, myUid })
+    }
+  }
 
   return (
     <div className="page">
@@ -1533,7 +1636,7 @@ export default function App() {
                 onAction(act)
               }}
               current={current}
-              isMyTurn={controlsCanRoll}
+              isMyTurn={isMyTurn}
               myUid={myUid}
               turnPlayerId={turnPlayerId}
               turnLock={turnLock}
