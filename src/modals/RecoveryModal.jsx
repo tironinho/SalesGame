@@ -278,7 +278,7 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
             onGoLoan={() => setStep('loan')}
             onGoReduce={() => setStep('reduce')}
             onGoFire={() => setStep('fire')}
-            onDeclareBankruptcy={() => resolveTop?.({ type: 'TRIGGER_BANKRUPTCY' })}
+            onDeclareBankruptcy={() => resolveTop?.({ type: 'TRIGGER_BANKRUPTCY', source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })}
           />
         )}
 
@@ -290,7 +290,7 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
               // Passa o payload completo do RecoveryLoan
               console.log('[DEBUG] RecoveryModal recebeu payload do RecoveryLoan:', payload)
               console.log('[DEBUG] RecoveryModal chamando resolveTop com:', payload)
-              const result = resolveTop?.(payload)
+              const result = resolveTop?.({ ...(payload || {}), source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })
               console.log('[DEBUG] RecoveryModal resolveTop retornou:', result)
             }}
           />
@@ -324,7 +324,8 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
                   type: 'REDUCE',
                   amount: total,
                   items: payload.items,
-                  note: `Redução múltipla +R$ ${total.toLocaleString()}`
+                  note: `Redução múltipla +R$ ${total.toLocaleString()}`,
+                  source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' }
                 })
                 return
               }
@@ -343,6 +344,7 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
                 note: selection
                   ? `Redução ${selection.group} nível ${selection.level} +R$ ${amount.toLocaleString()}`
                   : `Redução +R$ ${amount.toLocaleString()}`,
+                source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' },
               })
             }}
           />
@@ -352,7 +354,7 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
           <RecoveryFire
             roles={ROLES}
             onBack={() => setStep('menu')}
-            onConfirm={(payload) => resolveTop?.(payload)}
+            onConfirm={(payload) => resolveTop?.({ ...(payload || {}), source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })}
           />
         )}
       </div>

@@ -12,13 +12,17 @@ export default function FaturamentoMesModal({ value = 0, onResolve }) {
   const handleOk = (e) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
-    onResolve?.({ action: "OK" }); // fecha a modal do topo
+    onResolve?.({
+      action: "OK",
+      value: v,
+      source: { modal: "FaturamentoMesModal", file: "src/modals/FaturamentoMesModal.jsx" }
+    }); // fecha a modal do topo
   };
 
   return (
     <ModalBase
       zIndex={2147483647}
-      onClose={() => onResolve?.({ action: "CLOSE" })} // fecha por overlay/X
+      onClose={() => onResolve?.({ action: "CLOSE", value: v, source: { modal: "FaturamentoMesModal", file: "src/modals/FaturamentoMesModal.jsx" } })} // fecha por overlay/X
     >
       <div style={{ padding: 28, textAlign: "center", pointerEvents: "auto" }}>
         <div

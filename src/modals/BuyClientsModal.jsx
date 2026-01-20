@@ -84,6 +84,7 @@ export default function BuyClientsModal({
       maintenanceDelta,
       bensDelta: totalCost,   // bens aumentam pelo valor da aquisição
       clientsAdded: qtyNum,   // útil para cálculos externos
+      source: { modal: 'BuyClientsModal', file: 'src/modals/BuyClientsModal.jsx' },
     })
   }
 

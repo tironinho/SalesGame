@@ -21,6 +21,7 @@ import {
   capacityAndAttendance
 } from './game/gameMath'
 import { debugMode, validateGameState, validateCalculations } from './game/debugMode.js'
+import { initCashAudit, captureCashDiff } from './debug/cashAudit.js'
 // ✅ CORREÇÃO: Imports de testes apenas em DEV (carregamento dinâmico)
 if (import.meta.env.DEV) {
   // Carrega validadores e testes apenas em desenvolvimento
@@ -123,9 +124,33 @@ export default function App() {
     return ordered
   }
 
-  const [players, setPlayers] = useState([
+  const [players, _setPlayers] = useState([
     applyStarterKit({ id: meId, name: myName || 'Jogador', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
   ])
+
+  // ====== Cash Audit (instrumentação de saldo) ======
+  // Wrapper do setPlayers: captura diffs de cash sem mudar schema do estado.
+  const setPlayers = React.useCallback((updater) => {
+    _setPlayers((prev) => {
+      const next = (typeof updater === 'function') ? updater(prev) : updater
+      // meta pode ser setado via `setCashAuditContext()` por qualquer fluxo (ex.: useTurnEngine).
+      captureCashDiff(prev, next, null)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    // Ativa via ENV ou querystring; por padrão fica OFF e é silencioso.
+    let enabled = false
+    try {
+      enabled = String(import.meta.env.VITE_CASH_AUDIT || '') === '1'
+    } catch {}
+    try {
+      const url = new URL(window.location.href)
+      if (url.searchParams.get('cashAudit') === '1') enabled = true
+    } catch {}
+    initCashAudit({ enabled })
+  }, [])
   const [round, setRound] = useState(1)
   const [turnIdx, setTurnIdx] = useState(0)
   const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)

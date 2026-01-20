@@ -15,13 +15,19 @@ export default function DespesasOperacionaisModal({
   const handleOk = (e) => {
     e?.preventDefault?.();
     e?.stopPropagation?.();
-    onResolve?.({ action: "OK" }); // <- fecha a modal do topo
+    onResolve?.({
+      action: "OK",
+      expense: Number(expense || 0),
+      loanCharge: Number(loanCharge || 0),
+      total: Number(total || 0),
+      source: { modal: "DespesasOperacionaisModal", file: "src/modals/DespesasOperacionaisModal.jsx" }
+    }); // <- fecha a modal do topo
   };
 
   return (
     <ModalBase
       zIndex={2147483647}
-      onClose={() => onResolve?.({ action: "CLOSE" })} // fecha no overlay/X
+      onClose={() => onResolve?.({ action: "CLOSE", source: { modal: "DespesasOperacionaisModal", file: "src/modals/DespesasOperacionaisModal.jsx" } })} // fecha no overlay/X
     >
       <div style={{ padding: 28, textAlign: "center", pointerEvents: "auto" }}>
         <div

@@ -42,6 +42,8 @@ import {
   countAlivePlayers,
   findNextAliveIdx,
 } from './gameMath'
+import { setCashAuditContext } from '../debug/cashAudit'
+import { mkCashMeta } from '../debug/cashMeta'
 
 // ===== Engine V2 (refactor incremental) =====
 // IMPORTANTE:
@@ -2062,6 +2064,19 @@ export function useTurnEngine({
         console.warn('[DEBUG] ⚠️ onAction ROLL - há modais abertas, ignorando')
         return
       }
+
+      // Cash audit: define um trace/meta para correlacionar o "turn/action".
+      // (não altera schema do state; apenas runtime)
+      try {
+        const traceId = `ROLL:r${currentRoundRef.current}:t${turnIdxRef.current}:${Date.now()}`
+        setCashAuditContext(mkCashMeta({
+          traceId,
+          actionType: 'ROLL',
+          reason: act.note || 'ROLL',
+          origin: { file: 'src/game/useTurnEngine.jsx', fn: 'onAction(ROLL)' },
+          context: { round: currentRoundRef.current },
+        }))
+      } catch {}
 
       // ===== ENGINE V2 (DESLIGADO por padrão) =====
       // Nesta etapa, o V2 ainda é conservador e não substitui toda a lógica de modais/commit.

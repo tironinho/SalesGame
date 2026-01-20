@@ -9,6 +9,7 @@ import {
   clearLogs as clearLogCapture,
   logCapture
 } from '../game/debugMode.js'
+import { exportCashAudit, clearCashAudit, initCashAudit } from '../debug/cashAudit.js'
 
 export default function DebugPanel({ players, turnIdx, round, gameOver, winner }) {
   const [isVisible, setIsVisible] = useState(false)
@@ -73,9 +74,21 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
   const handleClearAll = () => {
     debugMode.clearHistory()
     clearLogCapture()
+    clearCashAudit()
     setStats(getDebugStats())
     setLogStats(getLogStats())
     console.log('[DebugPanel] 🗑️ Todos os logs foram limpos')
+  }
+
+  const handleExportCashAudit = () => {
+    const json = exportCashAudit({ download: true })
+    console.log('[CashAudit] export json:', json)
+  }
+
+  const handleToggleCashAudit = () => {
+    const enabled = !!window.__CASH_AUDIT__?.enabled
+    initCashAudit({ enabled: !enabled })
+    console.log('[CashAudit] enabled =', !enabled)
   }
 
   const handleMouseDown = (e) => {
@@ -292,6 +305,39 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
           title="Limpa todos os logs e histórico de validação"
         >
           🗑️ Limpar Tudo
+        </button>
+
+        <button
+          onClick={handleExportCashAudit}
+          style={{
+            background: '#8e44ad',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '6px 12px',
+            cursor: 'pointer',
+            fontSize: '10px'
+          }}
+          title="Exporta o audit log de saldo (JSON)"
+        >
+          💰 Exportar Cash Audit
+        </button>
+
+        <button
+          onClick={handleToggleCashAudit}
+          style={{
+            background: window.__CASH_AUDIT__?.enabled ? '#2ecc71' : '#7f8c8d',
+            color: '#111',
+            border: 'none',
+            borderRadius: '4px',
+            padding: '6px 12px',
+            cursor: 'pointer',
+            fontSize: '10px',
+            fontWeight: 800
+          }}
+          title="Ativa/desativa auditoria de saldo (runtime)"
+        >
+          {window.__CASH_AUDIT__?.enabled ? '✅ Cash Audit ON' : '❌ Cash Audit OFF'}
         </button>
       </div>
 
