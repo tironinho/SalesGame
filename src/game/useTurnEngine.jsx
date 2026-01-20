@@ -99,6 +99,11 @@ export function useTurnEngine({
   
   // ✅ CORREÇÃO: Ref para rastrear se há uma mudança de turno em progresso
   const turnChangeInProgressRef = React.useRef(false)
+
+  // ✅ Evita duplicação: quando advanceAndMaybeLap agenda retry por causa de modais abertas,
+  // múltiplos cliques/entradas não podem agendar múltiplos retries (o que duplicaria Sorte & Revés).
+  const advanceRetryTimerRef = React.useRef(null)
+  const pendingAdvanceArgsRef = React.useRef(null)
   
   // ✅ CORREÇÃO: Ref para timeout de segurança do turnLock
   const turnLockTimeoutRef = React.useRef(null)
@@ -437,10 +442,16 @@ export function useTurnEngine({
         modalLocks: modalLocksRef.current,
         opening: openingModalRef.current
       })
-      // Aguarda um pouco e tenta novamente
-      setTimeout(() => {
+      // ✅ Evita duplicação: consolida retries (vários cliques não podem agendar vários retries)
+      pendingAdvanceArgsRef.current = { steps, deltaCash, note }
+      if (advanceRetryTimerRef.current) return
+      advanceRetryTimerRef.current = setTimeout(() => {
+        advanceRetryTimerRef.current = null
+        const args = pendingAdvanceArgsRef.current
+        pendingAdvanceArgsRef.current = null
+        if (!args) return
         if (modalLocksRef.current === 0 && !openingModalRef.current) {
-          advanceAndMaybeLap(steps, deltaCash, note)
+          advanceAndMaybeLap(args.steps, args.deltaCash, args.note)
         }
       }, 200)
       return
