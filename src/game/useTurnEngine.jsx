@@ -2049,6 +2049,11 @@ export function useTurnEngine({
     if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
 
     if (act.type === 'ROLL'){
+      // ✅ HARD GUARD (ENGINE): turnPlayerId é a verdade. Sem isso, nunca executa ROLL.
+      if (!turnPlayerId || String(turnPlayerId) !== String(myUid)) {
+        console.warn('[ROLL_BLOCK] not my turn (turnPlayerId mismatch)', { turnPlayerId, myUid })
+        return
+      }
       // ✅ CORREÇÃO: Single-writer - apenas o jogador da vez pode rolar
       if (!isMyTurn) {
         console.warn('[DEBUG] ⚠️ onAction ROLL - não é minha vez, ignorando')
@@ -2057,6 +2062,12 @@ export function useTurnEngine({
       // ✅ CORREÇÃO: Verifica turnLock antes de executar
       if (turnLock) {
         console.warn('[DEBUG] ⚠️ onAction ROLL - turnLock ativo, ignorando')
+        return
+      }
+      // ✅ HARD GUARD: se houver lockOwner e for de outro, bloqueia (proteção extra)
+      const lo = lockOwnerRef.current
+      if (turnLock && lo && String(lo) !== String(myUid)) {
+        console.warn('[ROLL_BLOCK] locked by other', { lockOwner: lo, myUid })
         return
       }
       // ✅ CORREÇÃO: Verifica modalLocks antes de executar

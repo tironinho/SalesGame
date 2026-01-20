@@ -177,6 +177,8 @@ export default function App() {
   const [turnLock, setTurnLock] = useState(false)
   const [lockOwner, setLockOwner] = useState(null)
   const bcRef = useRef(null)
+  // ✅ INIT_GUARD: após aplicar snapshot autoritativo do Supabase, nunca mais aceitar "reset local" de turno/round
+  const hydratedFromNetRef = useRef(false)
   
   // ✅ BUG 2 FIX: Refs para watchdog anti-trava
   const lockSinceRef = useRef(null)
@@ -225,6 +227,16 @@ export default function App() {
         if (String(d.source) === String(meId)) return
 
         if (d.type === 'START') {
+          // ✅ INIT_GUARD: em multiplayer via Supabase, ignore START via BroadcastChannel
+          // (BC é apenas para abas na mesma máquina; em rede, o snapshot do servidor é a autoridade)
+          if (net?.enabled && net?.ready) {
+            console.log('[INIT_GUARD] init skipped: net enabled/ready (BC START ignored)')
+            return
+          }
+          if (hydratedFromNetRef.current) {
+            console.log('[INIT_GUARD] init skipped: hydratedFromNet=true (BC START ignored)')
+            return
+          }
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
@@ -537,6 +549,13 @@ export default function App() {
     const me = String(myUid || meId || "")
     if (!me) return false
 
+    // ✅ MULTIPLAYER: quando net está ativo, não permita fallback por turnIdx.
+    // Sem turnPlayerId autoritativo => ninguém rola (evita janela de corrida no join).
+    if (net?.enabled && net?.ready) {
+      if (!turnPlayerId) return false
+      return String(turnPlayerId) === me
+    }
+
     if (turnPlayerId) {
       return String(turnPlayerId) === me
     }
@@ -556,8 +575,12 @@ export default function App() {
         setTurnIdx(idx)
       }
     } else {
-      const fallback = players[turnIdx]?.id || players[0]?.id
-      if (fallback) setTurnPlayerId(String(fallback))
+      // ✅ INIT_GUARD: em multiplayer (net ativo), NÃO inventa turnPlayerId local.
+      // Ele deve vir do snapshot autoritativo (ou do START do host).
+      if (!net?.enabled || !net?.ready) {
+        const fallback = players[turnIdx]?.id || players[0]?.id
+        if (fallback) setTurnPlayerId(String(fallback))
+      }
     }
   }, [players, turnPlayerId, turnIdx])
   
@@ -848,6 +871,15 @@ export default function App() {
 
     // ✅ CORREÇÃO MULTIPLAYER: Log de aplicação do snapshot autoritativo
     console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'turnIdx:', nt, 'round:', nr)
+
+    // ✅ INIT_GUARD: marca hidratação real quando há turno/players válidos vindos da rede
+    try {
+      const hasPlayers = Array.isArray(netState.players) && netState.players.length > 0
+      const hasTurn = netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== ''
+      if (hasPlayers && hasTurn) {
+        hydratedFromNetRef.current = true
+      }
+    } catch {}
   }, [netVersion, netState, net?.enabled, net?.ready])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
@@ -1502,6 +1534,11 @@ export default function App() {
               }}
               current={current}
               isMyTurn={controlsCanRoll}
+              myUid={myUid}
+              turnPlayerId={turnPlayerId}
+              turnLock={turnLock}
+              lockOwner={lockOwner}
+              modalLocks={modalLocks}
             />
             <div style={{ marginTop: 10 }}>
               <button
