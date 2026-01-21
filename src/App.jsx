@@ -12,6 +12,7 @@ import Controls from './components/panel/Controls.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
 import DebugPanel from './components/DebugPanel.jsx'
+import { ModalProvider } from './modals/ModalContext.jsx'
 
 // Regras / Engine
 import { useTurnEngine } from './game/useTurnEngine.jsx'
@@ -65,7 +66,7 @@ export default function App() {
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
-  const [pendingRoomId, setPendingRoomId] = useState(null)
+  const [roomId, setRoomId] = useState(null)
 
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
@@ -242,7 +243,7 @@ export default function App() {
 
       if (room && roomFromUrl) {
         // não entrar automaticamente; apenas guardar para depois do StartScreen
-        setPendingRoomId(String(room))
+        setRoomId(String(room))
         // mantém referência para quando o usuário confirmar o nome
         setCurrentLobbyId(String(room))
         try {
@@ -1523,8 +1524,10 @@ export default function App() {
   // 1) Tela inicial: pega o nome e vai para Lobbies
   if (phase === 'start') {
     return (
-      <StartScreen
-        onEnter={(typedName) => {
+      <ModalProvider>
+        <StartScreen
+          currentName={myName}
+          onEnter={(typedName) => {
           const clean = String(typedName || '').trim()
           if (!clean) return
           // ✅ salva somente após ação explícita do usuário
@@ -1536,24 +1539,27 @@ export default function App() {
           setMeHud(h => ({ ...h, name: clean }))
           setLog([`Bem-vindo, ${clean}!`])
 
-          // ✅ após confirmar nome: se há room pendente, entra direto nela; senão vai para lista de salas
-          if (pendingRoomId) {
-            setCurrentLobbyId(pendingRoomId)
-            window.__setRoomCode?.(pendingRoomId)
+          // ✅ após confirmar nome: se há roomId (URL), entra direto nela; senão vai para lista de salas
+          if (roomId) {
+            setCurrentLobbyId(roomId)
+            window.__setRoomCode?.(roomId)
             setPhase('playersLobby')
           } else {
             setPhase('lobbies')
           }
         }}
-      />
+        />
+      </ModalProvider>
     )
   }
 
   // 2) Lista de lobbies
   if (phase === 'lobbies') {
     return (
-      <LobbyList
-        onEnterRoom={(id) => {
+      <ModalProvider>
+        <LobbyList
+          playerName={myName}
+          onEnterRoom={(id) => {
           setCurrentLobbyId(id)
           window.__setRoomCode?.(id)
           try {
@@ -1564,20 +1570,23 @@ export default function App() {
           } catch {}
           setPhase('playersLobby')
         }}
-      />
+        />
+      </ModalProvider>
     )
   }
 
   // 3) Lobby dos jogadores (aguarda e inicia)
   if (phase === 'playersLobby') {
     return (
-      <PlayersLobby
-        lobbyId={currentLobbyId}
-        onBack={() => {
+      <ModalProvider>
+        <PlayersLobby
+          lobbyId={currentLobbyId || roomId}
+          playerName={myName}
+          onBack={() => {
           window.__setRoomCode?.(null)
           setPhase('lobbies')
         }}
-        onStartGame={(payload) => {
+          onStartGame={(payload) => {
           // nome/uuid da sala
           const roomName =
             payload?.lobbyName ||
@@ -1657,12 +1666,14 @@ export default function App() {
           broadcastStart(normalized)
           setPhase('game')
         }}
-      />
+        />
+      </ModalProvider>
     )
   }
 
   // 4) Jogo
   return (
+    <ModalProvider>
     <div className="page">
       <header className="topbar">
         <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
@@ -1778,5 +1789,6 @@ export default function App() {
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
       {showBankruptOverlay && <BankruptOverlay />}
     </div>
+    </ModalProvider>
   )
 }

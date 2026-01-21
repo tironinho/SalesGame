@@ -2,12 +2,11 @@
 import { useEffect, useState } from 'react'
 import {
   getOrCreateTabPlayerId,     // <-- id por ABA
-  getTabPlayerName,           // <-- nome (sem default automático)
   makeId,                     // opcional, se quiser usar id novo ao criar
 } from '../auth'
 import { listLobbies, createLobby, joinLobby, onLobbiesRealtime } from '../lib/lobbies'
 
-export default function LobbyList({ onEnterRoom }) {
+export default function LobbyList({ onEnterRoom, playerName }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -29,19 +28,19 @@ export default function LobbyList({ onEnterRoom }) {
 
   // Cria e já entra na sala (host = jogador desta ABA)
   async function handleCreate() {
-    const playerName = getTabPlayerName()
-    if (!String(playerName || '').trim()) {
+    const pn = String(playerName || '').trim()
+    if (!pn) {
       alert('Digite seu nome na tela inicial antes de criar/entrar em salas.')
       return
     }
-    const defaultName = `Sala de ${playerName}`
+    const defaultName = `Sala de ${pn}`
     const name = prompt('Nome do lobby:', defaultName) || defaultName
 
     // usamos o id desta aba como hostId (ou gere um novo com makeId() se preferir)
     const hostId = getOrCreateTabPlayerId()
     try {
       const lobbyId = await createLobby({ name, hostId, max: 4 })
-      await joinLobby({ lobbyId, playerId: hostId, playerName, ready: false })
+      await joinLobby({ lobbyId, playerId: hostId, playerName: pn, ready: false })
       onEnterRoom?.(lobbyId)
     } catch (e) {
       alert(e.message || 'Não foi possível criar o lobby.')
@@ -52,13 +51,13 @@ export default function LobbyList({ onEnterRoom }) {
   // Entra usando o id desta ABA (cada aba = jogador diferente)
   async function handleJoin(lobbyId) {
     try {
-      const playerName = getTabPlayerName()
-      if (!String(playerName || '').trim()) {
+      const pn = String(playerName || '').trim()
+      if (!pn) {
         alert('Digite seu nome na tela inicial antes de entrar em salas.')
         return
       }
       const playerId = getOrCreateTabPlayerId()
-      await joinLobby({ lobbyId, playerId, playerName, ready: false })
+      await joinLobby({ lobbyId, playerId, playerName: pn, ready: false })
       onEnterRoom?.(lobbyId)
     } catch (e) {
       alert(e.message || 'Não foi possível entrar no lobby.')

@@ -14,12 +14,11 @@ import {
 } from '../lib/lobbies'
 import {
   getOrCreateTabPlayerId,   // id por ABA
-  getTabPlayerName          // nome (sem default automático)
 } from '../auth'
 
-export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
+export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame }) {
   const meId = getOrCreateTabPlayerId()
-  const meName = getTabPlayerName()
+  const meName = String(playerName || '').trim()
 
   const [lobby, setLobby] = useState(null)
   const [players, setPlayers] = useState([])
@@ -41,6 +40,15 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
   
   // precisa ser host, sala 'open', >=1 jogador e todos prontos
   const canStart = amHost && lobby?.status === 'open' && players.length >= 1 && readyCount === players.length
+
+  // ✅ C3: se nome estiver vazio, impede fluxo do lobby.
+  useEffect(() => {
+    if (!meName) {
+      alert('Digite seu nome primeiro.')
+      onBack?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meName])
   
   // Debug logs para identificar o problema
   console.log('[PlayersLobby] Debug:', {

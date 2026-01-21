@@ -10,7 +10,7 @@ import BoardMarkers from './BoardMarkers'
 import TrackRecorder from '../dev/TrackRecorder'
 
 // Fallbacks (caso o pai ainda não envie `me`)
-import { getOrCreateTabPlayerId, getTabPlayerName } from '../auth'
+import { getOrCreateTabPlayerId } from '../auth'
 
 // --- NOVO: dimensões/estilo dos tokens ---
 const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
@@ -49,7 +49,8 @@ export default function Board({
 
   // 🔐 “quem sou eu” preferindo o que vem do pai (PlayersLobby/App)
   const myId = me?.id || getOrCreateTabPlayerId()
-  const fallbackName = getTabPlayerName() || 'Jogador'
+  // ✅ D1: Board não deve gerar nome automaticamente nem ler storage para isso.
+  const fallbackName = 'Jogador'
   const meFromPlayers = useMemo(
     () => players?.find(p => p.id === myId) || null,
     [players, myId]
