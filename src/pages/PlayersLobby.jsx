@@ -34,6 +34,10 @@ export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
   const amHost = useMemo(() => lobby?.host_id === meId, [lobby, meId])
   const me = useMemo(() => players.find(p => p.player_id === meId), [players, meId])
   const readyCount = useMemo(() => players.filter(p => p.ready).length, [players])
+  const hasDuplicateNames = useMemo(() => {
+    const names = players.map(p => String(p.player_name || '').trim().toLowerCase()).filter(Boolean)
+    return new Set(names).size !== names.length
+  }, [players])
   
   // precisa ser host, sala 'open', >=1 jogador e todos prontos
   const canStart = amHost && lobby?.status === 'open' && players.length >= 1 && readyCount === players.length
@@ -246,6 +250,11 @@ useEffect(() => {
             <span>status: {lobby?.status || '...'}</span>
             <span style={{ marginLeft: 12 }}>Prontos: {readyCount}/{players.length}</span>
           </div>
+          {hasDuplicateNames && (
+            <div style={{ marginTop: 8, color: '#ffd54f', fontWeight: 800 }}>
+              ⚠️ Aviso: existe nome duplicado na sala. (A identidade é pelo ID; renomear evita confusão.)
+            </div>
+          )}
 
           <div style={{ display:'flex', gap:12 }}>
             <button style={{ ...s.btn, ...(canStart ? s.btnPrimary : s.disabled) }} onClick={handleStart} disabled={!canStart}>

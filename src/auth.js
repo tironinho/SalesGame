@@ -27,7 +27,16 @@ export function getOrSetTabPlayerName(defaultName = 'Jogador') {
   const K = 'sg_tab_player_name';
   let name = sessionStorage.getItem(K);
   if (!name) {
-    name = defaultName;
+    // ✅ FIX: default único por aba (evita colisão de nome "Jogador" em múltiplos clients/abas)
+    // Se caller passar um default diferente de "Jogador", respeita.
+    const base = String(defaultName || 'Jogador')
+    if (base.trim().toLowerCase() === 'jogador') {
+      const id = getOrCreateTabPlayerId()
+      const suffix = String(id || '').slice(-4).toUpperCase()
+      name = `Jogador-${suffix || 'XXXX'}`
+    } else {
+      name = base
+    }
     sessionStorage.setItem(K, name);
   }
   return name;

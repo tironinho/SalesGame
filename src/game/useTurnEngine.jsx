@@ -272,13 +272,12 @@ export function useTurnEngine({
   const endGamePendingRef = React.useRef(false)
   const endGameFinalizedRef = React.useRef(false)
 
-  // ✅ CORREÇÃO: Atualiza lockOwner quando turnIdx muda (incluindo via SYNC)
+  // ✅ IMPORTANT: lockOwner deve vir do estado replicado (Supabase/BC TURNLOCK),
+  // não de heurística local "é minha vez".
+  // Mantemos este effect apenas para limpeza de pendingTurnDataRef; não toca em lockOwner.
   React.useEffect(() => {
     const currentPlayer = players[turnIdx]
     if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
-      // Se é minha vez, atualiza lockOwner para permitir que eu mude o turno
-      console.log('[DEBUG] É minha vez - atualizando lockOwner para:', myUid, 'turnIdx:', turnIdx)
-      setLockOwner(String(myUid))
       // ✅ CORREÇÃO: NÃO limpa pendingTurnDataRef aqui se há dados pendentes para um turno futuro
       // O tick precisa usar esses dados para mudar o turno
       // Só limpa se os dados pendentes são para o turno atual (já foi processado)
@@ -293,11 +292,7 @@ export function useTurnEngine({
         }
       }
     } else {
-      // Se não é minha vez, limpa lockOwner e pendingTurnDataRef
-      if (lockOwner === String(myUid)) {
-        console.log('[DEBUG] Não é mais minha vez - limpando lockOwner')
-        setLockOwner(null)
-      }
+      // Se não é minha vez, não altera lockOwner (replicado); apenas gerencia pendingTurnDataRef
       // ✅ CORREÇÃO: Só limpa pendingTurnDataRef se não há dados pendentes para o próximo turno
       // (pode ser que o turno esteja mudando e o tick ainda precise dos dados)
       if (pendingTurnDataRef.current && pendingTurnDataRef.current.nextTurnIdx !== turnIdx) {
@@ -306,7 +301,7 @@ export function useTurnEngine({
         pendingTurnDataRef.current = null
       }
     }
-  }, [turnIdx, players, myUid, lockOwner])
+  }, [turnIdx, players, myUid])
 
   // helper: abrir modal e "travar"/"destravar" o contador
   // ✅ CORREÇÃO OBRIGATÓRIA 1: Serialização via fila + decremento único no finally

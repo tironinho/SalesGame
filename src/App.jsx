@@ -602,6 +602,7 @@ export default function App() {
   const netCommit = net?.commit
   const netVersion = net?.version
   const netState = net?.state
+  const netStateId = net?.stateId
   
   // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {
@@ -639,6 +640,7 @@ export default function App() {
   
   // ✅ CORREÇÃO: Ref para garantir monotonicidade do estado remoto aplicado
   const lastAppliedNetVersionRef = React.useRef(0)
+  const lastAppliedStateIdRef = React.useRef(null)
   
   // ✅ CORREÇÃO: Refs para rastrear baseline local antes de mudanças (para merge 3-way)
   const playersBeforeRef = React.useRef(null)
@@ -803,20 +805,39 @@ export default function App() {
     if (!netState) return
 
     // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE netVersion como autoridade (versão da linha no servidor)
-    // Snapshot autoritativo: se netVersion <= lastAppliedNetVersionRef => ignore (snapshot antigo)
+    // Snapshot autoritativo:
+    // - aplica se netVersion avançou
+    // - OU se netVersion é igual mas stateId é diferente (corrige divergência com mesma versão)
     // ✅ CORREÇÃO 4: Blindagem no client que recebe rollback
     if (typeof netVersion === 'number') {
       // ✅ FIX: lastLocalStateRef pode ser sobrescrito por effects; stateVersionRef é a fonte local mais confiável
       const localStateVersion = (stateVersionRef.current ?? lastLocalStateRef.current?.stateVersion ?? 0)
       const remoteStateVersion = netState?.stateVersion ?? 0
       
-      // Ignora se netVersion não avançou (já aplicado)
-      if (netVersion <= lastAppliedNetVersionRef.current) {
-        console.log('[NET] ⏭️ IGNORADO - netVersion não avançou:', {
-          netVersion,
-          lastApplied: lastAppliedNetVersionRef.current
-        })
+      const incomingStateId = String(netState?.stateId ?? netState?.actionId ?? netStateId ?? '')
+      const lastStateId = String(lastAppliedStateIdRef.current ?? '')
+
+      // Ignora se versão é menor (rollback)
+      if (netVersion < lastAppliedNetVersionRef.current) {
+        console.log('[NET] ⏭️ IGNORADO - netVersion regressivo:', { netVersion, lastApplied: lastAppliedNetVersionRef.current })
         return
+      }
+
+      // Se versão é igual, só aplica se stateId for diferente (e não vazio)
+      if (netVersion === lastAppliedNetVersionRef.current) {
+        if (incomingStateId && incomingStateId !== lastStateId) {
+          console.warn('[NET] same version but different stateId -> applying', {
+            netVersion,
+            incomingStateId,
+            lastStateId
+          })
+        } else {
+          console.log('[NET] ⏭️ IGNORADO - same version and same stateId:', {
+            netVersion,
+            stateId: incomingStateId || '(empty)'
+          })
+          return
+        }
       }
       
       // ✅ CORREÇÃO 4: Ignora rollback de stateVersion (proteção adicional)
@@ -831,8 +852,10 @@ export default function App() {
         return
       }
       
-      // Atualiza lastAppliedNetVersionRef ANTES de aplicar (garante monotonicidade)
+      // Atualiza refs ANTES de aplicar (garante monotonicidade)
       lastAppliedNetVersionRef.current = netVersion
+      const incomingStateId = String(netState?.stateId ?? netState?.actionId ?? netStateId ?? '')
+      if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
     } else {
       // Se netVersion não está disponível, não aplica (aguarda versão válida)
       return
@@ -1181,6 +1204,13 @@ export default function App() {
       (patch.turnPlayerId !== undefined ? 'TURN' : 'PLAYER_DELTA')
 
     // ✅ actionId (idempotência): gera se não vier do chamador
+    const mkId = () => {
+      try {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+      } catch {}
+      return `${String(myUid || 'anon')}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+    const stateId = String(patch.stateId || mkId())
     const actionId = String(patch.actionId || `${String(myUid || 'anon')}-${Date.now()}-${currentVersion}`)
 
     // ✅ CORREÇÃO: Atualiza lastLocalStateRef imediatamente antes de fazer broadcast
@@ -1217,6 +1247,7 @@ export default function App() {
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         roundFlags: nextRoundFlags,
+        stateId,
         actionId,
         kind: 'START',
         stateVersion: currentVersion,
@@ -1269,6 +1300,7 @@ export default function App() {
       const statePatch = {
         kind: patchKind,
         actionId,
+        stateId,
         ...(finalGameOver ? { gameOver: true, winner: finalWinner } : {}),
         ...(patchKind === 'TURN'
           ? {
@@ -1529,10 +1561,11 @@ export default function App() {
           // ✅ CORREÇÃO: Normaliza players antes de usar
           const normalized = normalizePlayers(mapped)
 
-          // alinha meu UID com o id real (comparando pelo nome salvo)
+          // ✅ FIX: myUid NUNCA deve ser inferido por nome (nomes podem colidir: "Jogador").
+          // Identidade por aba é SEMPRE meId.
           try {
-            const mine = normalized.find(p => (String(p.name || '').trim().toLowerCase()) === (String(myName || '').trim().toLowerCase()))
-            if (mine?.id) setMyUid(String(mine.id))
+            const mineById = normalized.find(p => String(p.id) === String(meId))
+            if (mineById) setMyUid(String(meId))
           } catch {}
 
           setPlayers(normalized)

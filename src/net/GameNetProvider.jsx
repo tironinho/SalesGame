@@ -23,14 +23,17 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const [ready, setReady] = useState(false)
   const [state, setState] = useState({})
   const [version, setVersion] = useState(0)
+  const [stateId, setStateId] = useState(null)
 
   const stateRef = useRef(state)
   const versionRef = useRef(version)
+  const stateIdRef = useRef(stateId)
   const lastEvtRef = useRef(0)
   const activeRoomIdRef = useRef(null)
   const latestKnownUpdatedAtRef = useRef(null)
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { versionRef.current = version }, [version])
+  useEffect(() => { stateIdRef.current = stateId }, [stateId])
 
   // Helper: obtém a row mais recente por code (evita erro de .single() com duplicatas)
   const getLatestRoomByCode = async (roomCode) => {
@@ -99,14 +102,27 @@ function GameNetProvider({ roomCode, hostId, children }) {
         { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => {
           const row = payload.new || payload.old || {}
-          // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE version como autoridade (removido updatedAt check)
-          if (typeof row.version === 'number' && row.version > versionRef.current) {
-            setVersion(row.version)
-            if (row.state) setState(row.state)
+          const incomingVersion = (typeof row.version === 'number') ? row.version : null
+          const incomingState = row.state || null
+          const incomingStateId = incomingState?.stateId ?? null
+
+          // ✅ FIX: aplica update se versão avançou OU se mesma versão mas stateId diferente.
+          const shouldApply =
+            (incomingVersion != null && incomingVersion > versionRef.current) ||
+            (incomingVersion != null && incomingVersion === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
+
+          if (shouldApply) {
+            if (incomingVersion != null) setVersion(incomingVersion)
+            if (incomingState) setState(incomingState)
+            if (incomingStateId) setStateId(String(incomingStateId))
             if (row.updated_at) latestKnownUpdatedAtRef.current = row.updated_at
             if (row.id) activeRoomIdRef.current = row.id
             lastEvtRef.current = Date.now()
-            console.log('[NET] ✅ applied remote v=%d (realtime)', row.version)
+            if (incomingVersion === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current) {
+              console.warn('[NET] ✅ applied remote (same version, different stateId)', { version: incomingVersion, stateId: incomingStateId })
+            } else {
+              console.log('[NET] ✅ applied remote v=%d (realtime)', incomingVersion)
+            }
           }
         }
       )
@@ -121,10 +137,15 @@ function GameNetProvider({ roomCode, hostId, children }) {
       if (Date.now() - (lastEvtRef.current || 0) < 2000) return
       const current = await getLatestRoomByCode(code)
       if (current) {
-        // ✅ CORREÇÃO: Só aplica se versão for maior (nunca aceita regressão)
-        if (current.version > versionRef.current) {
+        const incomingStateId = current.state?.stateId ?? null
+        const shouldApply =
+          (current.version > versionRef.current) ||
+          (current.version === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
+
+        if (shouldApply) {
           setVersion(current.version)
           setState(current.state || {})
+          if (incomingStateId) setStateId(String(incomingStateId))
           if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
           if (current.id) activeRoomIdRef.current = current.id
         }
@@ -275,7 +296,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
     }
   }
 
-  const value = useMemo(() => ({ enabled, ready, state, version, commit }), [enabled, ready, state, version])
+  const value = useMemo(() => ({ enabled, ready, state, version, stateId, commit }), [enabled, ready, state, version, stateId])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
