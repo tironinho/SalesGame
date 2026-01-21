@@ -10,7 +10,7 @@ import BoardMarkers from './BoardMarkers'
 import TrackRecorder from '../dev/TrackRecorder'
 
 // Fallbacks (caso o pai ainda não envie `me`)
-import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from '../auth'
+import { getOrCreateTabPlayerId, getTabPlayerName } from '../auth'
 
 // --- NOVO: dimensões/estilo dos tokens ---
 const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
@@ -49,7 +49,7 @@ export default function Board({
 
   // 🔐 “quem sou eu” preferindo o que vem do pai (PlayersLobby/App)
   const myId = me?.id || getOrCreateTabPlayerId()
-  const fallbackName = getOrSetTabPlayerName('Jogador')
+  const fallbackName = getTabPlayerName() || 'Jogador'
   const meFromPlayers = useMemo(
     () => players?.find(p => p.id === myId) || null,
     [players, myId]
@@ -130,7 +130,9 @@ export default function Board({
           <BoardMarkers visible={false} boardWidth={size.w} boardHeight={size.h} />
 
           {players.map((p, idx) => {
-            const isTurn = idx === turnIdx
+            // ✅ OBJ 6: turno por ID estável (não por índice potencialmente divergente)
+            const activePlayerId = players?.[turnIdx]?.id
+            const isTurn = String(p?.id) === String(activePlayerId)
             const i   = ((p.pos % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
             const pt  = TRACK_POINTS_NORM[i]
             const xy  = scalePoint(pt, size.w, size.h)

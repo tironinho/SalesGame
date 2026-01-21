@@ -23,6 +23,22 @@ export function getOrCreateTabPlayerId() {
   return id;
 }
 
+// ====== NOME DO JOGADOR (sem default automático) ======
+export const TAB_PLAYER_NAME_KEY = 'sg:playerName'
+
+export function getTabPlayerName() {
+  try {
+    return String(localStorage.getItem(TAB_PLAYER_NAME_KEY) || '')
+  } catch {
+    return ''
+  }
+}
+
+export function clearTabPlayerName() {
+  try { localStorage.removeItem(TAB_PLAYER_NAME_KEY) } catch {}
+  try { sessionStorage.removeItem('sg_tab_player_name') } catch {}
+}
+
 export function getOrSetTabPlayerName(defaultName = 'Jogador') {
   const K = 'sg_tab_player_name';
   let name = sessionStorage.getItem(K);
@@ -45,6 +61,8 @@ export function getOrSetTabPlayerName(defaultName = 'Jogador') {
 }
 export function setTabPlayerName(name) {
   const clean = String(name ?? '')
+  // ✅ Persistência explícita (apenas quando usuário confirma)
+  try { localStorage.setItem(TAB_PLAYER_NAME_KEY, clean.trim()) } catch {}
   sessionStorage.setItem('sg_tab_player_name', clean);
   return clean;
 }

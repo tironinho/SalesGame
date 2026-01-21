@@ -14,12 +14,12 @@ import {
 } from '../lib/lobbies'
 import {
   getOrCreateTabPlayerId,   // id por ABA
-  getOrSetTabPlayerName     // nome por ABA
+  getTabPlayerName          // nome (sem default automático)
 } from '../auth'
 
 export default function PlayersLobby({ lobbyId, onBack, onStartGame }) {
   const meId = getOrCreateTabPlayerId()
-  const meName = getOrSetTabPlayerName('Jogador')
+  const meName = getTabPlayerName()
 
   const [lobby, setLobby] = useState(null)
   const [players, setPlayers] = useState([])

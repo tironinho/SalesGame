@@ -243,6 +243,8 @@ export default function App() {
       if (room && roomFromUrl) {
         // não entrar automaticamente; apenas guardar para depois do StartScreen
         setPendingRoomId(String(room))
+        // mantém referência para quando o usuário confirmar o nome
+        setCurrentLobbyId(String(room))
         try {
           url.searchParams.set('room', String(room))
           history.replaceState(null, '', url.toString())

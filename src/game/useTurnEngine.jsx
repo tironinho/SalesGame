@@ -982,7 +982,10 @@ export function useTurnEngine({
     if (deltaCash) appendLog(`${cur.name} ${deltaCash>0? 'ganhou' : 'pagou'} $${(Math.abs(deltaCash)).toLocaleString()}`)
     if (note) appendLog(note)
     
-    setPlayers(nextPlayers)
+    // ✅ OBJ 4: movimento precisa refletir para todos imediatamente (pos/cash/flags)
+    setPlayers(nextPlayers, { source: 'ROLL' })
+    // Broadcast imediatamente como PLAYER_DELTA (não mexe em turno aqui)
+    broadcastState(nextPlayers, turnIdx, currentRoundRef.current, gameOverRef.current, winnerRef.current, { kind: 'PLAYER_DELTA' })
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
     // Usa função de atualização para sempre pegar o valor mais recente do estado

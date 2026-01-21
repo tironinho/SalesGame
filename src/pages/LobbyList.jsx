@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import {
   getOrCreateTabPlayerId,     // <-- id por ABA
-  getOrSetTabPlayerName,      // <-- nome por ABA
+  getTabPlayerName,           // <-- nome (sem default automático)
   makeId,                     // opcional, se quiser usar id novo ao criar
 } from '../auth'
 import { listLobbies, createLobby, joinLobby, onLobbiesRealtime } from '../lib/lobbies'
@@ -29,7 +29,11 @@ export default function LobbyList({ onEnterRoom }) {
 
   // Cria e já entra na sala (host = jogador desta ABA)
   async function handleCreate() {
-    const playerName = getOrSetTabPlayerName('Jogador')  // nome desta aba
+    const playerName = getTabPlayerName()
+    if (!String(playerName || '').trim()) {
+      alert('Digite seu nome na tela inicial antes de criar/entrar em salas.')
+      return
+    }
     const defaultName = `Sala de ${playerName}`
     const name = prompt('Nome do lobby:', defaultName) || defaultName
 
@@ -48,7 +52,11 @@ export default function LobbyList({ onEnterRoom }) {
   // Entra usando o id desta ABA (cada aba = jogador diferente)
   async function handleJoin(lobbyId) {
     try {
-      const playerName = getOrSetTabPlayerName('Jogador')
+      const playerName = getTabPlayerName()
+      if (!String(playerName || '').trim()) {
+        alert('Digite seu nome na tela inicial antes de entrar em salas.')
+        return
+      }
       const playerId = getOrCreateTabPlayerId()
       await joinLobby({ lobbyId, playerId, playerName, ready: false })
       onEnterRoom?.(lobbyId)
