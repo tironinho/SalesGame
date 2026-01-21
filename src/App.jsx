@@ -38,7 +38,7 @@ if (import.meta.env.DEV) {
 }
 
 // Identidade por aba
-import { getOrCreateTabPlayerId, getOrSetTabPlayerName } from './auth'
+import { getOrCreateTabPlayerId, setTabPlayerName } from './auth'
 
 // Net (opcional)
 import { useGameNet } from './net/GameNetProvider.jsx'
@@ -65,13 +65,12 @@ export default function App() {
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
+  const [pendingRoomId, setPendingRoomId] = useState(null)
 
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
-  const myName = useMemo(() => {
-    // Obter nome salvo do sessionStorage
-    return getOrSetTabPlayerName('')
-  }, [])
+  // ✅ OBJ 2: nome começa vazio; só define após StartScreen confirmar.
+  const [myName, setMyName] = useState('')
   const [myUid, setMyUid] = useState(meId)
 
   // ====== estado mínimo do jogo
@@ -137,7 +136,7 @@ export default function App() {
   }
 
   const [players, _setPlayers] = useState([
-    applyStarterKit({ id: meId, name: myName || 'Jogador', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
+    applyStarterKit({ id: meId, name: '', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
   ])
 
   // ====== Cash Audit (instrumentação de saldo) ======
@@ -242,8 +241,8 @@ export default function App() {
       }
 
       if (room && roomFromUrl) {
-        setCurrentLobbyId(room)
-        window.__setRoomCode?.(room)
+        // não entrar automaticamente; apenas guardar para depois do StartScreen
+        setPendingRoomId(String(room))
         try {
           url.searchParams.set('room', String(room))
           history.replaceState(null, '', url.toString())
@@ -274,6 +273,11 @@ export default function App() {
             console.log('[INIT_GUARD] init skipped: hydratedFromNet=true (BC START ignored)')
             return
           }
+          // ✅ OBJ 1: nunca pular StartScreen automaticamente
+          if (phase === 'start') {
+            console.log('[INIT_GUARD] init skipped: phase=start (BC START ignored)')
+            return
+          }
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
@@ -294,7 +298,7 @@ export default function App() {
           setRound(1)
           setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
-          setPhase('game')
+          // não troca fase automaticamente aqui; fase é conduzida pelo usuário
           setLog(['Jogo iniciado!'])
           return
         }
@@ -1480,6 +1484,38 @@ export default function App() {
     setShowBankruptOverlay,
   })
 
+  // ====== Jogo (derivações + logs) ======
+  // ✅ IMPORTANT: Hooks (useEffect) NÃO podem ficar depois de returns condicionais por phase.
+  // Mantemos estas derivações sempre declaradas para evitar React error #310.
+  const currentPlayer = players[turnIdx]
+  const isCurrentPlayerBankrupt = currentPlayer?.bankrupt === true
+  const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
+  const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
+  const controlsCanRoll =
+    !!turnPlayerId &&
+    players.length > 0 &&
+    isMyTurnExact &&
+    turnLock === false &&
+    Number(modalLocks || 0) === 0 &&
+    gameOver !== true &&
+    isCurrentPlayerBankrupt !== true &&
+    isWaitingRevenue !== true
+
+  useEffect(() => {
+    // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
+    console.log('[CAN_ROLL_CHECK]', {
+      phase,
+      myUid,
+      turnPlayerId,
+      isMyTurn: isMyTurnExact,
+      turnLock,
+      modalLocks,
+      gameOver,
+      bankrupt: isCurrentPlayerBankrupt,
+      result: controlsCanRoll,
+    })
+  }, [phase, myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isCurrentPlayerBankrupt, controlsCanRoll])
+
   // ====== fases ======
 
   // 1) Tela inicial: pega o nome e vai para Lobbies
@@ -1487,13 +1523,25 @@ export default function App() {
     return (
       <StartScreen
         onEnter={(typedName) => {
-          const name = getOrSetTabPlayerName(typedName || 'Jogador')
-          setPlayers([applyStarterKit({ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })], { source: 'START' })
+          const clean = String(typedName || '').trim()
+          if (!clean) return
+          // ✅ salva somente após ação explícita do usuário
+          setTabPlayerName(clean)
+          setMyName(clean)
+          setPlayers([applyStarterKit({ id: meId, name: clean, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })], { source: 'START' })
           setRound(1); setTurnIdx(0); setGameOver(false); setWinner(null)
           setRoundFlags(new Array(1).fill(false))
-          setPhase('lobbies')
-          setMeHud(h => ({ ...h, name }))
-          setLog([`Bem-vindo, ${name}!`])
+          setMeHud(h => ({ ...h, name: clean }))
+          setLog([`Bem-vindo, ${clean}!`])
+
+          // ✅ após confirmar nome: se há room pendente, entra direto nela; senão vai para lista de salas
+          if (pendingRoomId) {
+            setCurrentLobbyId(pendingRoomId)
+            window.__setRoomCode?.(pendingRoomId)
+            setPhase('playersLobby')
+          } else {
+            setPhase('lobbies')
+          }
         }}
       />
     )
@@ -1612,47 +1660,6 @@ export default function App() {
   }
 
   // 4) Jogo
-  // ✅ CORREÇÃO: Verificações adicionais para garantir que o botão só seja habilitado quando seguro
-  const currentPlayer = players[turnIdx]
-  const isCurrentPlayerBankrupt = currentPlayer?.bankrupt === true
-  // ✅ CORREÇÃO: Botão só é habilitado quando:
-  // 1. É minha vez (isMyTurn) - verifica se o jogador atual é realmente eu
-  // 2. Não há modais abertas (modalLocks === 0) - garante que todas as modais foram fechadas
-  // 3. Não há turnLock ativo (!turnLock) - garante que não há ação em progresso
-  // 4. lockOwner é null OU lockOwner === myUid (permitir se sou o dono ou não há dono)
-  // 5. O jogador atual não está falido
-  // 6. O jogo não terminou
-  // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
-  // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
-  const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
-  // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId é a ÚNICA fonte para turno (sem exceções)
-  const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
-  const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
-  // ✅ OBJ 2: hardening de canRoll (não habilita em estados intermediários)
-  // Regra base (recomendação): só habilita se turnPlayerId===myUid, sem lock, sem modais, sem gameOver, não falido.
-  const controlsCanRoll =
-    !!turnPlayerId &&
-    players.length > 0 &&
-    isMyTurnExact &&
-    turnLock === false &&
-    Number(modalLocks || 0) === 0 &&
-    gameOver !== true &&
-    isCurrentPlayerBankrupt !== true &&
-    isWaitingRevenue !== true
-
-  useEffect(() => {
-    console.log('[CAN_ROLL_CHECK]', {
-      myUid,
-      turnPlayerId,
-      isMyTurn: isMyTurnExact,
-      turnLock,
-      modalLocks,
-      gameOver,
-      bankrupt: isCurrentPlayerBankrupt,
-      result: controlsCanRoll,
-    })
-  }, [myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isCurrentPlayerBankrupt, controlsCanRoll])
-
   return (
     <div className="page">
       <header className="topbar">

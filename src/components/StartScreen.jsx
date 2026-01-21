@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
 import {
-  getOrSetTabPlayerName, // lê o último nome desta ABA
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
 
@@ -11,7 +10,8 @@ import logoMultiplier from '/Multiplier-Copia.png'
 import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.png'
 
 export default function StartScreen({ onEnter }) {
-  const [name, setName] = useState(getOrSetTabPlayerName(''))
+  // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
+  const [name, setName] = useState("")
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -28,6 +28,8 @@ export default function StartScreen({ onEnter }) {
   function onKey(e) {
     if (e.key === 'Enter') handleEnter()
   }
+
+  const canEnter = (name || '').trim().length > 0
 
   return (
     <div className="start">
@@ -53,7 +55,9 @@ export default function StartScreen({ onEnter }) {
             onKeyDown={onKey}
             maxLength={30}
           />
-          <button className="startBtn" onClick={handleEnter}>Entrar</button>
+          <button className="startBtn" onClick={handleEnter} disabled={!canEnter} aria-disabled={!canEnter}>
+            Entrar
+          </button>
         </div>
       </div>
 

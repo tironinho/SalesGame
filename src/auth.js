@@ -26,7 +26,9 @@ export function getOrCreateTabPlayerId() {
 export function getOrSetTabPlayerName(defaultName = 'Jogador') {
   const K = 'sg_tab_player_name';
   let name = sessionStorage.getItem(K);
-  if (!name) {
+  // ✅ FIX: considerar "ausente" APENAS quando for null/undefined.
+  // string vazia "" é válida (StartScreen deve iniciar vazio).
+  if (name === null || name === undefined) {
     // ✅ FIX: default único por aba (evita colisão de nome "Jogador" em múltiplos clients/abas)
     // Se caller passar um default diferente de "Jogador", respeita.
     const base = String(defaultName || 'Jogador')
@@ -42,8 +44,9 @@ export function getOrSetTabPlayerName(defaultName = 'Jogador') {
   return name;
 }
 export function setTabPlayerName(name) {
-  sessionStorage.setItem('sg_tab_player_name', name ?? 'Jogador');
-  return name;
+  const clean = String(name ?? '')
+  sessionStorage.setItem('sg_tab_player_name', clean);
+  return clean;
 }
 
 /* ====== Helpers legados (ainda usados em outras telas) ====== */
