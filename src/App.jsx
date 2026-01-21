@@ -977,15 +977,30 @@ export default function App() {
     }
     lastNetApplyAtRef.current = Date.now()
 
-    // ✅ Monotônico: gameOver nunca volta para false
-    setGameOver(prev => prev || !!netState.gameOver);
+    // ✅ CORREÇÃO CRÍTICA: Permite reset de gameOver/winner em START, mas protege em outros casos
+    const isStartState = netState.kind === 'START' || (
+      nr === 1 &&
+      Array.isArray(np) && np.length > 0 &&
+      np.every(p => Number(p?.pos ?? 0) === 0) &&
+      (netState.gameOver === false || netState.gameOver == null)
+    )
     
-    // ✅ Monotônico: winner nunca some depois que gameOver=true
-    setWinner(prev => {
-      const willBeGameOver = (!!netState.gameOver || !!netState.winner);
-      if (willBeGameOver && prev && (!netState.winner)) return prev;
-      return netState.winner ?? prev;
-    });
+    if (isStartState) {
+      // ✅ START: permite reset explícito
+      setGameOver(false)
+      setWinner(null)
+      console.log('[NET] ✅ START detectado - resetando gameOver=false, winner=null')
+    } else {
+      // ✅ Monotônico: gameOver nunca volta para false (exceto em START)
+      setGameOver(prev => prev || !!netState.gameOver);
+      
+      // ✅ Monotônico: winner nunca some depois que gameOver=true (exceto em START)
+      setWinner(prev => {
+        const willBeGameOver = (!!netState.gameOver || !!netState.winner);
+        if (willBeGameOver && prev && (!netState.winner)) return prev;
+        return netState.winner ?? prev;
+      });
+    }
     
     // ✅ Log obrigatório
     if (netState.gameOver === true) {
@@ -1165,23 +1180,27 @@ export default function App() {
     const nextTurnLock = patch.turnLock !== undefined ? patch.turnLock : turnLock
     const lastKnownLockOwner = lastLocalStateRef.current?.lockOwner ?? null
     const nextLockOwner = patch.lockOwner !== undefined ? patch.lockOwner : lastKnownLockOwner
-    const patchedGameOver = patch.gameOver !== undefined ? patch.gameOver : gameOverState
-    const prevGameOver = !!gameOver || !!lastLocalStateRef.current?.gameOver
-    const finalGameOver = prevGameOver ? true : !!patchedGameOver
+    // ✅ CORREÇÃO CRÍTICA: gameOver/winner só vêm do patch explícito, não de estado antigo
+    // Em START, patch.gameOver deve ser false explicitamente
+    // Em patches comuns (PLAYER_DELTA/ROLL), nunca incluir gameOver/winner
+    const patchedGameOver = patch.gameOver !== undefined ? patch.gameOver : (patch.isStartGame ? false : gameOverState)
+    const finalGameOver = patch.isStartGame ? false : (!!patchedGameOver)
 
-    const patchedWinner = patch.winner !== undefined ? patch.winner : winnerState
-    const prevWinner = (winner ?? lastLocalStateRef.current?.winner ?? null)
-    const finalWinner = finalGameOver ? (patchedWinner ?? prevWinner) : patchedWinner
+    const patchedWinner = patch.winner !== undefined ? patch.winner : (patch.isStartGame ? null : winnerState)
+    const finalWinner = finalGameOver ? patchedWinner : null
 
     // ✅ FIX CRÍTICO: round monotônico (nunca deixa broadcast rebaixar rodada)
     // - nextRound pode vir stale (closures em modais/compras)
     // - lastLocalStateRef.current.round geralmente já tem o maior round local
+    // ✅ CORREÇÃO: Em START, sempre usa round=1 explicitamente (ignora estado antigo)
     const patchedRound = patch.round !== undefined ? patch.round : nextRound
-    const safeRound = clampRound(Math.max(
-      Number(patchedRound || 1),
-      Number(round || 1),
-      Number(lastLocalStateRef.current?.round || 1)
-    ))
+    const safeRound = patch.isStartGame 
+      ? 1  // ✅ START sempre com round=1
+      : clampRound(Math.max(
+          Number(patchedRound || 1),
+          Number(round || 1),
+          Number(lastLocalStateRef.current?.round || 1)
+        ))
     
     // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
     // Se não houver baseline, usa o estado atual como fallback
@@ -1272,7 +1291,14 @@ export default function App() {
     lastAcceptedVersionRef.current = currentVersion
     
     // ✅ CORREÇÃO MULTIPLAYER: Detectar se é START GAME (snapshot completo) ou ação parcial (delta)
-    const isStartGame = patch.isStartGame === true || (safeRound === 1 && nextTurnIdx === 0 && normalizedPlayers.every(p => Number(p?.pos ?? 0) === 0))
+    // ✅ CORREÇÃO: Verifica explicitamente patch.isStartGame primeiro (não depende de safeRound que pode vir de estado antigo)
+    const isStartGame = patch.isStartGame === true || (
+      safeRound === 1 && 
+      nextTurnIdx === 0 && 
+      normalizedPlayers.every(p => Number(p?.pos ?? 0) === 0) &&
+      !gameOver &&  // ✅ Garante que não é um jogo antigo
+      !winner       // ✅ Garante que não é um jogo antigo
+    )
     
     if (isStartGame) {
       // ✅ START GAME: Usa commitRemoteState com snapshot completo (única exceção permitida)
@@ -1331,19 +1357,27 @@ export default function App() {
       }
       
       // ✅ CORREÇÃO MULTIPLAYER: Usa commitGamePatch para fazer merge por delta
-      // PLAYER_DELTA nunca altera turno (turnPlayerId/round/roundFlags)
+      // ✅ CORREÇÃO CRÍTICA: PLAYER_DELTA/ROLL nunca incluem gameOver/winner
+      // Apenas ENDGAME (patchKind === 'ENDGAME') inclui gameOver/winner
       const statePatch = {
         kind: patchKind,
         actionId,
         stateId,
-        ...(finalGameOver ? { gameOver: true, winner: finalWinner } : {}),
+        // ✅ REMOVIDO: gameOver/winner de patches comuns (vazava estado antigo)
+        // ...(finalGameOver ? { gameOver: true, winner: finalWinner } : {}),
         ...(patchKind === 'TURN'
           ? {
               turnPlayerId: nextTurnPlayerId,
               round: safeRound,
               roundFlags: nextRoundFlags,
-              gameOver: finalGameOver,
+              // ✅ TURN não inclui gameOver/winner (só ENDGAME)
+            }
+          : {}),
+        ...(patchKind === 'ENDGAME'
+          ? {
+              gameOver: true,
               winner: finalWinner,
+              round: safeRound,
             }
           : {}),
         ...(patchKind === 'LOCK'
@@ -1393,9 +1427,16 @@ export default function App() {
 
     const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
     
+    // ✅ CORREÇÃO CRÍTICA: Reset explícito de refs antes de START
+    lastLocalStateRef.current = null
+    playersBeforeRef.current = null
+    
     // rede
     broadcastState(normalized, 0, 1, false, null, {
       turnPlayerId: firstPlayerId,
+      round: 1,  // ✅ Explícito: round=1
+      gameOver: false,  // ✅ Explícito: gameOver=false
+      winner: null,  // ✅ Explícito: winner=null
       roundFlags: Array(normalized.length).fill(false),
       isStartGame: true // ✅ CORREÇÃO: Marca como START GAME (snapshot completo permitido)
     })
@@ -1469,6 +1510,19 @@ export default function App() {
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
+  // ✅ CORREÇÃO DESSYNC: Deriva turnOrder dos players (ordem determinística)
+  const turnOrder = useMemo(() => {
+    if (!players || players.length === 0) return []
+    // Ordena por seat (se disponível), senão por id (determinístico)
+    const sorted = [...players].sort((a, b) => {
+      if (Number.isInteger(a.seat) && Number.isInteger(b.seat)) {
+        return a.seat - b.seat
+      }
+      return String(a.id).localeCompare(String(b.id))
+    })
+    return sorted.map(p => String(p.id))
+  }, [players])
+
   // ====== Hook do motor de turnos (centraliza TODA a lógica pesada)
   const {
     advanceAndMaybeLap,
@@ -1480,6 +1534,7 @@ export default function App() {
     round, setRound,
     turnIdx, setTurnIdx,
     turnPlayerId, setTurnPlayerId,
+    turnOrder,  // ✅ CORREÇÃO DESSYNC: Passa turnOrder para o hook
     roundFlags, setRoundFlags,
     isMyTurn,
     isMine,
@@ -1652,11 +1707,17 @@ export default function App() {
             if (mineById) setMyUid(String(meId))
           } catch {}
 
+          // ✅ CORREÇÃO CRÍTICA: Reset explícito de refs antes de iniciar jogo
+          lastLocalStateRef.current = null
+          playersBeforeRef.current = null
+          
           setPlayers(normalized, { source: 'START_GAME' })
           setTurnIdx(0)
           setRound(1)
           setRoundFlags(new Array(normalized.length).fill(false))
           setGameOver(false); setWinner(null)
+          
+          console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null')
           setMeHud(h => {
             const mine = normalized.find(isMine)
             return {

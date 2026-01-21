@@ -64,6 +64,7 @@ export function useTurnEngine({
   round, setRound,
   turnIdx, setTurnIdx,
   turnPlayerId, setTurnPlayerId,
+  turnOrder = [],  // ✅ CORREÇÃO DESSYNC: Recebe turnOrder como prop (default: array vazio)
   roundFlags, setRoundFlags,
   isMyTurn,
   isMine,
@@ -280,6 +281,12 @@ export function useTurnEngine({
   const gameOverRef = React.useRef(gameOver)
   React.useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
 
+  // ✅ CORREÇÃO DESSYNC: Ref para turnOrder (evita stale closure)
+  const turnOrderRef = React.useRef(turnOrder || [])
+  React.useEffect(() => { 
+    turnOrderRef.current = Array.isArray(turnOrder) ? turnOrder : []
+  }, [turnOrder])
+
   // ✅ ENDGAME: pendente + idempotência
   const endGamePendingRef = React.useRef(false)
   const endGameFinalizedRef = React.useRef(false)
@@ -483,17 +490,40 @@ export function useTurnEngine({
     setLockOwner(String(myUid))
     
     try {
-    // ✅ CORREÇÃO: Usa playersOrdered para garantir ordem consistente e obtém ID do jogador da vez
-    const curIdx = turnIdx
-    const cur = playersOrdered[curIdx]
-    if (!cur) { 
+    // ✅ CORREÇÃO DESSYNC: Usa turnOrderRef para calcular currentPlayerId (evita stale closure)
+    const currentTurnOrder = turnOrderRef.current || []
+    
+    // ✅ CORREÇÃO DESSYNC: Guard - se turnOrder vazio, loga warn e aborta
+    if (!Array.isArray(currentTurnOrder) || currentTurnOrder.length === 0) {
+      console.warn('[TURN] ⚠️ turnOrder vazio ou inválido - abortando advanceAndMaybeLap', { 
+        turnOrder: currentTurnOrder, 
+        playersCount: playersOrdered.length,
+        turnIdx 
+      })
+      setTurnLockBroadcast(false)
+      turnChangeInProgressRef.current = false
+      return
+    }
+    
+    // ✅ CORREÇÃO DESSYNC: Calcula currentPlayerId por turnOrder[turnIdx % turnOrder.length]
+    const currentPlayerId = currentTurnOrder[turnIdx % currentTurnOrder.length]
+    const ownerId = String(currentPlayerId)
+    
+    // Encontra o jogador no array ordenado
+    const cur = playersOrdered.find(p => String(p.id) === ownerId)
+    const curIdx = playersOrdered.findIndex(p => String(p.id) === ownerId)
+    
+    if (!cur || curIdx < 0) { 
+      console.warn('[TURN] ❌ Jogador não encontrado no array:', { 
+        ownerId, 
+        turnIdx, 
+        turnOrder: currentTurnOrder,
+        playersIds: playersOrdered.map(p => p.id)
+      })
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false
       return 
     }
-    
-    // ✅ CORREÇÃO: Obtém ID do jogador da vez para atualizações por ID (não por índice)
-    const ownerId = String(cur.id)
     
     console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
 
@@ -588,11 +618,13 @@ export function useTurnEngine({
               const alive = countAlivePlayers(updatedPlayers)
               if (alive <= 1) {
                 const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
-                setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+                const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
+                setWinner(finalWinner)
                 setPlayers(updatedPlayers)
                 setGameOver(true)
                 setTurnLockBroadcast(false)
-                broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+                // ✅ CORREÇÃO: ENDGAME patch explícito
+                broadcastState(updatedPlayers, turnIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
                 return false
               }
               const ownerIdx = idxById(updatedPlayers, ownerId)
@@ -997,7 +1029,8 @@ export function useTurnEngine({
     // ✅ OBJ 4: movimento precisa refletir para todos imediatamente (pos/cash/flags)
     setPlayers(nextPlayers, { source: 'ROLL' })
     // Broadcast imediatamente como PLAYER_DELTA (não mexe em turno aqui)
-    broadcastState(nextPlayers, turnIdx, currentRoundRef.current, gameOverRef.current, winnerRef.current, { kind: 'PLAYER_DELTA' })
+    // ✅ CORREÇÃO CRÍTICA: PLAYER_DELTA nunca inclui gameOver/winner (evita vazamento de estado antigo)
+    broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, { kind: 'PLAYER_DELTA' })
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
     // Usa função de atualização para sempre pegar o valor mais recente do estado
@@ -1850,11 +1883,13 @@ export function useTurnEngine({
                   appendLog(`Fim de jogo! ${MAX_ROUNDS} rodadas completas. Vencedor: ${finishResult.winner?.name || '—'}`)
                   
                   // Prepara patch para broadcast
-                  const patch = {}
+                  const patch = {
+                    kind: 'ENDGAME',  // ✅ CORREÇÃO: Marca explicitamente como ENDGAME
+                    round: finishResult.finalRound,
+                    gameOver: true,
+                    winner: finishResult.winner
+                  }
                   if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
-                  patch.round = finishResult.finalRound
-                  patch.gameOver = true
-                  patch.winner = finishResult.winner
                   
                   // Broadcast estado final (não muda turnIdx ao encerrar)
                   broadcastState(latestPlayers, turnIdx, finishResult.finalRound, true, finishResult.winner, patch)
@@ -2655,11 +2690,13 @@ export function useTurnEngine({
       const alive = countAlivePlayers(updatedPlayers)
       if (alive <= 1) {
         const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
-        setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+        const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
+        setWinner(finalWinner)
         setPlayers(updatedPlayers)
         setGameOver(true)
         setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+        // ✅ CORREÇÃO: ENDGAME patch explícito
+        broadcastState(updatedPlayers, turnIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
         return
       }
 
