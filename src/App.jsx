@@ -854,7 +854,6 @@ export default function App() {
       
       // Atualiza refs ANTES de aplicar (garante monotonicidade)
       lastAppliedNetVersionRef.current = netVersion
-      const incomingStateId = String(netState?.stateId ?? netState?.actionId ?? netStateId ?? '')
       if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
     } else {
       // Se netVersion não está disponível, não aplica (aguarda versão válida)
