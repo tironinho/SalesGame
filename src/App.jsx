@@ -142,11 +142,25 @@ export default function App() {
 
   // ====== Cash Audit (instrumentação de saldo) ======
   // Wrapper do setPlayers: captura diffs de cash sem mudar schema do estado.
-  const setPlayers = React.useCallback((updater) => {
+  const setPlayers = React.useCallback((updater, meta = {}) => {
     _setPlayers((prev) => {
       const next = (typeof updater === 'function') ? updater(prev) : updater
       // meta pode ser setado via `setCashAuditContext()` por qualquer fluxo (ex.: useTurnEngine).
       captureCashDiff(prev, next, null)
+
+      // ✅ OBJ 3: log obrigatório de mudança de posição
+      try {
+        const source = meta?.source || 'UNKNOWN'
+        const prevById = new Map((prev || []).map(p => [String(p?.id), p]))
+        for (const p of (next || [])) {
+          const id = String(p?.id)
+          const before = prevById.get(id)?.pos
+          const after = p?.pos
+          if (after !== undefined && before !== undefined && Number(before) !== Number(after)) {
+            console.log('[POS_CHANGE]', { playerId: id, from: before, to: after, source })
+          }
+        }
+      } catch {}
       return next
     })
   }, [])
@@ -213,7 +227,8 @@ export default function App() {
   const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
   const myCash = useMemo(() => (players.find(isMine)?.cash ?? 0), [players, isMine])
 
-  // ====== bootstrap de fase via ?room= e último lobby salvo
+  // ====== bootstrap de contexto (NÃO muda fase automaticamente)
+  // ✅ OBJ 1: StartScreen NUNCA deve ser pulada automaticamente.
   useEffect(() => {
     try {
       const url = new URL(window.location.href)
@@ -233,12 +248,9 @@ export default function App() {
           url.searchParams.set('room', String(room))
           history.replaceState(null, '', url.toString())
         } catch {}
-        setPhase('playersLobby')
-      } else if (myName && myName.trim() !== '') {
-        setPhase('lobbies')
       }
     } catch {}
-  }, [myName])
+  }, [])
 
   // ====== BroadcastChannel para sync entre abas (mesmo navegador)
   const syncKey = useMemo(() => `sg-sync:${currentLobbyId || 'local'}`, [currentLobbyId])
@@ -274,7 +286,7 @@ export default function App() {
             if (wuid) setMyUid(String(wuid))
           } catch {}
 
-          setPlayers(normalized)
+          setPlayers(normalized, { source: 'BC_START' })
           setTurnIdx(0)
           // ✅ CORREÇÃO: Define turnPlayerId no start (fonte autoritativa)
           const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
@@ -491,7 +503,7 @@ export default function App() {
           })
           // ✅ BUG 2 FIX: Usa merge monotônico para evitar reset de cash/assets
           // A lógica de merge já foi aplicada acima em syncedPlayers, então usa diretamente
-          setPlayers(syncedPlayers)
+          setPlayers(syncedPlayers, { source: 'BC_SYNC' })
           
           console.log('[App] SYNC aplicado - novo turnIdx:', d.turnIdx)
           console.log('[App] SYNC - jogador da vez:', syncedPlayers[d.turnIdx]?.name, 'id:', syncedPlayers[d.turnIdx]?.id)
@@ -701,10 +713,19 @@ export default function App() {
                   .forEach(k => { try { delete nextActions[k] } catch {} })
               }
               const { _actionId, ...cleanDelta } = (delta || {})
-              byId.set(playerId, applyStarterKit({ ...existing, ...cleanDelta, lastActions: nextActions }))
+              // ✅ OBJ 3: nunca sobrescrever campos com undefined (especialmente pos)
+              const merged = { ...existing }
+              for (const [k, v] of Object.entries(cleanDelta)) {
+                if (v !== undefined) merged[k] = v
+              }
+              byId.set(playerId, applyStarterKit({ ...merged, lastActions: nextActions }))
             } else {
               const { _actionId, ...cleanDelta } = (delta || {})
-              byId.set(playerId, applyStarterKit({ ...existing, ...cleanDelta }))
+              const merged = { ...existing }
+              for (const [k, v] of Object.entries(cleanDelta)) {
+                if (v !== undefined) merged[k] = v
+              }
+              byId.set(playerId, applyStarterKit(merged))
             }
           } else {
             // Novo player (não deve acontecer, mas trata)
@@ -881,7 +902,7 @@ export default function App() {
     if (np) {
       // Normaliza players antes de aplicar (garante ordem consistente)
       const normalizedPlayers = normalizePlayers(np)
-      setPlayers(normalizedPlayers)
+      setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
       // Atualiza baseline para próximo merge
       playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
       console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
@@ -1467,7 +1488,7 @@ export default function App() {
       <StartScreen
         onEnter={(typedName) => {
           const name = getOrSetTabPlayerName(typedName || 'Jogador')
-          setPlayers([applyStarterKit({ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })])
+          setPlayers([applyStarterKit({ id: meId, name, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })], { source: 'START' })
           setRound(1); setTurnIdx(0); setGameOver(false); setWinner(null)
           setRoundFlags(new Array(1).fill(false))
           setPhase('lobbies')
@@ -1567,7 +1588,7 @@ export default function App() {
             if (mineById) setMyUid(String(meId))
           } catch {}
 
-          setPlayers(normalized)
+          setPlayers(normalized, { source: 'START_GAME' })
           setTurnIdx(0)
           setRound(1)
           setRoundFlags(new Array(normalized.length).fill(false))
@@ -1604,20 +1625,33 @@ export default function App() {
   // IMPORTANTE: O turno só muda quando todas as modais são fechadas, então se modalLocks > 0, ainda não é a vez do próximo
   // ✅ CORREÇÃO ADICIONAL: Verifica se o jogador atual realmente corresponde ao turnIdx
   const isCurrentPlayerMe = currentPlayer && String(currentPlayer.id) === String(myUid)
-  // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId é a fonte autoritativa para "é minha vez?"
+  // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId é a ÚNICA fonte para turno (sem exceções)
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
-  // ✅ LOCK RULE: lockOwnerOk só pode ser true quando (!turnLock) OU (lockOwner === myUid). Nunca aceita null com lock ativo.
-  const lockOwnerOk = (!turnLock) || (lockOwner != null && String(lockOwner) === String(myUid))
-  // ✅ Fonte única de turno: isMyTurn (derivado de turnPlayerId)
-  const controlsCanRoll = isMyTurn && modalLocks === 0 && lockOwnerOk && !isCurrentPlayerBankrupt && !gameOver && !isWaitingRevenue
-  if (controlsCanRoll) {
-    console.log('[CAN_ROLL_TRUE]', { turnPlayerId, myUid, isMyTurn, turnLock, lockOwner, modalLocks, round })
-  } else if (!isMyTurn && (modalLocks === 0) && !gameOver) {
-    // útil para flagrar UI bug
-    if (String(turnPlayerId || '') === String(myUid || '') && !isMyTurn) {
-      console.error('[CAN_ROLL_BUG] turnPlayerId==myUid mas isMyTurn=false', { turnPlayerId, myUid })
-    }
-  }
+  const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
+  // ✅ OBJ 2: hardening de canRoll (não habilita em estados intermediários)
+  // Regra base (recomendação): só habilita se turnPlayerId===myUid, sem lock, sem modais, sem gameOver, não falido.
+  const controlsCanRoll =
+    !!turnPlayerId &&
+    players.length > 0 &&
+    isMyTurnExact &&
+    turnLock === false &&
+    Number(modalLocks || 0) === 0 &&
+    gameOver !== true &&
+    isCurrentPlayerBankrupt !== true &&
+    isWaitingRevenue !== true
+
+  useEffect(() => {
+    console.log('[CAN_ROLL_CHECK]', {
+      myUid,
+      turnPlayerId,
+      isMyTurn: isMyTurnExact,
+      turnLock,
+      modalLocks,
+      gameOver,
+      bankrupt: isCurrentPlayerBankrupt,
+      result: controlsCanRoll,
+    })
+  }, [myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isCurrentPlayerBankrupt, controlsCanRoll])
 
   return (
     <div className="page">
@@ -1674,6 +1708,7 @@ export default function App() {
               turnLock={turnLock}
               lockOwner={lockOwner}
               modalLocks={modalLocks}
+              gameOver={gameOver}
             />
             <div style={{ marginTop: 10 }}>
               <button
@@ -1714,7 +1749,7 @@ export default function App() {
               }}
               onRestart={() => {
                 const reset = players.map(p => applyStarterKit({ ...p, cash:18000, bens:4000, pos:0 }))
-                setPlayers(reset)
+                setPlayers(reset, { source: 'RESTART' })
                 setTurnIdx(0)
                 setRound(1)
                 setRoundFlags(new Array(reset.length).fill(false))

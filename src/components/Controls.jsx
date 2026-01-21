@@ -12,26 +12,33 @@ export default function Controls({
   turnLock = false,
   lockOwner = null,
   modalLocks = 0,
+  gameOver = false,
 }) {
 
   // AJUSTE: bloqueia tudo se o jogador atual estiver falido
   const isBankrupt = !!current?.bankrupt
-  const isMyTurnFromId = (turnPlayerId != null && myUid != null)
-    ? (String(turnPlayerId) === String(myUid))
-    : !!isMyTurn
-  const lockOk = !turnLock || (lockOwner != null && String(lockOwner) === String(myUid))
-  const canRoll = !!isMyTurnFromId && lockOk && (Number(modalLocks || 0) === 0) && !isBankrupt
+  // ✅ OBJ 2: fonte única de turno: turnPlayerId === myUid (sem fallback por prop)
+  const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
+  const canRoll =
+    !!turnPlayerId &&
+    isMyTurnExact &&
+    turnLock === false &&
+    (Number(modalLocks || 0) === 0) &&
+    gameOver !== true &&
+    !isBankrupt
 
   useEffect(() => {
-    console.groupCollapsed('[Controls] render')
-    console.log('current player:', current)
-    console.log('isMyTurn prop:', isMyTurn)
-    console.log('turnPlayerId:', turnPlayerId, 'myUid:', myUid, 'isMyTurnFromId:', isMyTurnFromId)
-    console.log('turnLock:', turnLock, 'lockOwner:', lockOwner, 'lockOk:', lockOk, 'modalLocks:', modalLocks)
-    console.log('isBankrupt:', isBankrupt) // AJUSTE: log útil
-    console.log('canRoll (final):', canRoll)
-    console.groupEnd()
-  }, [current?.id, current?.name, current?.bankrupt, isMyTurn, canRoll, myUid, turnPlayerId, turnLock, lockOwner, modalLocks])
+    console.log('[CAN_ROLL_CHECK]', {
+      myUid,
+      turnPlayerId,
+      isMyTurn: isMyTurnExact,
+      turnLock,
+      modalLocks,
+      gameOver,
+      bankrupt: isBankrupt,
+      result: canRoll,
+    })
+  }, [myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isBankrupt, canRoll])
 
   const roll = () => {
     console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
@@ -42,10 +49,7 @@ export default function Controls({
       console.warn('[ROLL_BLOCK][Controls] not my turn', { turnPlayerId, myUid })
       return
     }
-    if (turnLock && lockOwner != null && myUid != null && String(lockOwner) !== String(myUid)) {
-      console.warn('[ROLL_BLOCK][Controls] locked by other', { lockOwner, myUid })
-      return
-    }
+    if (turnLock) return
 
     const steps = Math.floor(Math.random() * 6) + 1
 
