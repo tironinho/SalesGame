@@ -205,6 +205,17 @@ function GameNetProvider({ roomCode, hostId, children }) {
       let base = current.state || {}
       let next = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
 
+      // ✅ OBRIGATÓRIO: força um stateId novo a cada commit (evita clientes divergirem em "same version")
+      const mkStateId = () => {
+        try {
+          if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+        } catch {}
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      }
+      if (next && typeof next === 'object') {
+        next = { ...next, stateId: mkStateId() }
+      }
+
       // 2) CAS usando ID (não code) para evitar conflitos com duplicatas
       const targetId = activeRoomIdRef.current || current.id
       if (!targetId) {

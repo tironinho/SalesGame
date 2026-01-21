@@ -39,32 +39,31 @@ export function clearTabPlayerName() {
   try { sessionStorage.removeItem('sg_tab_player_name') } catch {}
 }
 
-export function getOrSetTabPlayerName(defaultName = 'Jogador') {
-  const K = 'sg_tab_player_name';
-  let name = sessionStorage.getItem(K);
-  // ✅ FIX: considerar "ausente" APENAS quando for null/undefined.
-  // string vazia "" é válida (StartScreen deve iniciar vazio).
-  if (name === null || name === undefined) {
-    // ✅ FIX: default único por aba (evita colisão de nome "Jogador" em múltiplos clients/abas)
-    // Se caller passar um default diferente de "Jogador", respeita.
-    const base = String(defaultName || 'Jogador')
-    if (base.trim().toLowerCase() === 'jogador') {
-      const id = getOrCreateTabPlayerId()
-      const suffix = String(id || '').slice(-4).toUpperCase()
-      name = `Jogador-${suffix || 'XXXX'}`
-    } else {
-      name = base
-    }
-    sessionStorage.setItem(K, name);
+export function getOrSetTabPlayerName(defaultName = '') {
+  // ✅ OBRIGATÓRIO (regressão): NÃO gerar nome padrão automaticamente.
+  // - Se já existe no sessionStorage, retorna (inclusive string vazia).
+  // - Se receber explicitamente um defaultName válido, persiste e retorna.
+  // - Caso contrário, retorna "".
+  const SESSION_K = 'sg_tab_player_name'
+  const existing = sessionStorage.getItem(SESSION_K)
+  if (existing !== null && existing !== undefined) return String(existing)
+
+  const clean = String(defaultName ?? '').trim()
+  if (clean) {
+    try { sessionStorage.setItem(SESSION_K, clean) } catch {}
+    try { localStorage.setItem(TAB_PLAYER_NAME_KEY, clean) } catch {}
+    return clean
   }
-  return name;
+  return ''
 }
 export function setTabPlayerName(name) {
-  const clean = String(name ?? '')
+  const clean = String(name ?? '').trim()
   // ✅ Persistência explícita (apenas quando usuário confirma)
-  try { localStorage.setItem(TAB_PLAYER_NAME_KEY, clean.trim()) } catch {}
-  sessionStorage.setItem('sg_tab_player_name', clean);
-  return clean;
+  if (clean) {
+    try { localStorage.setItem(TAB_PLAYER_NAME_KEY, clean) } catch {}
+    try { sessionStorage.setItem('sg_tab_player_name', clean) } catch {}
+  }
+  return clean
 }
 
 /* ====== Helpers legados (ainda usados em outras telas) ====== */

@@ -14,7 +14,8 @@ export class GameNet {
   constructor({ roomCode, playerId, playerName, onRemoteState }) {
     this.roomCode = roomCode
     this.playerId = playerId || nanoid(10)
-    this.playerName = playerName || 'Jogador'
+    // ✅ Não inventa nome aqui; o fluxo correto exige StartScreen.
+    this.playerName = playerName || ''
     this.onRemoteState = onRemoteState
     this.room = null
     this.channel = null
@@ -121,7 +122,16 @@ export class GameNet {
     if (e1) throw e1
 
     const base = current.state || {}
-    const next = produceNext(base)
+    const mkStateId = () => {
+      try {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+      } catch {}
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }
+    const produced = produceNext(base)
+    const next = (produced && typeof produced === 'object')
+      ? { ...produced, stateId: mkStateId() }
+      : { stateId: mkStateId() }
 
     // tenta CAS
     const { data: updated, error: e2 } = await supabase
@@ -148,7 +158,9 @@ export class GameNet {
       const { error: e4 } = await supabase
         .from('rooms')
         .update({
-          state: next2,
+          state: (next2 && typeof next2 === 'object')
+            ? { ...next2, stateId: mkStateId() }
+            : { stateId: mkStateId() },
           version: cur2.version + 1,
           updated_at: new Date().toISOString()
         })

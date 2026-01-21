@@ -268,8 +268,8 @@ export default function App() {
         if (d.type === 'START') {
           // ✅ INIT_GUARD: em multiplayer via Supabase, ignore START via BroadcastChannel
           // (BC é apenas para abas na mesma máquina; em rede, o snapshot do servidor é a autoridade)
-          if (net?.enabled && net?.ready) {
-            console.log('[INIT_GUARD] init skipped: net enabled/ready (BC START ignored)')
+          if (net?.enabled) {
+            console.log('[INIT_GUARD] init skipped: net enabled (BC START ignored)')
             return
           }
           if (hydratedFromNetRef.current) {
@@ -320,8 +320,8 @@ export default function App() {
         if (d.type === 'SYNC' && phase === 'game') {
           // ✅ CORREÇÃO: Se netState estiver ativo, ignora SYNC do BroadcastChannel
           // O Supabase (netState) é a fonte autoritativa para multiplayer em rede
-          if (net?.enabled && net?.ready && netState) {
-            console.log('[App] SYNC ignorado - netState ativo, usando Supabase como autoridade única')
+          if (net?.enabled) {
+            console.log('[App] SYNC ignorado - net enabled, usando Supabase como autoridade única')
             return
           }
           
@@ -352,7 +352,7 @@ export default function App() {
           // Em multiplayer via Supabase, o netState é a autoridade
           // Aqui aplicamos turnIdx/turnPlayerId do BroadcastChannel apenas se não houver netState ativo
           // REMOVIDO: todas as heurísticas de rejeição baseadas em timestamp local (< 5s)
-          if (d.turnIdx !== turnIdx && (!net?.enabled || !net?.ready)) {
+          if (d.turnIdx !== turnIdx && (!net?.enabled)) {
             // ✅ CORREÇÃO: Aplica turnPlayerId se disponível (fonte autoritativa)
             if (d.turnPlayerId !== undefined && d.turnPlayerId !== null) {
               setTurnPlayerId(d.turnPlayerId)
@@ -642,7 +642,8 @@ export default function App() {
       }
     } else {
       // ✅ Sem turnPlayerId: não inventa em multiplayer. Em local, pode usar fallback.
-      if (!net?.enabled || !net?.ready) {
+      // ✅ OBRIGATÓRIO: fallback SOMENTE offline/local (net.enabled === false).
+      if (!net?.enabled) {
         const fallback = players[turnIdx]?.id || players[0]?.id
         if (fallback) setTurnPlayerId(String(fallback))
       }
@@ -842,8 +843,12 @@ export default function App() {
       const localStateVersion = (stateVersionRef.current ?? lastLocalStateRef.current?.stateVersion ?? 0)
       const remoteStateVersion = netState?.stateVersion ?? 0
       
-      const incomingStateId = String(netState?.stateId ?? netState?.actionId ?? netStateId ?? '')
-      const lastStateId = String(lastAppliedStateIdRef.current ?? '')
+      const incomingStateIdRaw = netState?.stateId ?? netState?.actionId ?? netStateId ?? null
+      const incomingStateId = (incomingStateIdRaw === null || incomingStateIdRaw === undefined) ? '(missing)' : String(incomingStateIdRaw)
+      const lastStateIdRaw = lastAppliedStateIdRef.current
+      const lastStateId = (lastStateIdRaw === null || lastStateIdRaw === undefined) ? '(missing)' : String(lastStateIdRaw)
+      const sameStateId = incomingStateId === lastStateId
+      const canDedupByStateId = incomingStateId !== '(missing)' && lastStateId !== '(missing)'
 
       // Ignora se versão é menor (rollback)
       if (netVersion < lastAppliedNetVersionRef.current) {
@@ -851,20 +856,23 @@ export default function App() {
         return
       }
 
-      // Se versão é igual, só aplica se stateId for diferente (e não vazio)
+      // Se versão é igual, só ignora se stateId for igual E presente.
+      // ✅ OBRIGATÓRIO: não bloquear update apenas porque stateId está ausente.
       if (netVersion === lastAppliedNetVersionRef.current) {
-        if (incomingStateId && incomingStateId !== lastStateId) {
+        if (incomingStateId !== '(missing)' && incomingStateId !== lastStateId) {
           console.warn('[NET] same version but different stateId -> applying', {
             netVersion,
             incomingStateId,
             lastStateId
           })
         } else {
-          console.log('[NET] ⏭️ IGNORADO - same version and same stateId:', {
-            netVersion,
-            stateId: incomingStateId || '(empty)'
-          })
-          return
+          if (sameStateId && canDedupByStateId) {
+            console.log('[NET] ⏭️ IGNORADO - same version and same stateId:', {
+              netVersion,
+              stateId: incomingStateId
+            })
+            return
+          }
         }
       }
       
@@ -882,7 +890,7 @@ export default function App() {
       
       // Atualiza refs ANTES de aplicar (garante monotonicidade)
       lastAppliedNetVersionRef.current = netVersion
-      if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
+      lastAppliedStateIdRef.current = (incomingStateId === '(missing)') ? null : incomingStateId
     } else {
       // Se netVersion não está disponível, não aplica (aguarda versão válida)
       return
@@ -1494,11 +1502,13 @@ export default function App() {
   const isCurrentPlayerBankrupt = currentPlayer?.bankrupt === true
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
   const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
+  const lockOwnerOk = turnLock ? (lockOwner != null && String(lockOwner) === String(myUid)) : true
   const controlsCanRoll =
     !!turnPlayerId &&
     players.length > 0 &&
     isMyTurnExact &&
     turnLock === false &&
+    lockOwnerOk &&
     Number(modalLocks || 0) === 0 &&
     gameOver !== true &&
     isCurrentPlayerBankrupt !== true &&
@@ -1599,11 +1609,6 @@ export default function App() {
             const url = new URL(window.location.href)
             url.searchParams.set('room', String(roomName))
             history.replaceState(null, '', url.toString())
-            if (!sessionStorage.getItem('sg:room-reloaded')) {
-              sessionStorage.setItem('sg:room-reloaded', '1')
-              location.reload()
-              return
-            }
           } catch {}
 
           // normaliza jogadores vindos do lobby

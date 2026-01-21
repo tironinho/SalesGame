@@ -79,7 +79,19 @@ export function useTurnEngine({
   setShowBankruptOverlay,
 }) {
   // ===== Modais =====
-  const { pushModal, awaitTop, closeTop } = useModal?.() || {}
+  // ✅ Hooks devem ser chamados sempre (evita React #310).
+  // O app é envolvido por <ModalProvider>, então useModal() deve existir.
+  const modalApi = useModal()
+  const pushModal = modalApi?.pushModal
+  const awaitTop = modalApi?.awaitTop
+  const closeTop = modalApi?.closeTop
+  const popModal = modalApi?.popModal
+  const safeCloseTop = React.useCallback((payload) => {
+    try {
+      if (typeof closeTop === 'function') return closeTop(payload)
+      if (typeof popModal === 'function') return popModal()
+    } catch {}
+  }, [closeTop, popModal])
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
   const [modalLocks, setModalLocks] = React.useState(0)
@@ -347,7 +359,7 @@ export function useTurnEngine({
         if (err.message === 'Modal timeout') {
           console.warn('[WARN] modal timeout -> auto-close')
           try {
-            closeTop?.({ action: 'SKIP' })
+            safeCloseTop({ action: 'SKIP' })
           } catch {}
         }
         
@@ -377,7 +389,7 @@ export function useTurnEngine({
     const p = modalQueueRef.current.then(job, job)
     modalQueueRef.current = p.catch(() => {})
     return p
-  }, [pushModal, awaitTop, closeTop])
+  }, [pushModal, awaitTop, safeCloseTop])
 
 
   // ========= regras auxiliares de saldo =========
