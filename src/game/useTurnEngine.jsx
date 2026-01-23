@@ -78,7 +78,10 @@ export function useTurnEngine({
   gameOver, setGameOver,
   winner, setWinner,
   setShowBankruptOverlay,
+  lastRollTurnKey,
+  setLastRollTurnKey,
 }) {
+  const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
   // ===== Modais =====
   // ✅ Hooks devem ser chamados sempre (evita React #310).
   // O app é envolvido por <ModalProvider>, então useModal() deve existir.
@@ -98,6 +101,12 @@ export function useTurnEngine({
   const [modalLocks, setModalLocks] = React.useState(0)
   const modalLocksRef = React.useRef(0)
   React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
+
+  // ✅ Anti-double-roll: snapshot local do último "turnKey" rolado (não depende de lock)
+  const lastRollTurnKeyRef = React.useRef(lastRollTurnKey ?? null)
+  React.useEffect(() => {
+    lastRollTurnKeyRef.current = lastRollTurnKey ?? null
+  }, [lastRollTurnKey])
   
   // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
   const openingModalRef = React.useRef(false)
@@ -1030,7 +1039,11 @@ export function useTurnEngine({
     setPlayers(nextPlayers, { source: 'ROLL' })
     // Broadcast imediatamente como PLAYER_DELTA (não mexe em turno aqui)
     // ✅ CORREÇÃO CRÍTICA: PLAYER_DELTA nunca inclui gameOver/winner (evita vazamento de estado antigo)
-    broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, { kind: 'PLAYER_DELTA' })
+    broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, {
+      kind: 'PLAYER_DELTA',
+      // ✅ Persistido no Supabase: impede rolar 2x no mesmo turno mesmo com unlock/refresh/snapshot
+      lastRollTurnKey: `${currentRoundRef.current}:${turnIdxRef.current}:${String(ownerId)}`,
+    })
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
     // Usa função de atualização para sempre pegar o valor mais recente do estado
@@ -1967,7 +1980,7 @@ export function useTurnEngine({
               return
             }
           } else {
-            console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno. turnIdx atual:', turnIdx, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
+            if (DEBUG_LOGS) console.log('[DEBUG] ⚠️ tick - turnData é null, não mudando turno. turnIdx atual:', turnIdx, 'lockOwner:', currentLockOwner, 'isLockOwner:', isLockOwner)
             // ✅ CORREÇÃO: Se não há turnData mas deveria haver, tenta novamente após um delay
             // Pode ser que o pendingTurnDataRef ainda não foi preenchido
             // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
@@ -1977,7 +1990,7 @@ export function useTurnEngine({
             if (isLockOwner && retryCanChangeTurn && !currentOpening) {
               // ✅ CORREÇÃO: Limita tentativas de retry
               if (tickAttempts < 10) {
-                console.log('[DEBUG] ⚠️ tick - tentando novamente em 200ms (pode ser que pendingTurnDataRef ainda não foi preenchido)')
+                if (DEBUG_LOGS) console.log('[DEBUG] ⚠️ tick - tentando novamente em 200ms (pode ser que pendingTurnDataRef ainda não foi preenchido)')
                 setTimeout(tick, 200)
                 return
               } else {
@@ -1986,17 +1999,16 @@ export function useTurnEngine({
                 turnChangeInProgressRef.current = false
               }
             } else {
-              setTurnLockBroadcast(false)
-              turnChangeInProgressRef.current = false
+              // ✅ Não libera lock aqui se não for o dono: evita corrida por não-dono
+              if (isLockOwner) {
+                setTurnLockBroadcast(false)
+                turnChangeInProgressRef.current = false
+              }
             }
           }
         } else {
-          console.log('[DEBUG] ❌ tick - não sou o dono do cadeado e não é minha vez, não mudando turno', { isLockOwner, isCurrentPlayerMe, currentLockOwner, myUid, turnIdx })
-          // ✅ CORREÇÃO: Se não sou o dono e não é minha vez, libera o lock
-          if (!isCurrentPlayerMe) {
-            setTurnLockBroadcast(false)
-            turnChangeInProgressRef.current = false
-          }
+          if (DEBUG_LOGS) console.log('[DEBUG] ❌ tick - não sou o dono do cadeado e não é minha vez, não mudando turno', { isLockOwner, isCurrentPlayerMe, currentLockOwner, myUid, turnIdx })
+          // ✅ Não libera lock aqui: evita corrida por não-dono
         }
         return
       }
@@ -2015,7 +2027,7 @@ export function useTurnEngine({
       const hasLocks = modalLocksRef.current > 0
       if ((hasOpening || hasLocks) && checkAttempts < maxCheckAttempts) {
         // reduz spam: loga só a cada 5 tentativas
-        if (checkAttempts % 5 === 1) {
+        if (DEBUG_LOGS && checkAttempts % 5 === 1) {
           console.log('[DEBUG] ⚠️ checkBeforeTick - aguardando modais...', {
             hasOpening,
             hasLocks,
@@ -2043,7 +2055,7 @@ export function useTurnEngine({
         openingModalRef.current = false
       }
       // Só inicia o tick se não houver modais sendo abertas
-      console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
+      if (DEBUG_LOGS) console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
       tick()
     }
     // ✅ CORREÇÃO: Delay maior para dar tempo das modais serem abertas (as modais são abertas de forma assíncrona)
@@ -2057,19 +2069,9 @@ export function useTurnEngine({
     }
     throw error
   } finally {
-    // ✅ BUG 2 FIX: Garante que turnLock é liberado se ainda estiver preso
-    // Usa ref para verificar se ainda é o dono do lock
-    if (lockOwnerRef.current === String(myUid)) {
-      // Pequeno delay para evitar race condition
-      setTimeout(() => {
-        if (lockOwnerRef.current === String(myUid)) {
-          setTurnLockBroadcast(false)
-          turnChangeInProgressRef.current = false
-        }
-      }, 100)
-    } else {
-      turnChangeInProgressRef.current = false
-    }
+    // ✅ Não destrava aqui: evita liberar turnLock no meio do turno.
+    // O lock só deve cair no tick (mudança de turno) ou no catch (erro).
+    turnChangeInProgressRef.current = false
   }
   }, [
     players, round, turnIdx, roundFlags, isMyTurn, isMine,
@@ -2124,6 +2126,16 @@ export function useTurnEngine({
         console.warn('[DEBUG] ⚠️ onAction ROLL - há modais abertas, ignorando')
         return
       }
+
+      // ✅ Flag persistida: já rolou neste turno (independente do lock)
+      const currentTurnKey = `${currentRoundRef.current}:${turnIdxRef.current}:${String(turnPlayerId)}`
+      if (lastRollTurnKeyRef.current && String(lastRollTurnKeyRef.current) === String(currentTurnKey)) {
+        console.warn('[ROLL_BLOCK] already rolled this turn', { currentTurnKey })
+        return
+      }
+      try {
+        if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(currentTurnKey)
+      } catch {}
 
       // Cash audit: define um trace/meta para correlacionar o "turn/action".
       // (não altera schema do state; apenas runtime)
@@ -2709,10 +2721,10 @@ export function useTurnEngine({
       }
       setTurnLockBroadcast(false)
       broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
-      console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
+      if (DEBUG_LOGS) console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
       return
     }
-    console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
+    if (DEBUG_LOGS) console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
   }, [
     players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,
@@ -2720,51 +2732,9 @@ export function useTurnEngine({
     requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay
   ])
 
-  // ====== efeitos de destrava automática ======
-
-  // ✅ CORREÇÃO: Este useEffect foi removido - duplicado do anterior
-  // A lógica de atualização de lockOwner e limpeza de pendingTurnDataRef
-  // está no useEffect anterior (linhas 100-117)
-
-  // a) quando não houver modal aberta e ainda houver lock, tenta destravar
-  React.useEffect(() => {
-    if (modalLocks === 0 && turnLock && !openingModalRef.current) {
-      const currentLockOwner = lockOwnerRef.current
-      const isLockOwner = String(currentLockOwner || '') === String(myUid)
-      
-      if (isLockOwner) {
-        console.log('[DEBUG] 🔓 Destravando turnLock - modalLocks: 0, sou o lockOwner')
-        setTurnLockBroadcast(false)
-        turnChangeInProgressRef.current = false
-      } else if (!isMyTurn) {
-        // ✅ CORREÇÃO: Se não é minha vez e não sou o lockOwner, libera o turnLock
-        // Isso evita que o botão fique travado após sincronização
-        console.log('[DEBUG] 🔓 Destravando turnLock - não é minha vez e não sou lockOwner')
-        setTurnLockBroadcast(false)
-        turnChangeInProgressRef.current = false
-      }
-    }
-  }, [modalLocks, turnLock, lockOwner, myUid, isMyTurn, setTurnLockBroadcast])
-
-  // b) quando virar "minha vez" e não houver modal, garanto unlock local
-  React.useEffect(() => {
-    if (isMyTurn && modalLocks === 0 && turnLock && !openingModalRef.current) {
-      const currentLockOwner = lockOwnerRef.current
-      const isLockOwner = String(currentLockOwner || '') === String(myUid)
-      
-      if (isLockOwner) {
-        console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez e sou o lockOwner')
-        setTurnLockBroadcast(false)
-        turnChangeInProgressRef.current = false
-      } else if (!currentLockOwner) {
-        // ✅ CORREÇÃO: Se é minha vez mas não há lockOwner, libera o turnLock
-        // Isso garante que o botão seja habilitado quando é minha vez
-        console.log('[DEBUG] 🔓 Destravando turnLock - é minha vez mas não há lockOwner')
-        setTurnLockBroadcast(false)
-        turnChangeInProgressRef.current = false
-      }
-    }
-  }, [isMyTurn, modalLocks, turnLock, lockOwner, myUid, setTurnLockBroadcast])
+  // ====== auto-unlock removido ======
+  // ✅ Evita liberar turno por não-dono (corrida em multi-client).
+  // O lock só deve cair quando o turno muda (tick) ou em erro (catch).
   
   // ✅ CORREÇÃO: Cleanup ao desmontar componente
   React.useEffect(() => {

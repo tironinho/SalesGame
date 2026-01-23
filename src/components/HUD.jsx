@@ -1,7 +1,10 @@
 import React, { useEffect } from 'react'
 
+const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
+
 export default function HUD({ totals, players }){
   useEffect(() => {
+    if (!DEBUG_LOGS) return
     console.groupCollapsed('[HUD] totals')
     console.log(totals)
     console.groupEnd()

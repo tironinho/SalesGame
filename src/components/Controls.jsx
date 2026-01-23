@@ -1,6 +1,8 @@
 // src/components/Controls.jsx
 import React, { useEffect } from 'react'
 
+const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
+
 export default function Controls({
   onAction,
   current,
@@ -28,6 +30,7 @@ export default function Controls({
     !isBankrupt
 
   useEffect(() => {
+    if (!DEBUG_LOGS) return
     console.log('[CAN_ROLL_CHECK]', {
       myUid,
       turnPlayerId,
@@ -41,7 +44,7 @@ export default function Controls({
   }, [myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isBankrupt, canRoll])
 
   const roll = () => {
-    console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
+    if (DEBUG_LOGS) console.log('[Controls] click => Rolar Dado & Andar (canRoll=%s)', canRoll)
     if (!canRoll) return
 
     // Hard guard (UI): mesmo se o botão estiver habilitado por bug, bloqueia aqui.
@@ -57,7 +60,7 @@ export default function Controls({
     const cashDelta = 0
     const note = `Dado: ${steps}`
 
-    console.log('[Controls] onAction ROLL => steps=%d cashDelta=%d note=%s', steps, cashDelta, note)
+    if (DEBUG_LOGS) console.log('[Controls] onAction ROLL => steps=%d cashDelta=%d note=%s', steps, cashDelta, note)
     onAction?.({ type: 'ROLL', steps, cashDelta, note })
   }
 
@@ -65,7 +68,7 @@ export default function Controls({
     // AJUSTE: se falido, não pode abrir/usar recuperação
     if (isBankrupt) return
 
-    console.log('[Controls] click => Recuperação Financeira')
+    if (DEBUG_LOGS) console.log('[Controls] click => Recuperação Financeira')
     // Envia ação para o useTurnEngine que gerencia as modais corretamente
     onAction?.({ type: 'RECOVERY_MODAL' })
   }
@@ -74,7 +77,7 @@ export default function Controls({
     // AJUSTE: se já está falido, não faz nada
     if (isBankrupt) return
 
-    console.log('[Controls] click => Declarar Falência')
+    if (DEBUG_LOGS) console.log('[Controls] click => Declarar Falência')
     // Envia ação para o useTurnEngine que gerencia as modais corretamente
     onAction?.({ type: 'BANKRUPT_MODAL' })
   }

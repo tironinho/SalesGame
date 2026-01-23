@@ -40,6 +40,11 @@ export const ERP = {
 
 export const num = (v) => Number(v || 0);
 
+const DEBUG_MATH =
+  (typeof window !== 'undefined') &&
+  (import.meta.env.DEV) &&
+  (window.__SG_DEBUG_MATH__ || window.localStorage?.getItem?.('SG_DEBUG_MATH') === '1')
+
 // ======= Certificados / Checks =======
 export const certCount = (player = {}, type) => new Set(player?.trainingsByVendor?.[type] || []).size;
 
@@ -64,8 +69,8 @@ export function capacityAndAttendance(player = {}) {
   const clients = Math.max(0, num(player.clients));
   const inAtt = Math.min(clients, cap);
   
-  // ✅ DEBUG: Log para identificar problemas
-  if (process.env.NODE_ENV === 'development') {
+  // ✅ DEBUG: Log protegido (hot-path)
+  if (DEBUG_MATH) {
     console.log('[capacityAndAttendance]', {
       player: player.name || 'Unknown',
       vendedoresComuns: qComum,

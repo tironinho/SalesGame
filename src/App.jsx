@@ -62,7 +62,74 @@ const clampRound = (r) => {
   return Math.min(MAX_ROUNDS, Math.max(1, n))
 }
 
+// ✅ Defer: deixa o React renderizar antes de I/O (netCommit / BroadcastChannel)
+const defer = (fn) =>
+  (typeof queueMicrotask === 'function')
+    ? queueMicrotask(fn)
+    : Promise.resolve().then(fn)
+
 export default function App() {
+  const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
+  const DEBUG_VALIDATE = import.meta.env.DEV && localStorage.getItem('SALES_DEBUG_VALIDATE') === '1'
+
+  // Comparação rápida (sem deep compare / sem JSON.stringify) para reduzir custo no hot-path
+  const isSameValue = React.useCallback((a, b, depth = 0) => {
+    if (a === b) return true
+    if (a == null || b == null) return a === b
+
+    const ta = typeof a
+    const tb = typeof b
+    if (ta !== tb) return false
+    if (ta !== 'object') return a === b
+
+    // limite de profundidade para evitar "deep compare"
+    if (depth >= 2) return false
+
+    if (Array.isArray(a)) {
+      if (!Array.isArray(b)) return false
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        const av = a[i]
+        const bv = b[i]
+        // elementos costumam ser primitivos; se forem objetos pequenos, permite 1 nível
+        if (!((av === bv) || isSameValue(av, bv, depth + 1))) return false
+      }
+      return true
+    }
+    if (Array.isArray(b)) return false
+
+    const ka = Object.keys(a)
+    const kb = Object.keys(b)
+    if (ka.length !== kb.length) return false
+    for (const k of ka) {
+      if (!Object.prototype.hasOwnProperty.call(b, k)) return false
+      const av = a[k]
+      const bv = b[k]
+      if (!((av === bv) || isSameValue(av, bv, depth + 1))) return false
+    }
+    return true
+  }, [])
+
+  const didPlayerChange = React.useCallback((before = {}, after = {}) => {
+    if (!before || !after) return true
+    // chaves relevantes para UI/sync (sem mudar regras do jogo)
+    const keysToCheck = [
+      'pos', 'cash', 'bankrupt', 'clients',
+      'vendedoresComuns', 'fieldSales', 'insideSales',
+      'gestores', 'gestoresComerciais', 'manutencao', 'bens',
+      'mixProdutos', 'erpLevel',
+      'az', 'am', 'rox', 'onboarding',
+      'trainingByVendor', 'trainingsByVendor',
+      'loanPending', 'waitingAtRevenue', 'revenue', 'lastRevenueRound',
+      'erpOwned', 'erp', 'mixOwned', 'mix',
+      'directBuys', 'directBuysPush', 'trainings', 'mixBase',
+    ]
+    for (const k of keysToCheck) {
+      if (!isSameValue(before?.[k], after?.[k])) return true
+    }
+    return false
+  }, [isSameValue])
+
   // ====== fases da UI
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
@@ -132,7 +199,7 @@ export default function App() {
     // Importante: a ordem global passa a ser joinOrder (determinístico)
     ordered = ordered.sort((a, b) => (a.joinOrder - b.joinOrder) || String(a?.id ?? '').localeCompare(String(b?.id ?? '')))
     
-    console.log('[App] normalizePlayers - ordenados:', ordered.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
+    if (DEBUG_LOGS) console.log('[App] normalizePlayers - ordenados:', ordered.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
     return ordered
   }
 
@@ -157,13 +224,13 @@ export default function App() {
           const before = prevById.get(id)?.pos
           const after = p?.pos
           if (after !== undefined && before !== undefined && Number(before) !== Number(after)) {
-            console.log('[POS_CHANGE]', { playerId: id, from: before, to: after, source })
+            if (DEBUG_LOGS) console.log('[POS_CHANGE]', { playerId: id, from: before, to: after, source })
           }
         }
       } catch {}
       return next
     })
-  }, [])
+  }, [DEBUG_LOGS])
 
   useEffect(() => {
     // Ativa via ENV ou querystring; por padrão fica OFF e é silencioso.
@@ -183,6 +250,8 @@ export default function App() {
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
   const [gameOver, setGameOver] = useState(false)
   const [winner, setWinner] = useState(null)
+  // ✅ Anti-double-roll persistido (independente do lock)
+  const [lastRollTurnKey, setLastRollTurnKey] = useState(null)
 
   // ====== HUD do meu jogador
   const [meHud, setMeHud] = useState({
@@ -595,24 +664,28 @@ export default function App() {
     }
 
     // ✅ Propaga para abas (mesma máquina)
-    try {
-      bcRef.current?.postMessage?.({ type: 'TURNLOCK', value: v, owner: nextOwner, ts: Date.now(), source: meId })
-    } catch {}
+    defer(() => {
+      try {
+        bcRef.current?.postMessage?.({ type: 'TURNLOCK', value: v, owner: nextOwner, ts: Date.now(), source: meId })
+      } catch {}
+    })
 
     // ✅ Propaga para Supabase (estado compartilhado) — sem depender de turnIdx
-    try {
-      if (net?.enabled && net?.ready && typeof netCommit === 'function') {
-        commitGamePatch({
-          playersDeltaById: {},
-          statePatch: {
-            kind: 'LOCK',
-            turnLock: v,
-            lockOwner: nextOwner,
-            lockTs: Date.now(),
-          }
-        })
-      }
-    } catch {}
+    defer(() => {
+      try {
+        if (net?.enabled && net?.ready && typeof netCommit === 'function') {
+          commitGamePatch({
+            playersDeltaById: {},
+            statePatch: {
+              kind: 'LOCK',
+              turnLock: v,
+              lockOwner: nextOwner,
+              lockTs: Date.now(),
+            }
+          })
+        }
+      } catch {}
+    })
   }
 
   // ====== multiplayer em rede (opcional) via provider
@@ -675,9 +748,10 @@ export default function App() {
     const currentVersion = stateVersionRef.current
     const now = Date.now()
     
-    try {
-      netCommit(prev => {
-        const prevState = prev || {}
+    defer(() => {
+      try {
+        netCommit(prev => {
+          const prevState = prev || {}
         
         // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
         const localStateVersion = currentVersion
@@ -771,17 +845,18 @@ export default function App() {
           next.players = normalizePlayers(next.players)
         }
         
-        console.log('[NET] ✅ commitGamePatch - tipo:', statePatch.turnPlayerId ? 'TURN' : statePatch.round ? 'ROUND' : 'PLAYER_DELTA', 
-                   'playersDeltaIds:', Object.keys(playersDeltaById).join(','),
-                   'statePatchKeys:', Object.keys(statePatch).join(','),
-                   'stateVersion:', safeVersion, '(local:', localStateVersion, 'remote:', remoteStateVersion, ')')
+          if (DEBUG_LOGS) console.log('[NET] ✅ commitGamePatch - tipo:', statePatch.turnPlayerId ? 'TURN' : statePatch.round ? 'ROUND' : 'PLAYER_DELTA', 
+            'playersDeltaIds:', Object.keys(playersDeltaById).join(','),
+            'statePatchKeys:', Object.keys(statePatch).join(','),
+            'stateVersion:', safeVersion, '(local:', localStateVersion, 'remote:', remoteStateVersion, ')')
         
-        return next
-      })
-    } catch (e) {
-      console.warn('[NET] commitGamePatch failed:', e?.message || e)
-    }
-  }, [netCommit, myUid])
+          return next
+        })
+      } catch (e) {
+        console.warn('[NET] commitGamePatch failed:', e?.message || e)
+      }
+    })
+  }, [netCommit, myUid, DEBUG_LOGS])
   
   // ✅ CORREÇÃO: O baseline é capturado no broadcastState antes de fazer commit
   // Não precisamos capturar via useEffect, pois o baseline deve ser o estado ANTES da mudança
@@ -793,7 +868,7 @@ export default function App() {
     const current = lastLocalStateRef.current
     const turnIdxChanged = !current || current.turnIdx !== turnIdx
     const roundChanged = !current || current.round !== round
-    const playersChanged = !current || JSON.stringify(current.players) !== JSON.stringify(players)
+    const playersChanged = !current || current.players !== players
     
     // Só atualiza timestamp se realmente mudou algo crítico
     // E só atualiza se não foi atualizado muito recentemente (< 100ms) pelo broadcastState
@@ -813,7 +888,7 @@ export default function App() {
           // mantém stateVersion consistente caso ainda não exista no ref
           stateVersion: (current?.stateVersion ?? stateVersionRef.current ?? 0),
         }
-        if (turnIdxChanged) {
+        if (turnIdxChanged && DEBUG_LOGS) {
           console.log('[App] lastLocalStateRef atualizado via useEffect - turnIdx mudou:', current?.turnIdx, '->', turnIdx)
         }
       } else {
@@ -833,68 +908,14 @@ export default function App() {
     if (!net?.enabled || !net?.ready) return
     if (!netState) return
 
-    // ✅ CORREÇÃO MULTIPLAYER: Usa SOMENTE netVersion como autoridade (versão da linha no servidor)
-    // Snapshot autoritativo:
-    // - aplica se netVersion avançou
-    // - OU se netVersion é igual mas stateId é diferente (corrige divergência com mesma versão)
-    // ✅ CORREÇÃO 4: Blindagem no client que recebe rollback
-    if (typeof netVersion === 'number') {
-      // ✅ FIX: lastLocalStateRef pode ser sobrescrito por effects; stateVersionRef é a fonte local mais confiável
-      const localStateVersion = (stateVersionRef.current ?? lastLocalStateRef.current?.stateVersion ?? 0)
-      const remoteStateVersion = netState?.stateVersion ?? 0
-      
+    // ✅ Snapshot monotônico: nunca aplica versão igual/menor (evita flicker/rollback)
+    if (typeof netVersion !== 'number') return
+    if (netVersion <= lastAppliedNetVersionRef.current) return
+    lastAppliedNetVersionRef.current = netVersion
+    try {
       const incomingStateIdRaw = netState?.stateId ?? netState?.actionId ?? netStateId ?? null
-      const incomingStateId = (incomingStateIdRaw === null || incomingStateIdRaw === undefined) ? '(missing)' : String(incomingStateIdRaw)
-      const lastStateIdRaw = lastAppliedStateIdRef.current
-      const lastStateId = (lastStateIdRaw === null || lastStateIdRaw === undefined) ? '(missing)' : String(lastStateIdRaw)
-      const sameStateId = incomingStateId === lastStateId
-      const canDedupByStateId = incomingStateId !== '(missing)' && lastStateId !== '(missing)'
-
-      // Ignora se versão é menor (rollback)
-      if (netVersion < lastAppliedNetVersionRef.current) {
-        console.log('[NET] ⏭️ IGNORADO - netVersion regressivo:', { netVersion, lastApplied: lastAppliedNetVersionRef.current })
-        return
-      }
-
-      // Se versão é igual, só ignora se stateId for igual E presente.
-      // ✅ OBRIGATÓRIO: não bloquear update apenas porque stateId está ausente.
-      if (netVersion === lastAppliedNetVersionRef.current) {
-        if (incomingStateId !== '(missing)' && incomingStateId !== lastStateId) {
-          console.warn('[NET] same version but different stateId -> applying', {
-            netVersion,
-            incomingStateId,
-            lastStateId
-          })
-        } else {
-          if (sameStateId && canDedupByStateId) {
-            console.log('[NET] ⏭️ IGNORADO - same version and same stateId:', {
-              netVersion,
-              stateId: incomingStateId
-            })
-            return
-          }
-        }
-      }
-      
-      // ✅ CORREÇÃO 4: Ignora rollback de stateVersion (proteção adicional)
-      if (remoteStateVersion > 0 && localStateVersion > 0 && remoteStateVersion < localStateVersion) {
-        console.warn('[NET] ⚠️ IGNORANDO rollback de stateVersion:', {
-          remoteStateVersion,
-          localStateVersion,
-          netVersion
-        })
-        // Ainda atualiza netVersion para não ficar preso, mas não aplica o estado
-        lastAppliedNetVersionRef.current = netVersion
-        return
-      }
-      
-      // Atualiza refs ANTES de aplicar (garante monotonicidade)
-      lastAppliedNetVersionRef.current = netVersion
-      lastAppliedStateIdRef.current = (incomingStateId === '(missing)') ? null : incomingStateId
-    } else {
-      // Se netVersion não está disponível, não aplica (aguarda versão válida)
-      return
-    }
+      lastAppliedStateIdRef.current = (incomingStateIdRaw === null || incomingStateIdRaw === undefined) ? null : String(incomingStateIdRaw)
+    } catch {}
 
     // ✅ CORREÇÃO MULTIPLAYER: Aplica snapshot COMPLETO sempre que netVersion avançar
     // REMOVIDO: todas as heurísticas de rejeição (stateVersion, timestamp local, "mudança recente")
@@ -920,13 +941,13 @@ export default function App() {
       setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
       // Atualiza baseline para próximo merge
       playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
-      console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
+      if (DEBUG_LOGS) console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
 
       // turnIdx é DERIVADO localmente do turnPlayerId (nunca do remoto)
       if (incomingTurnId) {
         const derivedTurnIdx = normalizedPlayers.findIndex(p => String(p.id) === String(incomingTurnId))
         if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
-          console.log('[NET] ✅ derived turnIdx from turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
+          if (DEBUG_LOGS) console.log('[NET] ✅ derived turnIdx from turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
           setTurnIdx(derivedTurnIdx)
         }
       }
@@ -956,12 +977,12 @@ export default function App() {
     if (netState.roundFlags !== undefined) {
       if (Array.isArray(netState.roundFlags)) {
         setRoundFlags(netState.roundFlags)
-        console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
+        if (DEBUG_LOGS) console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
       } else if (typeof netState.roundFlags === 'object') {
         // Se for objeto, converte para array (compatibilidade)
         const flagsArray = Object.values(netState.roundFlags)
         setRoundFlags(flagsArray)
-        console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
+        if (DEBUG_LOGS) console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
       }
     }
 
@@ -989,6 +1010,7 @@ export default function App() {
       // ✅ START: permite reset explícito
       setGameOver(false)
       setWinner(null)
+      setLastRollTurnKey(null)
       console.log('[NET] ✅ START detectado - resetando gameOver=false, winner=null')
     } else {
       // ✅ Monotônico: gameOver nunca volta para false (exceto em START)
@@ -1001,6 +1023,11 @@ export default function App() {
         return netState.winner ?? prev;
       });
     }
+
+    // ✅ Anti-double-roll: aplica chave autoritativa do Supabase
+    if (netState.lastRollTurnKey !== undefined) {
+      setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
+    }
     
     // ✅ Log obrigatório
     if (netState.gameOver === true) {
@@ -1008,7 +1035,7 @@ export default function App() {
     }
 
     // ✅ CORREÇÃO MULTIPLAYER: Log de aplicação do snapshot autoritativo
-    console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'round:', nr)
+    if (DEBUG_LOGS) console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'round:', nr)
 
     // ✅ INIT_GUARD: marca hidratação real quando há turno/players válidos vindos da rede
     try {
@@ -1018,7 +1045,7 @@ export default function App() {
         hydratedFromNetRef.current = true
       }
     } catch {}
-  }, [netVersion, netState, net?.enabled, net?.ready])
+  }, [netVersion, netState, netStateId, net?.enabled, net?.ready, DEBUG_LOGS])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
   useEffect(() => {
@@ -1090,8 +1117,7 @@ export default function App() {
               const nextPlayer = nextMap.get(playerId)
               
               // Se o player mudou do baseline para nextPlayers => aplicar nextPlayer (mudança local)
-              const changedFromBaseline = baselinePlayer && nextPlayer && 
-                JSON.stringify(baselinePlayer) !== JSON.stringify(nextPlayer)
+              const changedFromBaseline = !!(baselinePlayer && nextPlayer && didPlayerChange(baselinePlayer, nextPlayer))
               
               if (changedFromBaseline && nextPlayer) {
                 // Mudança local: aplicar nextPlayer
@@ -1125,7 +1151,8 @@ export default function App() {
             // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
             const localStateVersion = nextPartial.stateVersion ?? 0
             const remoteStateVersion = prevState.stateVersion ?? 0
-            const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
+            const safeVersion = Math.max(localStateVersion, remoteStateVersion)
+            stateVersionRef.current = Math.max(stateVersionRef.current || 0, safeVersion)
             
             const next = {
               ...prevState,
@@ -1141,7 +1168,8 @@ export default function App() {
           // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
           const localStateVersion = nextPartial.stateVersion ?? 0
           const remoteStateVersion = prevState.stateVersion ?? 0
-          const safeVersion = Math.max(localStateVersion, remoteStateVersion) + 1
+          const safeVersion = Math.max(localStateVersion, remoteStateVersion)
+          stateVersionRef.current = Math.max(stateVersionRef.current || 0, safeVersion)
           
           // Para outros campos, merge simples com versão monotônica
           const next = {
@@ -1308,6 +1336,7 @@ export default function App() {
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         roundFlags: nextRoundFlags,
+        lastRollTurnKey: null,
         stateId,
         actionId,
         kind: 'START',
@@ -1317,33 +1346,36 @@ export default function App() {
       })
     } else {
       // ✅ CORREÇÃO MULTIPLAYER: Ação parcial - usar commitGamePatch com delta
-      // Calcula delta apenas dos players que mudaram
-      const playersDeltaById = {}
-      const currentPlayersMap = new Map(players.map(p => [String(p.id), p]))
-      
-      for (const nextPlayer of normalizedPlayers) {
-        const playerId = String(nextPlayer.id)
-        const currentPlayer = currentPlayersMap.get(playerId)
-        if (!currentPlayer) {
-          // Novo player (não deve acontecer em ações, mas trata)
-          playersDeltaById[playerId] = { ...nextPlayer, _actionId: actionId }
-        } else {
-          // Compara propriedades para detectar mudanças
-          const delta = {}
-          const keysToCheck = ['pos', 'cash', 'bankrupt', 'clients', 'vendedoresComuns', 'fieldSales', 'insideSales', 
-                               'gestores', 'gestoresComerciais', 'manutencao', 'bens', 'mixProdutos', 'erpLevel',
-                               'az', 'am', 'rox', 'onboarding', 'trainingByVendor', 'trainingsByVendor', 'loanPending',
-                               'waitingAtRevenue', 'revenue', 'erpOwned', 'erp', 'mixOwned', 'mix', 'lastRevenueRound',
-                               // ✅ MULTIPLAYER: arrays/objetos de compras/treinos precisam entrar no delta
-                               'directBuys', 'directBuysPush', 'trainings', 'mixBase']
-          for (const key of keysToCheck) {
-            if (JSON.stringify(currentPlayer[key]) !== JSON.stringify(nextPlayer[key])) {
-              delta[key] = nextPlayer[key]
+      // ✅ Delta sem JSON.stringify (hot-path): usa snapshot direto do player alterado quando houver `playerDeltaIds`
+      // normalizedPlayers = players já normalizados
+      const nextById = new Map(normalizedPlayers.map(p => [String(p.id), p]))
+      let playersDeltaById = patch.playersDeltaById || {}
+
+      if (
+        Object.keys(playersDeltaById).length === 0 &&
+        Array.isArray(patch.playerDeltaIds)
+      ) {
+        playersDeltaById = {}
+        for (const pid of patch.playerDeltaIds) {
+          const p = nextById.get(String(pid))
+          if (p) {
+            playersDeltaById[String(pid)] = {
+              ...p,
+              _actionId: actionId
             }
           }
-          // Se há mudanças, inclui no delta
-          if (Object.keys(delta).length > 0) {
-            playersDeltaById[playerId] = { ...delta, _actionId: actionId }
+        }
+      }
+
+      // Fallback seguro: detecta mudanças via baseline (shallow) sem deep compare
+      if (Object.keys(playersDeltaById).length === 0) {
+        const baselineArr = Array.isArray(playersBeforeRef.current) ? playersBeforeRef.current : (Array.isArray(players) ? players : [])
+        const baseById = new Map(baselineArr.map(p => [String(p?.id), p]))
+        playersDeltaById = {}
+        for (const [pid, p] of nextById.entries()) {
+          const base = baseById.get(pid)
+          if (!base || didPlayerChange(base, p)) {
+            playersDeltaById[pid] = { ...p, _actionId: actionId }
           }
         }
       }
@@ -1352,7 +1384,7 @@ export default function App() {
       const hasPlayerDelta = Object.keys(playersDeltaById).length > 0
       const hasStateChange = patchKind === 'TURN' || patchKind === 'LOCK' || patch.round !== undefined || patch.roundFlags !== undefined || patch.gameOver !== undefined || patch.winner !== undefined
       if (!hasPlayerDelta && !hasStateChange) {
-        console.log('[App] broadcastState skipped (no-op)', { actionId, patchKind })
+        if (DEBUG_LOGS) console.log('[App] broadcastState skipped (no-op)', { actionId, patchKind })
         return
       }
       
@@ -1388,32 +1420,37 @@ export default function App() {
             }
           : {}),
       }
+      if (patch && patch.lastRollTurnKey !== undefined) {
+        statePatch.lastRollTurnKey = patch.lastRollTurnKey ? String(patch.lastRollTurnKey) : null
+      }
       commitGamePatch({
         playersDeltaById,
         statePatch
       })
       
-      console.log('[App] broadcastState (PATCH) - kind:', patchKind,
-                  'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
-                  'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
+      if (DEBUG_LOGS) console.log('[App] broadcastState (PATCH) - kind:', patchKind,
+        'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
+        'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
     }
     // 2) entre abas
-    try {
-      bcRef.current?.postMessage?.({
-        type: 'SYNC',
-        version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
-        players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
-        round: safeRound,
-        roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
-        // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
-        turnLock: nextTurnLock,
-        lockOwner: nextLockOwner,
-        gameOver: finalGameOver,
-        winner: finalWinner,
-        source: meId,
-        timestamp: now,  // ✅ MELHORIA: Inclui timestamp
-      })
-    } catch (e) { console.warn('[App] broadcastState failed:', e) }
+    defer(() => {
+      try {
+        bcRef.current?.postMessage?.({
+          type: 'SYNC',
+          version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
+          players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
+          round: safeRound,
+          roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
+          // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
+          turnLock: nextTurnLock,
+          lockOwner: nextLockOwner,
+          gameOver: finalGameOver,
+          winner: finalWinner,
+          source: meId,
+          timestamp: now,  // ✅ MELHORIA: Inclui timestamp
+        })
+      } catch (e) { console.warn('[App] broadcastState failed:', e) }
+    })
   }
 
   function broadcastStart(nextPlayers) {
@@ -1441,13 +1478,15 @@ export default function App() {
       isStartGame: true // ✅ CORREÇÃO: Marca como START GAME (snapshot completo permitido)
     })
     // entre abas
-    try {
-      bcRef.current?.postMessage?.({
-        type: 'START',
-        players: normalized,
-        source: meId,
-      })
-    } catch (e) { console.warn('[App] broadcastStart failed:', e) }
+    defer(() => {
+      try {
+        bcRef.current?.postMessage?.({
+          type: 'START',
+          players: normalized,
+          source: meId,
+        })
+      } catch (e) { console.warn('[App] broadcastStart failed:', e) }
+    })
   }
 
   // ====== "é minha vez?" (declaração movida para antes do useEffect do watchdog)
@@ -1456,22 +1495,29 @@ export default function App() {
   // ====== Validação do estado do jogo (modo debug)
   useEffect(() => {
     if (phase === 'game') {
-      validateGameState(players, turnIdx, round, gameOver, winner, 'Game State Update')
+      if (DEBUG_VALIDATE) validateGameState(players, turnIdx, round, gameOver, winner, 'Game State Update')
       // Validação em tempo real adicional
       // ✅ CORREÇÃO: Validação apenas em DEV e se disponível
-      if (import.meta.env.DEV && typeof window.__validateGameStateRealTime === 'function') {
+      if (DEBUG_VALIDATE && typeof window.__validateGameStateRealTime === 'function') {
         window.__validateGameStateRealTime(players, turnIdx, round, gameOver, winner, 'Real-time Validation')
       }
     }
-  }, [players, turnIdx, round, gameOver, winner, phase])
+  }, [players, turnIdx, round, gameOver, winner, phase, DEBUG_VALIDATE])
 
-  // ====== HUD -> possibAt & clientsAt sincronizados do meu jogador
-  useEffect(() => {
+  // ====== HUD ao vivo (sem 1 render de atraso via useEffect)
+  const meHudLive = useMemo(() => {
     const mine = players.find(isMine)
-    if (!mine) return
+    if (!mine) return meHud
     const { cap, inAtt } = capacityAndAttendance(mine)
-    setMeHud(h => ({ ...h, cash: mine.cash, possibAt: cap, clientsAt: inAtt, name: mine.name, color: mine.color }))
-  }, [players, isMine])
+    return {
+      ...meHud,
+      name: mine.name ?? meHud.name,
+      color: mine.color ?? meHud.color,
+      cash: mine.cash ?? meHud.cash,
+      possibAt: cap,
+      clientsAt: inAtt,
+    }
+  }, [players, isMine, meHud])
 
   // ====== Totais do HUD (faturamento/ despesas / etc.)
   const totals = useMemo(() => {
@@ -1482,10 +1528,10 @@ export default function App() {
     const lvl = String(me.erpLevel || 'D').toUpperCase()
     const managerQty = Number(me.gestores ?? me.gestoresComerciais ?? me.managers ?? 0)
     
-    console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
+    if (DEBUG_LOGS) console.log('[App] Totals recalculado - me:', me.name, 'clients:', me.clients, 'faturamento:', fat, 'manutencao:', desp, 'vendedoresComuns:', me.vendedoresComuns, 'fieldSales:', me.fieldSales, 'insideSales:', me.insideSales)
     
     // Validação de cálculos em modo debug
-    validateCalculations(me, 'HUD Totals')
+    if (DEBUG_VALIDATE) validateCalculations(me, 'HUD Totals')
     
     return {
       faturamento: fat,
@@ -1505,7 +1551,7 @@ export default function App() {
       possibAt: cap,
       clientsAt: inAtt,
     }
-  }, [players, isMine])
+  }, [players, isMine, DEBUG_LOGS, DEBUG_VALIDATE])
 
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
@@ -1548,6 +1594,8 @@ export default function App() {
     gameOver, setGameOver,
     winner, setWinner,
     setShowBankruptOverlay,
+    lastRollTurnKey,
+    setLastRollTurnKey,
   })
 
   // ====== Jogo (derivações + logs) ======
@@ -1558,6 +1606,14 @@ export default function App() {
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
   const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
   const lockOwnerOk = turnLock ? (lockOwner != null && String(lockOwner) === String(myUid)) : true
+  const currentTurnKey = useMemo(() => {
+    if (!turnPlayerId) return null
+    const derived = players.findIndex(p => String(p?.id) === String(turnPlayerId))
+    const idx = derived >= 0 ? derived : turnIdx
+    return `${round}:${idx}:${String(turnPlayerId)}`
+  }, [round, turnIdx, turnPlayerId, players])
+  const alreadyRolledThisTurn =
+    !!currentTurnKey && !!lastRollTurnKey && String(lastRollTurnKey) === String(currentTurnKey)
   const controlsCanRoll =
     !!turnPlayerId &&
     players.length > 0 &&
@@ -1565,12 +1621,14 @@ export default function App() {
     turnLock === false &&
     lockOwnerOk &&
     Number(modalLocks || 0) === 0 &&
+    alreadyRolledThisTurn !== true &&
     gameOver !== true &&
     isCurrentPlayerBankrupt !== true &&
     isWaitingRevenue !== true
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
+    if (!DEBUG_LOGS) return
     console.log('[CAN_ROLL_CHECK]', {
       phase,
       myUid,
@@ -1578,11 +1636,14 @@ export default function App() {
       isMyTurn: isMyTurnExact,
       turnLock,
       modalLocks,
+      currentTurnKey,
+      lastRollTurnKey,
+      alreadyRolledThisTurn,
       gameOver,
       bankrupt: isCurrentPlayerBankrupt,
       result: controlsCanRoll,
     })
-  }, [phase, myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, gameOver, isCurrentPlayerBankrupt, controlsCanRoll])
+  }, [phase, myUid, turnPlayerId, isMyTurnExact, turnLock, modalLocks, currentTurnKey, lastRollTurnKey, alreadyRolledThisTurn, gameOver, isCurrentPlayerBankrupt, controlsCanRoll])
 
   // ====== fases ======
 
@@ -1748,17 +1809,17 @@ export default function App() {
               width:18, height:18, borderRadius:'50%',
               border:'2px solid rgba(255,255,255,.9)',
               boxShadow:'0 0 0 2px rgba(0,0,0,.25)',
-              background: meHud.color
+              background: meHudLive.color
             }}
           />
           <span style={{
             background:'#1f2430', border:'1px solid rgba(255,255,255,.12)',
             borderRadius:10, padding:'4px 10px', fontWeight:800
           }}>
-            👤 {meHud.name}
+            👤 {meHudLive.name}
           </span>
-          <span>Possib. Atendimento: <b>{meHud.possibAt ?? 0}</b></span>
-          <span>Clientes em Atendimento: <b>{meHud.clientsAt ?? 0}</b></span>
+          <span>Possib. Atendimento: <b>{meHudLive.possibAt ?? 0}</b></span>
+          <span>Clientes em Atendimento: <b>{meHudLive.clientsAt ?? 0}</b></span>
           <DebugPanel players={players} turnIdx={turnIdx} round={round} gameOver={gameOver} winner={winner} />
         </div>
 
