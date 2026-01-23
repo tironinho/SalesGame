@@ -2069,9 +2069,10 @@ export function useTurnEngine({
     }
     throw error
   } finally {
-    // ✅ Não destrava aqui: evita liberar turnLock no meio do turno.
-    // O lock só deve cair no tick (mudança de turno) ou no catch (erro).
-    turnChangeInProgressRef.current = false
+    // ✅ NÃO destravar aqui. O lock só cai no tick (TURN) ou no watchdog/erro.
+    if (lockOwnerRef.current !== String(myUid)) {
+      turnChangeInProgressRef.current = false
+    }
   }
   }, [
     players, round, turnIdx, roundFlags, isMyTurn, isMine,
@@ -2124,6 +2125,16 @@ export function useTurnEngine({
       // ✅ CORREÇÃO: Verifica modalLocks antes de executar
       if (modalLocksRef.current > 0) {
         console.warn('[DEBUG] ⚠️ onAction ROLL - há modais abertas, ignorando')
+        return
+      }
+
+      // ✅ HARD GUARD: se já há troca de turno pendente/em progresso, bloqueia ação (evita double-roll)
+      if (turnChangeInProgressRef.current || pendingTurnDataRef.current) {
+        console.log('[DEBUG] 🚫 onAction bloqueado - turnChangeInProgress/pendingTurn', {
+          turnChangeInProgress: turnChangeInProgressRef.current,
+          pendingTurn: Boolean(pendingTurnDataRef.current),
+          act,
+        })
         return
       }
 
