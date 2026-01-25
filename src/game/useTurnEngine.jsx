@@ -283,9 +283,41 @@ export function useTurnEngine({
   // ✅ refs do estado mais recente (evita stale no tick / winner)
   const playersRef = React.useRef(players)
   React.useEffect(() => { playersRef.current = players }, [players])
+  // ✅ Commit local que atualiza ref + estado (evita snapshot atrasado)
+  const commitLocalPlayers = React.useCallback((nextPlayers, meta) => {
+    playersRef.current = nextPlayers
+    setPlayers(nextPlayers, meta)
+  }, [setPlayers])
 
   const turnIdxRef = React.useRef(turnIdx)
   React.useEffect(() => { turnIdxRef.current = turnIdx }, [turnIdx])
+  
+  const turnPlayerIdRef = React.useRef(turnPlayerId)
+  React.useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
+
+  const roundFlagsRef = React.useRef(roundFlags || [])
+  React.useEffect(() => { roundFlagsRef.current = Array.isArray(roundFlags) ? roundFlags : [] }, [roundFlags])
+
+  // ✅ Commit local meta: mantém refs coerentes com estado
+  const commitLocalMeta = React.useCallback(({ nextTurnIdx, nextRound, nextTurnPlayerId, nextRoundFlags }) => {
+    if (typeof nextTurnIdx === 'number') {
+      turnIdxRef.current = nextTurnIdx
+      setTurnIdx(nextTurnIdx)
+    }
+    if (typeof nextRound === 'number') {
+      currentRoundRef.current = nextRound
+      setRound(nextRound)
+    }
+    if (nextTurnPlayerId !== undefined && nextTurnPlayerId !== null) {
+      const id = String(nextTurnPlayerId)
+      turnPlayerIdRef.current = id
+      if (typeof setTurnPlayerId === 'function') setTurnPlayerId(id)
+    }
+    if (nextRoundFlags) {
+      roundFlagsRef.current = nextRoundFlags
+      setRoundFlags(nextRoundFlags)
+    }
+  }, [setRound, setRoundFlags, setTurnIdx, setTurnPlayerId])
 
   const gameOverRef = React.useRef(gameOver)
   React.useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
@@ -499,24 +531,23 @@ export function useTurnEngine({
     setLockOwner(String(myUid))
     
     try {
-    // ✅ CORREÇÃO DESSYNC: Usa turnOrderRef para calcular currentPlayerId (evita stale closure)
+    // ✅ CORREÇÃO DESSYNC: Usa turnPlayerId como fonte principal
     const currentTurnOrder = turnOrderRef.current || []
-    
-    // ✅ CORREÇÃO DESSYNC: Guard - se turnOrder vazio, loga warn e aborta
-    if (!Array.isArray(currentTurnOrder) || currentTurnOrder.length === 0) {
-      console.warn('[TURN] ⚠️ turnOrder vazio ou inválido - abortando advanceAndMaybeLap', { 
-        turnOrder: currentTurnOrder, 
-        playersCount: playersOrdered.length,
-        turnIdx 
+    const curIdFromTurn = turnPlayerIdRef.current
+    const fallbackId = (Array.isArray(currentTurnOrder) && currentTurnOrder.length > 0)
+      ? currentTurnOrder[turnIdxRef.current % currentTurnOrder.length]
+      : null
+    const ownerId = String(curIdFromTurn || fallbackId || '')
+    if (!ownerId) {
+      console.warn('[TURN] ⚠️ sem ownerId válido - abortando advanceAndMaybeLap', {
+        turnPlayerId: curIdFromTurn,
+        turnIdx: turnIdxRef.current,
+        turnOrder: currentTurnOrder,
       })
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false
       return
     }
-    
-    // ✅ CORREÇÃO DESSYNC: Calcula currentPlayerId por turnOrder[turnIdx % turnOrder.length]
-    const currentPlayerId = currentTurnOrder[turnIdx % currentTurnOrder.length]
-    const ownerId = String(currentPlayerId)
     
     // Encontra o jogador no array ordenado
     const cur = playersOrdered.find(p => String(p.id) === ownerId)
@@ -1634,7 +1665,7 @@ export function useTurnEngine({
             const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
             await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
             localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + fat }))
-            setPlayers(localPlayers)
+            commitLocalPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
             continue
@@ -1665,7 +1696,7 @@ export function useTurnEngine({
                   shouldChargeOnNextExpenses: false,
                 },
               }))
-              setPlayers(localPlayers)
+              commitLocalPlayers(localPlayers)
               broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             }
 
@@ -1713,7 +1744,7 @@ export function useTurnEngine({
             }
             return next
           })
-            setPlayers(localPlayers)
+            commitLocalPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
 
         const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
@@ -1728,7 +1759,7 @@ export function useTurnEngine({
           }
           if (extra) {
                 localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + extra }))
-                setPlayers(localPlayers)
+                commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
               }
             }
@@ -2740,7 +2771,8 @@ export function useTurnEngine({
     players, round, turnIdx, isMyTurn, isMine, myUid, myCash,
     gameOver, appendLog, broadcastState,
     setPlayers, setRound, setTurnIdx, setTurnLockBroadcast, setGameOver, setWinner,
-    requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay
+    requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay,
+    commitLocalPlayers, commitLocalMeta
   ])
 
   // ====== auto-unlock removido ======
