@@ -194,6 +194,27 @@ export function useTurnEngine({
   const getById = React.useCallback((arr, id) => (arr || []).find(p => String(p?.id) === String(id)), [])
   const mapById = React.useCallback((arr, id, fn) => (arr || []).map(p => (String(p?.id) === String(id) ? fn(p) : p)), [])
 
+  // ✅ Helper: Aguarda um tick após modal para UI atualizar
+  // WHY: Evita corrida de lock/broadcast quando eventos são encadeados (ex: manutenção → sorte/revés)
+  const tickAfterModal = React.useCallback(() => {
+    return new Promise(resolve => setTimeout(resolve, 50))
+  }, [])
+
+  // ✅ Helper: Aguarda modalLocks zerar (modals fechadas)
+  // WHY: Garante que modals anteriores foram processadas antes de continuar
+  const waitForLocksClear = React.useCallback(() => {
+    return new Promise(resolve => {
+      const check = () => {
+        if (modalLocksRef.current === 0 && !openingModalRef.current) {
+          resolve()
+        } else {
+          setTimeout(check, 30)
+        }
+      }
+      check()
+    })
+  }, [])
+
   // 🔄 Sincronização de modalLocks entre jogadores
   React.useEffect(() => {
     if (isMyTurn) {
@@ -579,7 +600,8 @@ export function useTurnEngine({
         const updatedPlayers = normalizePlayers(currentPlayers).map((p) => 
           String(p.id) !== ownerId ? p : { ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }
         )
-        setPlayers(updatedPlayers)
+        // WHY: commitLocalPlayers atualiza playersRef.current imediatamente, evitando snapshot stale
+        commitLocalPlayers(updatedPlayers)
         broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
         return true // Tem saldo suficiente e pagou
       }
@@ -628,7 +650,8 @@ export function useTurnEngine({
               return { ...updated, pos: p.pos }
             })
             console.log('[DEBUG] Novo saldo após demissões:', getById(updatedPlayers, ownerId)?.cash)
-            setPlayers(updatedPlayers)
+            // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+            commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'LOAN') {
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
@@ -660,7 +683,8 @@ export function useTurnEngine({
                 const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
                 const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
                 setWinner(finalWinner)
-                setPlayers(updatedPlayers)
+                // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+                commitLocalPlayers(updatedPlayers)
                 setGameOver(true)
                 setTurnLockBroadcast(false)
                 // ✅ CORREÇÃO: ENDGAME patch explícito
@@ -672,7 +696,8 @@ export function useTurnEngine({
               // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
               const nextPlayer = updatedPlayers[nextIdx]
               const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
-              setPlayers(updatedPlayers)
+              // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+              commitLocalPlayers(updatedPlayers)
               setTurnIdx(nextIdx)
               if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
               setTurnLockBroadcast(false)
@@ -700,7 +725,8 @@ export function useTurnEngine({
             }))
             console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
             console.log('[DEBUG] Novo loanPending:', getById(updatedPlayers, ownerId)?.loanPending)
-            setPlayers(updatedPlayers)
+            // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+            commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'REDUCE') {
             console.log('[DEBUG] ✅ Condição REDUCE atendida! Processando redução:', recoveryModalRes)
@@ -824,7 +850,8 @@ export function useTurnEngine({
             console.log('[DEBUG] Total de crédito da redução:', totalCredit)
             console.log('[DEBUG] Novo saldo após redução:', getById(updatedPlayers, ownerId)?.cash)
             console.log('[DEBUG] Novo mixProdutos:', getById(updatedPlayers, ownerId)?.mixProdutos, 'Novo erpLevel:', getById(updatedPlayers, ownerId)?.erpLevel)
-            setPlayers(updatedPlayers)
+            // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+            commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else {
             console.log('[DEBUG] ❌ Nenhuma condição foi atendida! Tipo:', recoveryModalRes.type, 'Action:', recoveryModalRes.action)
@@ -840,7 +867,8 @@ export function useTurnEngine({
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             const finalPlayers = mapById(updatedPlayers, ownerId, (p) => ({ ...p, cash: Math.max(0, (p.cash || 0) - requiredAmount), pos: p.pos }))
             console.log('[DEBUG] 💰 PAGAMENTO - Saldo antes:', Number((getById(updatedPlayers, ownerId) || {}).cash || 0), 'Valor a pagar:', requiredAmount, 'Saldo após:', Number((getById(finalPlayers, ownerId) || {}).cash || 0))
-            setPlayers(finalPlayers)
+            // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+            commitLocalPlayers(finalPlayers)
             broadcastState(finalPlayers, turnIdx, currentRoundRef.current)
             return true
           } else {
@@ -859,7 +887,8 @@ export function useTurnEngine({
         if (alive <= 1) {
           const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
           setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
-          setPlayers(updatedPlayers)
+          // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+          commitLocalPlayers(updatedPlayers)
           setGameOver(true)
           setTurnLockBroadcast(false)
           broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
@@ -870,7 +899,8 @@ export function useTurnEngine({
         // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
         const nextPlayer = updatedPlayers[nextIdx]
         const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
-        setPlayers(updatedPlayers)
+        // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+        commitLocalPlayers(updatedPlayers)
         setTurnIdx(nextIdx)
         if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
         setTurnLockBroadcast(false)
@@ -1067,7 +1097,8 @@ export function useTurnEngine({
     if (note) appendLog(note)
     
     // ✅ OBJ 4: movimento precisa refletir para todos imediatamente (pos/cash/flags)
-    setPlayers(nextPlayers, { source: 'ROLL' })
+    // WHY: commitLocalPlayers atualiza playersRef.current imediatamente, evitando snapshot stale
+    commitLocalPlayers(nextPlayers)
     // Broadcast imediatamente como PLAYER_DELTA (não mexe em turno aqui)
     // ✅ CORREÇÃO CRÍTICA: PLAYER_DELTA nunca inclui gameOver/winner (evita vazamento de estado antigo)
     broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, {
@@ -1702,6 +1733,10 @@ export function useTurnEngine({
 
             appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
             if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+            
+            // WHY: Aguarda UI atualizar e locks limparem antes de prosseguir para próximo evento (ex: Sorte & Revés)
+            await tickAfterModal()
+            await waitForLocksClear()
             continue
           }
 
@@ -2746,7 +2781,8 @@ export function useTurnEngine({
         const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
         const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
         setWinner(finalWinner)
-        setPlayers(updatedPlayers)
+        // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+        commitLocalPlayers(updatedPlayers)
         setGameOver(true)
         setTurnLockBroadcast(false)
         // ✅ CORREÇÃO: ENDGAME patch explícito
@@ -2755,7 +2791,8 @@ export function useTurnEngine({
       }
 
       const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
-      setPlayers(updatedPlayers)
+      // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+      commitLocalPlayers(updatedPlayers)
       setTurnIdx(nextIdx)
       if (setTurnPlayerId) {
         const np = updatedPlayers[nextIdx]
