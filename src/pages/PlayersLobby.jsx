@@ -62,22 +62,28 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
   })
 
   // navega assim que existir match (evita corrida de eventos)
+  // WHY: Busca players do banco se pls não vier ou estiver vazio (evita lista local stale)
   async function maybeNavigate(pls) {
     if (navigatedOnce.current) return
     const match = await getLatestMatch(lobbyId)
     if (match?.id) {
       navigatedOnce.current = true
-      const normalized = (pls || []).map((p, i) => ({
+      // ✅ CORREÇÃO: Se pls não vier ou estiver vazio, busca do banco
+      let currentPlayers = pls
+      if (!currentPlayers || currentPlayers.length === 0) {
+        currentPlayers = await listLobbyPlayers(lobbyId)
+      }
+      const normalized = (currentPlayers || []).map((p, i) => ({
         id: p.player_id,
         name: p.player_name,
         index: i,
       }))
       onStartGame?.({
-  lobbyId,
-  matchId: match?.id,
-  players: normalized,
-  me: { id: meId, name: meName }   // <- ADICIONE ESTA LINHA
-})
+        lobbyId,
+        matchId: match?.id,
+        players: normalized,
+        me: { id: meId, name: meName }
+      })
     }
   }
 
@@ -181,16 +187,29 @@ useEffect(() => {
     const prev = lobby?.status
     await setLobbyStatus(lobbyId, 'locked')   // trava a sala
     try {
+      // ✅ CORREÇÃO: Busca lista "fresh" do banco no momento do clique
+      // WHY: O estado local "players" pode estar desatualizado (ex: 2 jogadores em vez de 3)
+      const currentPlayers = await listLobbyPlayers(lobbyId)
+      
+      // ✅ Valida se todos estão prontos (com a lista do banco)
+      const allReady = currentPlayers.every(p => p.ready)
+      if (!allReady || currentPlayers.length === 0) {
+        console.warn('[handleStart] Nem todos prontos ou lista vazia:', currentPlayers)
+        await setLobbyStatus(lobbyId, prev || 'open') // rollback
+        return
+      }
+      
       const match = await startMatch({ lobbyId })
       // Host também navega (e marca para não navegar de novo via realtime)
       navigatedOnce.current = true
-      const normalized = players.map((p, i) => ({ id: p.player_id, name: p.player_name, index: i }))
+      // ✅ CORREÇÃO: Usa currentPlayers (do banco) e não players (do estado local)
+      const normalized = currentPlayers.map((p, i) => ({ id: p.player_id, name: p.player_name, index: i }))
       onStartGame?.({
-  lobbyId,
-  matchId: match?.id,
-  players: normalized,
-  me: { id: meId, name: meName }   // <- ADICIONE ESTA LINHA
-})
+        lobbyId,
+        matchId: match?.id,
+        players: normalized,
+        me: { id: meId, name: meName }
+      })
     } catch (e) {
       console.error('startMatch failed', e)
       await setLobbyStatus(lobbyId, prev || 'open') // rollback

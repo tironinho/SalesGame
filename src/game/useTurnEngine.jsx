@@ -589,7 +589,13 @@ export function useTurnEngine({
     console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
 
     // ========= função recursiva para lidar com saldo insuficiente =========
+    // WHY: Retorna { ok, players } para que o chamador sempre tenha o snapshot atualizado
+    // Isso evita que eventos subsequentes (ex: Sorte & Revés) usem um snapshot antigo sem manutenção
     const handleInsufficientFunds = async (requiredAmount, context, action, currentPlayers = players) => {
+      // Helpers para retorno consistente - SEMPRE retorna { ok, players }
+      const okRes = (ps) => ({ ok: true, players: ps })
+      const failRes = (ps) => ({ ok: false, players: ps })
+      
       const curById = getById(currentPlayers, ownerId) || {}
       const currentCash = Number(curById?.cash || 0)
       
@@ -603,7 +609,7 @@ export function useTurnEngine({
         // WHY: commitLocalPlayers atualiza playersRef.current imediatamente, evitando snapshot stale
         commitLocalPlayers(updatedPlayers)
         broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
-        return true // Tem saldo suficiente e pagou
+        return okRes(updatedPlayers)
       }
 
       // ✅ CORREÇÃO: Marca que uma modal será aberta ANTES de abrir
@@ -621,7 +627,7 @@ export function useTurnEngine({
       
       if (!recoveryRes) {
         setTurnLockBroadcast(false)
-        return false
+        return failRes(currentPlayers)
       }
       
       if (recoveryRes.action === 'RECOVERY') {
@@ -674,7 +680,7 @@ export function useTurnEngine({
               // Força o jogador a declarar falência se já tem empréstimo
               if (!loanModalRes || loanModalRes.action !== 'BANKRUPT') {
                 setTurnLockBroadcast(false)
-                return false
+                return failRes(currentPlayers)
               }
               // Processa falência
               const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
@@ -689,7 +695,7 @@ export function useTurnEngine({
                 setTurnLockBroadcast(false)
                 // ✅ CORREÇÃO: ENDGAME patch explícito
                 broadcastState(updatedPlayers, turnIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
-                return false
+                return failRes(updatedPlayers)
               }
               const ownerIdx = idxById(updatedPlayers, ownerId)
               const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
@@ -704,7 +710,7 @@ export function useTurnEngine({
               broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
                 turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
               })
-              return false
+              return failRes(updatedPlayers)
             }
             
             const amt = Number(recoveryModalRes.amount || 0)
@@ -870,7 +876,7 @@ export function useTurnEngine({
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
             commitLocalPlayers(finalPlayers)
             broadcastState(finalPlayers, turnIdx, currentRoundRef.current)
-            return true
+            return okRes(finalPlayers)
           } else {
             console.log('[DEBUG] ❌ Saldo ainda insuficiente após recuperação. Continuando recursão...')
             // Recursivamente verifica se agora tem saldo suficiente com o estado atualizado
@@ -878,7 +884,7 @@ export function useTurnEngine({
           }
         } else {
           setTurnLockBroadcast(false)
-          return false
+          return failRes(currentPlayers)
         }
       } else if (recoveryRes.action === 'BANKRUPT') {
         // Processa falência
@@ -892,7 +898,7 @@ export function useTurnEngine({
           setGameOver(true)
           setTurnLockBroadcast(false)
           broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
-          return false
+          return failRes(updatedPlayers)
         }
         const ownerIdx = idxById(updatedPlayers, ownerId)
         const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
@@ -907,10 +913,10 @@ export function useTurnEngine({
         broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
           turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
         })
-        return false
+        return failRes(updatedPlayers)
       } else {
         setTurnLockBroadcast(false)
-        return false
+        return failRes(currentPlayers)
       }
     }
 
@@ -1686,7 +1692,9 @@ export function useTurnEngine({
       events.sort((a, b) => a.at - b.at)
 
       enqueueAction(async () => {
-        let localPlayers = Array.isArray(playersRef.current) ? playersRef.current : nextPlayers
+        // WHY: nextPlayers é o snapshot mais correto da jogada atual, já com movimento aplicado
+        // Não usa playersRef.current pois pode estar atrasado ou sofrer commit assíncrono no meio
+        let localPlayers = nextPlayers
         for (const ev of events) {
           const meNow = getById(localPlayers, ownerId) || {}
           if (!meNow?.id) break
@@ -1711,13 +1719,14 @@ export function useTurnEngine({
 
             await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
             const totalCharge = expense + loanCharge
-            const ok = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', localPlayers)
-            if (!ok) return
+            // WHY: handleInsufficientFunds retorna { ok, players } para manter snapshot consistente
+            const expensesRes = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', localPlayers)
+            if (!expensesRes?.ok) return
+            // ✅ CRÍTICO: Usa o snapshot retornado, não playersRef.current
+            localPlayers = expensesRes.players
 
-            // Sincroniza snapshot local (handleInsufficientFunds pode ter feito recovery)
-            localPlayers = Array.isArray(playersRef.current) ? playersRef.current : localPlayers
-
-            if (shouldChargeLoan) {
+            // ✅ Marcar empréstimo como cobrado se loanCharge > 0
+            if (loanCharge > 0) {
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
                 loanPending: {
@@ -1742,22 +1751,22 @@ export function useTurnEngine({
 
           if (ev.type === 'LUCK') {
             openingModalRef.current = true
-            const curPlayer =
-              getById(Array.isArray(playersRef.current) ? playersRef.current : localPlayers, ownerId) ||
-              getById(localPlayers, ownerId) ||
-              meNow
+            // WHY: Usa localPlayers (não playersRef) para ter o snapshot correto com manutenção já aplicada
+            const curPlayer = getById(localPlayers, ownerId) || meNow
             const res = await openModalAndWait(<SorteRevesModal player={curPlayer} />)
             if (!res || res.action !== 'APPLY_CARD') continue
 
             let cashDelta = Number.isFinite(res.cashDelta) ? Number(res.cashDelta) : 0
             const clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
 
-            // ✅ Revés sem cash: usa recuperação e, se falhar, pode levar a falência (handleInsufficientFunds retorna false)
-        if (cashDelta < 0) {
-              const ok = await handleInsufficientFunds(Math.abs(cashDelta), 'Sorte & Revés', 'pagar', localPlayers)
-              if (!ok) return
-              cashDelta = 0 // ✅ evita cobrar 2x
-              localPlayers = Array.isArray(playersRef.current) ? playersRef.current : localPlayers
+            // ✅ Revés sem cash: usa recuperação e, se falhar, pode levar a falência
+            // WHY: handleInsufficientFunds retorna { ok, players } para manter snapshot consistente
+            if (cashDelta < 0) {
+              const luckRes = await handleInsufficientFunds(Math.abs(cashDelta), 'Sorte & Revés', 'pagar', localPlayers)
+              if (!luckRes?.ok) return
+              cashDelta = 0 // ✅ evita cobrar 2x (já foi cobrado em handleInsufficientFunds)
+              // ✅ CRÍTICO: Usa o snapshot retornado, não playersRef.current
+              localPlayers = luckRes.players
             }
 
             localPlayers = mapById(localPlayers, ownerId, (p) => {
