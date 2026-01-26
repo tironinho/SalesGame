@@ -717,15 +717,20 @@ export function useTurnEngine({
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-            // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
-            // Não usa dueRound baseado em rodada, mas sim uma flag para indicar que deve ser cobrado na próxima passagem
+            // ✅ CORREÇÃO: Empréstimo será cobrado na mesma casa a partir da rodada seguinte (ao parar OU passar)
+            const playerPos = Number((getById(currentPlayers, ownerId) || {}).pos ?? 0)
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
                 loanPending: { 
                   amount: amt, 
                   charged: false,
-                shouldChargeOnNextExpenses: true,
+                  // ✅ CORREÇÃO: Usa dueRound e duePos para cobrança na mesma casa na rodada seguinte
+                  dueRound: currentRoundRef.current + 1,
+                  duePos: playerPos,
+                  declaredAtPos: playerPos,
+                  declaredAtRound: currentRoundRef.current,
+                  shouldChargeOnNextExpenses: false, // compat: não usa mais essa flag
               },
               pos: p.pos
             }))
@@ -1663,10 +1668,33 @@ export function useTurnEngine({
     }
 
     // ====== EVENTOS SEQUENCIAIS POR ROLL (sem IIFEs concorrentes) ======
-    // Ordem garantida: eventos cruzados (Faturamento/Despesas) -> evento da casa final (Sorte & Revés)
+    // Ordem garantida: eventos cruzados (Faturamento/Despesas/Empréstimo) -> evento da casa final (Sorte & Revés)
     const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
     const canRunSequenced = isMyTurn && !!pushModal && !!awaitTop
-    if (canRunSequenced && (crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile)) {
+
+    // === EMPRÉSTIMO: cobra na mesma casa a partir da rodada seguinte (ao passar/parar) ===
+    // Regra: se o jogador PARAR (estiver na casa) ou PASSAR pela casa onde declarou o empréstimo,
+    // a partir da rodada seguinte, ele paga o valor do empréstimo e marca como quitado.
+    const loan = getById(nextPlayers, ownerId)?.loanPending || {}
+    const loanAmount = Math.max(0, Math.floor(Number(loan.amount || 0)))
+    const dueRound = Number(loan.dueRound || 0)
+    const duePos = Number.isFinite(Number(loan.duePos))
+      ? Number(loan.duePos)
+      : (Number.isFinite(Number(loan.declaredAtPos)) ? Number(loan.declaredAtPos) : null)
+
+    const stoppedAtDuePos = duePos !== null && Number(oldPos) === duePos
+    const passedDuePos = duePos !== null && crossedTile(oldPos, newPos, duePos)
+
+    const shouldChargeLoanNow =
+      loanAmount > 0 &&
+      !loan.charged &&
+      duePos !== null &&
+      currentRoundRef.current >= dueRound &&
+      (stoppedAtDuePos || passedDuePos)
+
+    const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldChargeLoanNow
+
+    if (canRunSequenced && shouldRunSequenced) {
       const td = pendingTurnDataRef.current
       td._once = td._once || {}
 
@@ -1676,6 +1704,14 @@ export function useTurnEngine({
       }
 
       const events = []
+      
+      // ✅ LOAN: cobra empréstimo quando passar/parar na casa onde foi feito (rodada seguinte)
+      if (shouldChargeLoanNow && !td._once.loanDue) {
+        td._once.loanDue = true
+        const loanAt = stoppedAtDuePos ? 0 : forwardDist(oldPos, duePos, TRACK_LEN)
+        events.push({ type: 'LOAN', at: loanAt, loanAmount, duePos })
+      }
+      
       if (crossedStart1 && !td._once.faturamento) {
         td._once.faturamento = true
         events.push({ type: 'REVENUE', at: forwardDist(oldPos, 0, TRACK_LEN) })
@@ -1699,6 +1735,44 @@ export function useTurnEngine({
           const meNow = getById(localPlayers, ownerId) || {}
           if (!meNow?.id) break
 
+          // ✅ LOAN: Cobrança de empréstimo (na mesma casa onde foi feito, rodada seguinte)
+          if (ev.type === 'LOAN') {
+            openingModalRef.current = true
+            const evLoanAmount = ev.loanAmount || 0
+            const evDuePos = ev.duePos
+
+            if (evLoanAmount > 0) {
+              await openModalAndWait(
+                <DespesasOperacionaisModal expense={0} loanCharge={evLoanAmount} />
+              )
+
+              // WHY: handleInsufficientFunds já debita o valor - não debitar manualmente depois!
+              const loanRes = await handleInsufficientFunds(evLoanAmount, 'Empréstimo', 'pagar', localPlayers)
+              localPlayers = loanRes.players
+
+              if (loanRes.ok) {
+                // ✅ Marca como quitado (SEM debitar novamente - handleInsufficientFunds já fez isso)
+                localPlayers = mapById(localPlayers, ownerId, (p) => ({
+                  ...p,
+                  loanPending: {
+                    ...(p.loanPending || {}),
+                    charged: true,
+                    chargedAtRound: currentRoundRef.current,
+                    chargedAtPos: evDuePos,
+                    // compat: limpa flag antiga caso exista em estados persistidos
+                    shouldChargeOnNextExpenses: false,
+                  },
+                }))
+
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                appendLog(`${meNow.name} pagou empréstimo: -$${evLoanAmount.toLocaleString()}`)
+              }
+            }
+
+            continue
+          }
+
           if (ev.type === 'REVENUE') {
             openingModalRef.current = true
             const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
@@ -1713,12 +1787,11 @@ export function useTurnEngine({
           if (ev.type === 'EXPENSES') {
             openingModalRef.current = true
             const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
-            const lp = meNow.loanPending || {}
-            const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
-            const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+            // ✅ CORREÇÃO: Empréstimo NÃO é cobrado aqui - é cobrado pelo evento LOAN separado
+            const loanCharge = 0
+            const totalCharge = expense + loanCharge
 
             await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
-            const totalCharge = expense + loanCharge
             // WHY: handleInsufficientFunds retorna { ok, players } para manter snapshot consistente
             const expensesRes = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', localPlayers)
             if (!expensesRes?.ok) return
@@ -1807,6 +1880,43 @@ export function useTurnEngine({
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
               }
             }
+          }
+
+          // ✅ CORREÇÃO: Handler para cobrança de empréstimo (na mesma casa, rodada seguinte)
+          if (ev.type === 'LOAN') {
+            openingModalRef.current = true
+            const loanAmt = ev.loanAmount || 0
+            const loanDuePos = ev.duePos
+            
+            // WHY: handleInsufficientFunds já debita o dinheiro quando ok === true
+            // NÃO devemos debitar manualmente novamente após o handleInsufficientFunds
+            const paymentRes = await handleInsufficientFunds(loanAmt, 'Cobrança de Empréstimo', 'quitar', localPlayers)
+            if (!paymentRes?.ok) return
+            
+            // ✅ CRÍTICO: Usa o snapshot retornado pelo handleInsufficientFunds
+            localPlayers = paymentRes.players
+            
+            // ✅ Marca empréstimo como cobrado (SEM debitar cash novamente!)
+            localPlayers = mapById(localPlayers, ownerId, (p) => ({
+              ...p,
+              loanPending: {
+                ...(p.loanPending || {}),
+                charged: true,
+                chargedAtRound: currentRoundRef.current,
+                chargedAtPos: loanDuePos,
+                // compat: limpa flag antiga caso exista em estados persistidos
+                shouldChargeOnNextExpenses: false,
+              },
+            }))
+            commitLocalPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            
+            appendLog(`${meNow.name} quitou empréstimo: -$${loanAmt.toLocaleString()}`)
+            
+            // WHY: Aguarda UI atualizar e locks limparem antes de prosseguir
+            await tickAfterModal()
+            await waitForLocksClear()
+            continue
           }
         }
       })
@@ -2465,8 +2575,9 @@ export function useTurnEngine({
         return;
       }
 
-      // ✅ CORREÇÃO: Empréstimo será cobrado na próxima vez que passar pela casa de despesas operacionais
+      // ✅ CORREÇÃO: Empréstimo será cobrado na mesma casa a partir da rodada seguinte (ao parar OU passar)
       setPlayers(ps => {
+        const playerPos = Number(ps[curIdx]?.pos ?? 0)
         const upd = ps.map((p, i) =>
           i !== curIdx
             ? p
@@ -2476,8 +2587,12 @@ export function useTurnEngine({
                 loanPending: { 
                   amount: amt, 
                   charged: false,
-                  // ✅ CORREÇÃO: Marca que o empréstimo deve ser cobrado na próxima passagem pela casa de despesas
-                  shouldChargeOnNextExpenses: true
+                  // ✅ CORREÇÃO: Usa dueRound e duePos para cobrança na mesma casa na rodada seguinte
+                  dueRound: currentRoundRef.current + 1,
+                  duePos: playerPos,
+                  declaredAtPos: playerPos,
+                  declaredAtRound: currentRoundRef.current,
+                  shouldChargeOnNextExpenses: false, // compat: não usa mais essa flag
                 },
               }
         );
