@@ -1177,9 +1177,39 @@ export function useTurnEngine({
     // ✅ CORREÇÃO: Flag para indicar que uma modal será aberta (setada antes de abrir)
     let willOpenModal = false
 
+    // ✅ CORREÇÃO: Definindo flags de tiles ANTES das IIFEs para poder usar shouldProcessPurchaseInQueue
     // ERP
     const isErpTile = (landedOneBased === 6 || landedOneBased === 16 || landedOneBased === 32 || landedOneBased === 49)
-    if (isErpTile && isMyTurn && pushModal && awaitTop) {
+    // Treinamento
+    const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
+    // Compra direta (menu)
+    const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
+    // Inside Sales (casa específica)
+    const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
+    // Clientes
+    const isClientsTile = [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
+    // Gestor
+    const isManagerTile = [18,24,29,51].includes(landedOneBased)
+    // Field Sales
+    const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
+    // Vendedores Comuns
+    const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
+    // Mix de Produtos
+    const isMixTile = [7,31,44].includes(landedOneBased)
+    
+    // ✅ CORREÇÃO: Detecta se há eventos de passagem que afetam o saldo
+    const hasPassageEvents = crossedStart1 || crossedExpenses23
+    
+    // ✅ CORREÇÃO: Detecta se a casa final é uma casa de compra (não Sorte/Revés)
+    const isPurchaseTile = isErpTile || isTrainingTile || isDirectBuyTile || isInsideTile || 
+                           isClientsTile || isManagerTile || isFieldTile || isCommonSellersTile || isMixTile
+    
+    // ✅ CORREÇÃO: Se há eventos de passagem E a casa é de compra, processa tudo no enqueueAction
+    // Isso garante que o saldo seja cumulativo (despesas aplicadas antes da compra)
+    const shouldProcessPurchaseInQueue = hasPassageEvents && isPurchaseTile
+
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem (caso contrário, será processado no enqueueAction)
+    if (isErpTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       willOpenModal = true
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
@@ -1202,9 +1232,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Treinamento
-    const isTrainingTile = (landedOneBased === 2 || landedOneBased === 11 || landedOneBased === 19 || landedOneBased === 47)
-    if (isTrainingTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isTrainingTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
@@ -1234,9 +1263,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Compra direta (menu)
-    const isDirectBuyTile = (landedOneBased === 5 || landedOneBased === 10 || landedOneBased === 43)
-    if (isDirectBuyTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isDirectBuyTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const cashNow = nextPlayers[curIdx]?.cash ?? myCash
@@ -1496,9 +1524,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Inside Sales (casa específica)
-    const isInsideTile = (landedOneBased === 12 || landedOneBased === 21 || landedOneBased === 30 || landedOneBased === 42 || landedOneBased === 53)
-    if (isInsideTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isInsideTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
@@ -1515,9 +1542,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Clientes
-    const isClientsTile = [4,8,15,17,20,27,34,36,39,46,52,55].includes(landedOneBased)
-    if (isClientsTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isClientsTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const buyerCash = Number(nextPlayers.find(p => String(p.id) === ownerId)?.cash ?? myCash)
@@ -1552,9 +1578,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Gestor
-    const isManagerTile = [18,24,29,51].includes(landedOneBased)
-    if (isManagerTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isManagerTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
@@ -1577,9 +1602,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Field Sales
-    const isFieldTile = [13,25,33,38,50].includes(landedOneBased)
-    if (isFieldTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isFieldTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
@@ -1603,9 +1627,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Vendedores Comuns
-    const isCommonSellersTile = [9,28,40,45].includes(landedOneBased)
-    if (isCommonSellersTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isCommonSellersTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const res = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
@@ -1628,9 +1651,8 @@ export function useTurnEngine({
       })()
     }
 
-    // Mix de Produtos
-    const isMixTile = [7,31,44].includes(landedOneBased)
-    if (isMixTile && isMyTurn && pushModal && awaitTop) {
+    // ✅ CORREÇÃO: Só executa IIFE se NÃO há eventos de passagem
+    if (isMixTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
         const currentMixLevel = players[curIdx]?.mixProdutos || null
@@ -1691,7 +1713,7 @@ export function useTurnEngine({
       currentRoundRef.current >= dueRound &&
       passedDuePos
 
-    const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldChargeLoanNow
+    const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldChargeLoanNow || shouldProcessPurchaseInQueue
 
     if (canRunSequenced && shouldRunSequenced) {
       const td = pendingTurnDataRef.current
@@ -1723,13 +1745,34 @@ export function useTurnEngine({
         td._once.luck = true
         events.push({ type: 'LUCK', at: steps })
       }
+      
+      // ✅ CORREÇÃO: Se há eventos de passagem E casa de compra, adiciona a compra como evento final
+      if (shouldProcessPurchaseInQueue && !td._once.purchaseTile) {
+        td._once.purchaseTile = true
+        if (isErpTile) events.push({ type: 'ERP_PURCHASE', at: steps })
+        else if (isTrainingTile) events.push({ type: 'TRAINING_PURCHASE', at: steps })
+        else if (isDirectBuyTile) events.push({ type: 'DIRECT_BUY_PURCHASE', at: steps })
+        else if (isInsideTile) events.push({ type: 'INSIDE_PURCHASE', at: steps })
+        else if (isClientsTile) events.push({ type: 'CLIENTS_PURCHASE', at: steps })
+        else if (isManagerTile) events.push({ type: 'MANAGER_PURCHASE', at: steps })
+        else if (isFieldTile) events.push({ type: 'FIELD_PURCHASE', at: steps })
+        else if (isCommonSellersTile) events.push({ type: 'COMMON_PURCHASE', at: steps })
+        else if (isMixTile) events.push({ type: 'MIX_PURCHASE', at: steps })
+      }
 
       events.sort((a, b) => a.at - b.at)
-
-      enqueueAction(async () => {
+      
+      // ✅ CORREÇÃO: Só enfileira se houver eventos a processar
+      // Isso evita travamento quando re-renders causam _once já estar marcado
+      if (events.length > 0) {
+        enqueueAction(async () => {
         // WHY: nextPlayers é o snapshot mais correto da jogada atual, já com movimento aplicado
         // Não usa playersRef.current pois pode estar atrasado ou sofrer commit assíncrono no meio
         let localPlayers = nextPlayers
+        
+        // ✅ CORREÇÃO: Helper para obter saldo atualizado
+        const getCurrentCash = () => Number(getById(localPlayers, ownerId)?.cash || 0)
+        
         for (const ev of events) {
           const meNow = getById(localPlayers, ownerId) || {}
           if (!meNow?.id) break
@@ -1782,14 +1825,17 @@ export function useTurnEngine({
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
             appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
+            await tickAfterModal()
+            await waitForLocksClear()
             continue
           }
 
           if (ev.type === 'EXPENSES') {
             openingModalRef.current = true
             const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
-            // ✅ CORREÇÃO: Empréstimo NÃO é cobrado aqui - é cobrado pelo evento LOAN separado
-            const loanCharge = 0
+            const lp = meNow.loanPending || {}
+            const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
+            const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
             const totalCharge = expense + loanCharge
 
             await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
@@ -1798,6 +1844,11 @@ export function useTurnEngine({
             if (!expensesRes?.ok) return
             // ✅ CRÍTICO: Usa o snapshot retornado, não playersRef.current
             localPlayers = expensesRes.players
+
+            // ✅ CORREÇÃO: Sempre faz commit após despesas serem aplicadas (ANTES de verificar empréstimo)
+            commitLocalPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             // ✅ Marcar empréstimo como cobrado se loanCharge > 0
             if (loanCharge > 0) {
@@ -1814,10 +1865,6 @@ export function useTurnEngine({
               broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
               if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
             }
-
-            commitLocalPlayers(localPlayers)
-            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
-            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
             if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
@@ -1852,10 +1899,16 @@ export function useTurnEngine({
               localPlayers = luckRes.players
             }
 
+            // ✅ CORREÇÃO: Aplica cashDelta e clientsDelta
             localPlayers = mapById(localPlayers, ownerId, (p) => {
-            let next = { ...p }
-              if (cashDelta) next.cash = Math.max(0, (Number(next.cash) || 0) + cashDelta)
-              if (clientsDelta) next.clients = Math.max(0, (Number(next.clients) || 0) + clientsDelta)
+              let next = { ...p }
+              // ✅ CORREÇÃO: Aplica cashDelta (positivo ou negativo) - removido "if (cashDelta)" pois 0 é válido
+              if (cashDelta !== 0) {
+                next.cash = Math.max(0, (Number(next.cash) || 0) + cashDelta)
+              }
+              if (clientsDelta !== 0) {
+                next.clients = Math.max(0, (Number(next.clients) || 0) + clientsDelta)
+              }
             if (res.gainSpecialCell) {
               next.fieldSales = (next.fieldSales || 0) + (res.gainSpecialCell.fieldSales || 0)
                 next.support = (next.support || 0) + (res.gainSpecialCell.support || 0)
@@ -1875,30 +1928,325 @@ export function useTurnEngine({
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
-        const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
-        if (anyDerived) {
+            // ✅ Bônus derivados (por cliente, por gestor certificado, por mix A/B)
+            const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
+            if (anyDerived) {
               const me2 = getById(localPlayers, ownerId) || {}
-          let extra = 0
+              let extra = 0
               if (res.perClientBonus) extra += (Number(me2.clients) || 0) * Number(res.perClientBonus || 0)
-          if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
-          if (res.mixLevelBonusABOnly) {
-            const level = String(me2.mixProdutos || '').toUpperCase()
-            if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
-          }
-          if (extra) {
+              if (res.perCertifiedManagerBonus) extra += countManagerCerts(me2) * Number(res.perCertifiedManagerBonus || 0)
+              if (res.mixLevelBonusABOnly) {
+                const level = String(me2.mixProdutos || '').toUpperCase()
+                if (level === 'A' || level === 'B') extra += Number(res.mixLevelBonusABOnly || 0)
+              }
+              if (extra) {
                 localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + extra }))
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                 if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
               }
             }
-
             await tickAfterModal()
             await waitForLocksClear()
             continue
           }
+          
+          // ✅ CORREÇÃO: Casas de compra processadas após eventos de passagem
+          if (ev.type === 'ERP_PURCHASE') {
+            openingModalRef.current = true
+            const currentErpLevel = meNow?.erpLevel || null
+            const erpOwned = meNow?.erpOwned || meNow?.erp || {}
+            const res = await openModalAndWait(<ERPSystemsModal 
+              currentCash={getCurrentCash()}
+              currentLevel={currentErpLevel}
+              erpOwned={erpOwned}
+            />)
+            if (res && res.action === 'BUY') {
+              const price = Number(res.values?.compra || 0)
+              if (getCurrentCash() >= price) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level }))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para comprar ERP.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'TRAINING_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<TrainingModal
+              canTrain={{
+                comum: Number(meNow?.vendedoresComuns) || 0,
+                field: Number(meNow?.fieldSales) || 0,
+                inside: Number(meNow?.insideSales) || 0,
+                gestor: Number(meNow?.gestores ?? meNow?.gestoresComerciais ?? meNow?.managers) || 0
+              }}
+              ownedByType={{
+                comum: meNow?.trainingsByVendor?.comum || [],
+                field: meNow?.trainingsByVendor?.field || [],
+                inside: meNow?.trainingsByVendor?.inside || [],
+                gestor: meNow?.trainingsByVendor?.gestor || []
+              }}
+            />)
+            if (res && res.action === 'BUY') {
+              const trainCost = Number(res.grandTotal || 0)
+              if (getCurrentCash() >= trainCost) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyTrainingPurchase(p, res))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para comprar Treinamento.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'INSIDE_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<InsideSalesModal currentCash={getCurrentCash()} />)
+            if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
+              const cost = Number(res.cost ?? res.total ?? 0)
+              if (getCurrentCash() >= cost) {
+                const qty = Number(res.headcount ?? res.qty ?? 1)
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, insideSalesDelta: qty }))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para contratar Inside Sales.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'CLIENTS_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<ClientsModal currentCash={getCurrentCash()} />)
+            if (res && res.action === 'BUY') {
+              const cost = Number(res.totalCost || 0)
+              if (getCurrentCash() >= cost) {
+                const qty = Number(res.qty || 0)
+                const mAdd = Number(res.maintenanceDelta || 0)
+                const bensD = Number(res.bensDelta || cost)
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, {
+                  cashDelta: -cost, clientsDelta: qty, manutencaoDelta: mAdd, bensDelta: bensD
+                }))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para comprar Clientes.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'MANAGER_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} />)
+            if (res && (res.action === 'BUY' || res.action === 'HIRE')) {
+              const qty = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
+              const cashDelta = Number(typeof res.cashDelta !== 'undefined' ? res.cashDelta : -(Number(res.cost ?? res.total ?? res.totalHire ?? 0)))
+              const payAbs = cashDelta < 0 ? -cashDelta : 0
+              if (getCurrentCash() >= payAbs) {
+                const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp }))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para contratar Gestor.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'FIELD_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<FieldSalesModal currentCash={getCurrentCash()} />)
+            if (res && (res.action === 'HIRE' || res.action === 'BUY')) {
+              const qty = Number(res.headcount ?? res.qty ?? 1)
+              const deltas = {
+                cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
+                manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
+                revenueDelta: Number(res.revenueDelta || 0),
+                fieldSalesDelta: qty,
+              }
+              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+              if (getCurrentCash() >= payAbs) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para contratar Field Sales.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'COMMON_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} />)
+            if (res && res.action === 'BUY') {
+              const qty = Number(res.headcount ?? res.qty ?? 0)
+              const deltas = {
+                cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
+                vendedoresComunsDelta: qty,
+                manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
+                revenueDelta: Number(res.revenueDelta || 0),
+              }
+              const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
+              if (getCurrentCash() >= payAbs) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para contratar Vendedores Comuns.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'MIX_PURCHASE') {
+            openingModalRef.current = true
+            const currentMixLevel = meNow?.mixProdutos || null
+            const mixOwned = meNow?.mixOwned || meNow?.mix || {}
+            const res = await openModalAndWait(<MixProductsModal 
+              currentCash={getCurrentCash()}
+              currentLevel={currentMixLevel}
+              mixOwned={mixOwned}
+            />)
+            if (res && res.action === 'BUY') {
+              const price = Number(res.compra || 0)
+              if (getCurrentCash() >= price) {
+                const level = String(res.level || 'D')
+                const cost = Math.max(0, price)
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, {
+                  cashDelta: -price, bensDelta: cost, mixProdutosSet: level,
+                  mixBaseSet: { despesaPorCliente: Number(res.despesa || 0), faturamentoPorCliente: Number(res.faturamento || 0) },
+                }))
+                commitLocalPlayers(localPlayers)
+                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              } else {
+                appendLog('Saldo insuficiente para comprar MIX.')
+              }
+            }
+            continue
+          }
+          
+          if (ev.type === 'DIRECT_BUY_PURCHASE') {
+            openingModalRef.current = true
+            const res = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />)
+            if (!res) continue
+            
+            if (res.action === 'OPEN') {
+              const open = String(res.open || '').toUpperCase()
+              const meForBuy = getById(localPlayers, ownerId) || meNow
+
+              if (open === 'MIX') {
+                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.mixProdutos || null} mixOwned={meForBuy?.mixOwned || meForBuy?.mix || {}} />)
+                if (r2 && r2.action === 'BUY') {
+                  const price = Number(r2.compra || 0)
+                  if (getCurrentCash() >= price) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, bensDelta: price, mixProdutosSet: String(r2.level || 'D'), mixBaseSet: { despesaPorCliente: Number(r2.despesa || 0), faturamentoPorCliente: Number(r2.faturamento || 0) } }))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'MANAGER') {
+                const r2 = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} />)
+                if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+                  const qty = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
+                  const cashD = Number(typeof r2.cashDelta !== 'undefined' ? r2.cashDelta : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
+                  if (getCurrentCash() >= (cashD < 0 ? -cashD : 0)) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: cashD, gestoresDelta: qty, manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0) }))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'INSIDE') {
+                const r2 = await openModalAndWait(<InsideSalesModal currentCash={getCurrentCash()} />)
+                if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+                  const cost = Number(r2.cost ?? r2.total ?? 0)
+                  if (getCurrentCash() >= cost) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, insideSalesDelta: Number(r2.headcount ?? r2.qty ?? 1) }))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'FIELD') {
+                const r2 = await openModalAndWait(<FieldSalesModal currentCash={getCurrentCash()} />)
+                if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
+                  const qty = Number(r2.headcount ?? r2.qty ?? 1)
+                  const deltas = { cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))), manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0), revenueDelta: Number(r2.revenueDelta || 0), fieldSalesDelta: qty }
+                  if (getCurrentCash() >= (deltas.cashDelta < 0 ? -deltas.cashDelta : 0)) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'COMMON') {
+                const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} />)
+                if (r2 && r2.action === 'BUY') {
+                  const qty = Number(r2.headcount ?? r2.qty ?? 0)
+                  const deltas = { cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))), vendedoresComunsDelta: qty, manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0), revenueDelta: Number(r2.revenueDelta || 0) }
+                  if (getCurrentCash() >= (deltas.cashDelta < 0 ? -deltas.cashDelta : 0)) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'ERP') {
+                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.erpLevel || null} erpOwned={meForBuy?.erpOwned || meForBuy?.erp || {}} />)
+                if (r2 && r2.action === 'BUY') {
+                  const price = Number(r2.values?.compra || 0)
+                  if (getCurrentCash() >= price) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'CLIENTS') {
+                const r2 = await openModalAndWait(<ClientsModal currentCash={getCurrentCash()} />)
+                if (r2 && r2.action === 'BUY') {
+                  const cost = Number(r2.totalCost || 0)
+                  if (getCurrentCash() >= cost) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, clientsDelta: Number(r2.qty || 0), manutencaoDelta: Number(r2.maintenanceDelta || 0), bensDelta: Number(r2.bensDelta || cost) }))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              } else if (open === 'TRAINING') {
+                const r2 = await openModalAndWait(<TrainingModal canTrain={{ comum: Number(meForBuy?.vendedoresComuns) || 0, field: Number(meForBuy?.fieldSales) || 0, inside: Number(meForBuy?.insideSales) || 0, gestor: Number(meForBuy?.gestores ?? meForBuy?.gestoresComerciais ?? meForBuy?.managers) || 0 }} ownedByType={{ comum: meForBuy?.trainingsByVendor?.comum || [], field: meForBuy?.trainingsByVendor?.field || [], inside: meForBuy?.trainingsByVendor?.inside || [], gestor: meForBuy?.trainingsByVendor?.gestor || [] }} />)
+                if (r2 && r2.action === 'BUY') {
+                  const trainCost = Number(r2.grandTotal || 0)
+                  if (getCurrentCash() >= trainCost) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyTrainingPurchase(p, r2))
+                    commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                    if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+                  }
+                }
+              }
+            } else if (res.action === 'BUY') {
+              const total = Number(res.total ?? res.amount ?? 0)
+              if (getCurrentCash() >= total) {
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -total, directBuysPush: [(res.item || { total })] }))
+                commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+              }
+            }
+            continue
+          }
         }
       })
+      } // fim do if (events.length > 0)
     }
 
     // fail-safe: solta o cadeado quando todas as modais fecharem
