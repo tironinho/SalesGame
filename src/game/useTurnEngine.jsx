@@ -1682,7 +1682,6 @@ export function useTurnEngine({
       ? Number(loan.duePos)
       : (Number.isFinite(Number(loan.declaredAtPos)) ? Number(loan.declaredAtPos) : null)
 
-    const stoppedAtDuePos = duePos !== null && Number(oldPos) === duePos
     const passedDuePos = duePos !== null && crossedTile(oldPos, newPos, duePos)
 
     const shouldChargeLoanNow =
@@ -1690,7 +1689,7 @@ export function useTurnEngine({
       !loan.charged &&
       duePos !== null &&
       currentRoundRef.current >= dueRound &&
-      (stoppedAtDuePos || passedDuePos)
+      passedDuePos
 
     const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldChargeLoanNow
 
@@ -1708,7 +1707,7 @@ export function useTurnEngine({
       // ✅ LOAN: cobra empréstimo quando passar/parar na casa onde foi feito (rodada seguinte)
       if (shouldChargeLoanNow && !td._once.loanDue) {
         td._once.loanDue = true
-        const loanAt = stoppedAtDuePos ? 0 : forwardDist(oldPos, duePos, TRACK_LEN)
+        const loanAt = forwardDist(oldPos, duePos, TRACK_LEN)
         events.push({ type: 'LOAN', at: loanAt, loanAmount, duePos })
       }
       
@@ -1766,6 +1765,7 @@ export function useTurnEngine({
 
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                 appendLog(`${meNow.name} pagou empréstimo: -$${evLoanAmount.toLocaleString()}`)
               }
             }
@@ -1780,6 +1780,7 @@ export function useTurnEngine({
             localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + fat }))
             commitLocalPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
             appendLog(`${meNow.name} recebeu faturamento do mês: +$${fat.toLocaleString()}`)
             continue
           }
@@ -1811,7 +1812,12 @@ export function useTurnEngine({
               }))
               commitLocalPlayers(localPlayers)
               broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+              if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
             }
+
+            commitLocalPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
             if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
@@ -1827,7 +1833,11 @@ export function useTurnEngine({
             // WHY: Usa localPlayers (não playersRef) para ter o snapshot correto com manutenção já aplicada
             const curPlayer = getById(localPlayers, ownerId) || meNow
             const res = await openModalAndWait(<SorteRevesModal player={curPlayer} />)
-            if (!res || res.action !== 'APPLY_CARD') continue
+            if (!res || res.action !== 'APPLY_CARD') {
+              await tickAfterModal()
+              await waitForLocksClear()
+              continue
+            }
 
             let cashDelta = Number.isFinite(res.cashDelta) ? Number(res.cashDelta) : 0
             const clientsDelta = Number.isFinite(res.clientsDelta) ? Number(res.clientsDelta) : 0
@@ -1863,6 +1873,7 @@ export function useTurnEngine({
           })
             commitLocalPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
         const anyDerived = res.perClientBonus || res.perCertifiedManagerBonus || res.mixLevelBonusABOnly
         if (anyDerived) {
@@ -1878,42 +1889,10 @@ export function useTurnEngine({
                 localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + extra }))
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
               }
             }
-          }
 
-          // ✅ CORREÇÃO: Handler para cobrança de empréstimo (na mesma casa, rodada seguinte)
-          if (ev.type === 'LOAN') {
-            openingModalRef.current = true
-            const loanAmt = ev.loanAmount || 0
-            const loanDuePos = ev.duePos
-            
-            // WHY: handleInsufficientFunds já debita o dinheiro quando ok === true
-            // NÃO devemos debitar manualmente novamente após o handleInsufficientFunds
-            const paymentRes = await handleInsufficientFunds(loanAmt, 'Cobrança de Empréstimo', 'quitar', localPlayers)
-            if (!paymentRes?.ok) return
-            
-            // ✅ CRÍTICO: Usa o snapshot retornado pelo handleInsufficientFunds
-            localPlayers = paymentRes.players
-            
-            // ✅ Marca empréstimo como cobrado (SEM debitar cash novamente!)
-            localPlayers = mapById(localPlayers, ownerId, (p) => ({
-              ...p,
-              loanPending: {
-                ...(p.loanPending || {}),
-                charged: true,
-                chargedAtRound: currentRoundRef.current,
-                chargedAtPos: loanDuePos,
-                // compat: limpa flag antiga caso exista em estados persistidos
-                shouldChargeOnNextExpenses: false,
-              },
-            }))
-            commitLocalPlayers(localPlayers)
-            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
-            
-            appendLog(`${meNow.name} quitou empréstimo: -$${loanAmt.toLocaleString()}`)
-            
-            // WHY: Aguarda UI atualizar e locks limparem antes de prosseguir
             await tickAfterModal()
             await waitForLocksClear()
             continue
