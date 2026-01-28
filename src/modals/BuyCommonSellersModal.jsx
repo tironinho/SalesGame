@@ -27,7 +27,7 @@ import { VENDOR_RULES } from '../game/gameRules'
  */
 export default function BuyCommonSellersModal({
   onResolve,
-  unitHire = 1500,
+  unitHire = 2000,
   unitExpense = VENDOR_RULES.comum.baseDesp,
   attendsUpTo = VENDOR_RULES.comum.cap,
   currentCash = 0,

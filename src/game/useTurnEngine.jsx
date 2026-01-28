@@ -359,26 +359,10 @@ export function useTurnEngine({
   React.useEffect(() => {
     const currentPlayer = players[turnIdx]
     if (currentPlayer && String(currentPlayer.id) === String(myUid)) {
-      // ✅ CORREÇÃO: NÃO limpa pendingTurnDataRef aqui se há dados pendentes para um turno futuro
-      // O tick precisa usar esses dados para mudar o turno
-      // Só limpa se os dados pendentes são para o turno atual (já foi processado)
-      if (pendingTurnDataRef.current) {
-        if (pendingTurnDataRef.current.nextTurnIdx === turnIdx) {
-          // Se os dados pendentes são para o turno atual, limpa (já foi processado)
-          console.log('[DEBUG] Limpando pendingTurnDataRef - turno já foi processado (nextTurnIdx === turnIdx)')
-          pendingTurnDataRef.current = null
-        } else {
-          // Se os dados pendentes são para um turno futuro, mantém (tick ainda precisa usar)
-          console.log('[DEBUG] Mantendo pendingTurnDataRef - próximo turno:', pendingTurnDataRef.current.nextTurnIdx, 'turno atual:', turnIdx)
-        }
-      }
     } else {
-      // Se não é minha vez, não altera lockOwner (replicado); apenas gerencia pendingTurnDataRef
-      // ✅ CORREÇÃO: Só limpa pendingTurnDataRef se não há dados pendentes para o próximo turno
-      // (pode ser que o turno esteja mudando e o tick ainda precise dos dados)
-      if (pendingTurnDataRef.current && pendingTurnDataRef.current.nextTurnIdx !== turnIdx) {
-        // Se os dados pendentes não são para o turno atual, pode limpar
-        console.log('[DEBUG] Limpando pendingTurnDataRef - não é minha vez e dados não são para turno atual')
+      // ✅ NÃO limpe pendências futuras aqui.
+      // Só limpa se por algum motivo já for da vez atual (stale).
+      if (pendingTurnDataRef.current && pendingTurnDataRef.current.nextTurnIdx === turnIdx) {
         pendingTurnDataRef.current = null
       }
     }

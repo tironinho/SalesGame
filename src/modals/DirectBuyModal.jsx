@@ -68,7 +68,7 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'vendedor',
       title: 'Vendedor Comum',
-      lines: ['Contratação: $1500', 'Despesas: $1000'],
+      lines: ['Contratação: $2000', 'Despesas: $1000'],
       onBuy: open('COMMON'),
     },
     {
