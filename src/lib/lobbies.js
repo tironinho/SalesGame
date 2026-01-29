@@ -245,28 +245,21 @@ export async function getLobby(lobbyId) {
 
 /** Registro do início da partida (retorna o id do match) */
 export async function startMatch({ lobbyId }) {
-  // Sempre pega a lista MAIS RECENTE do banco (evita iniciar com players stale)
-  const { data: players, error: pErr } = await supabase
+  const { data: players } = await supabase
     .from('lobby_players')
     .select('player_id, player_name, ready')
     .eq('lobby_id', lobbyId)
 
-  if (pErr) throw pErr
-
-  // ✅ Idempotente: se já existir match para esse lobby (unique lobby_id), faz merge/update ao invés de falhar (409)
-  const payload = {
-    lobby_id: lobbyId,
-    host_id: players?.[0]?.player_id || null,
-    state: { players },
-    created_at: new Date().toISOString(),
-  }
-
   const { data, error } = await supabase
     .from('matches')
-    .upsert(payload, { onConflict: 'lobby_id' })
+    .insert({
+      lobby_id: lobbyId,
+      host_id: players?.[0]?.player_id || null,
+      state: { players },
+      created_at: new Date().toISOString(),
+    })
     .select('id')
     .single()
-
   if (error) throw error
   return data
 }

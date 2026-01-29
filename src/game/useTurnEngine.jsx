@@ -648,7 +648,7 @@ export function useTurnEngine({
             
             // Verifica se o jogador já tem um empréstimo pendente
             const currentLoan = (getById(currentPlayers, ownerId) || {}).loanPending
-            if (currentLoan && Number(currentLoan.amount) > 0) {
+            if (currentLoan && Number(currentLoan.amount) > 0 && currentLoan.charged !== true) {
               console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
               // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
               const loanModalRes = await openModalAndWait(
@@ -700,23 +700,17 @@ export function useTurnEngine({
             const amt = Number(recoveryModalRes.amount || 0)
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
-            // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
-            // ✅ CORREÇÃO: Empréstimo será cobrado na mesma casa a partir da rodada seguinte (ao parar OU passar)
-            const playerPos = Number((getById(currentPlayers, ownerId) || {}).pos ?? 0)
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: { 
-                  amount: amt, 
+                loanPending: {
+                  amount: amt,
                   charged: false,
-                  // ✅ CORREÇÃO: Usa dueRound e duePos para cobrança na mesma casa na rodada seguinte
-                  dueRound: currentRoundRef.current + 1,
-                  duePos: playerPos,
-                  declaredAtPos: playerPos,
                   declaredAtRound: currentRoundRef.current,
-                  shouldChargeOnNextExpenses: false, // compat: não usa mais essa flag
-              },
-              pos: p.pos
+                  dueRound: currentRoundRef.current + 1,
+                  shouldChargeOnNextExpenses: true,
+                },
+                pos: p.pos
             }))
             console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
             console.log('[DEBUG] Novo loanPending:', getById(updatedPlayers, ownerId)?.loanPending)
@@ -1818,7 +1812,15 @@ export function useTurnEngine({
             openingModalRef.current = true
             const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
             const lp = meNow.loanPending || {}
-            const shouldChargeLoan = Number(lp.amount) > 0 && !lp.charged && (lp.shouldChargeOnNextExpenses === true)
+            const dueRound = Number.isFinite(Number(lp.dueRound))
+              ? Number(lp.dueRound)
+              : (Number.isFinite(Number(lp.declaredAtRound)) ? Number(lp.declaredAtRound) + 1 : null)
+            const canChargeByRound = (dueRound == null) ? true : (currentRoundRef.current >= dueRound)
+            const shouldChargeLoan =
+              Number(lp.amount) > 0 &&
+              lp.charged !== true &&
+              (lp.shouldChargeOnNextExpenses === true) &&
+              canChargeByRound
             const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
             const totalCharge = expense + loanCharge
 
@@ -1834,12 +1836,13 @@ export function useTurnEngine({
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
-            // ✅ Marcar empréstimo como cobrado se loanCharge > 0
-            if (loanCharge > 0) {
+            if (shouldChargeLoan) {
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
                 loanPending: {
                   ...(p.loanPending || {}),
+                  amount: 0,
+                  paidAmount: loanCharge,
                   charged: true,
                   chargedAtRound: currentRoundRef.current,
                   shouldChargeOnNextExpenses: false,
@@ -2879,31 +2882,25 @@ export function useTurnEngine({
       const curIdx = turnIdx;
       const cur = players[curIdx];
 
-      if (cur?.loanPending && !cur.loanPending.charged) {
-        appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`);
-        // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno
-        // setTurnLockBroadcast(false);
-        return;
+      const lp = cur?.loanPending || null
+      if (lp && Number(lp.amount) > 0 && lp.charged !== true) {
+        appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`)
+        return
       }
 
-      // ✅ CORREÇÃO: Empréstimo será cobrado na mesma casa a partir da rodada seguinte (ao parar OU passar)
       setPlayers(ps => {
-        const playerPos = Number(ps[curIdx]?.pos ?? 0)
         const upd = ps.map((p, i) =>
           i !== curIdx
             ? p
             : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: { 
-                  amount: amt, 
+                loanPending: {
+                  amount: amt,
                   charged: false,
-                  // ✅ CORREÇÃO: Usa dueRound e duePos para cobrança na mesma casa na rodada seguinte
-                  dueRound: currentRoundRef.current + 1,
-                  duePos: playerPos,
-                  declaredAtPos: playerPos,
                   declaredAtRound: currentRoundRef.current,
-                  shouldChargeOnNextExpenses: false, // compat: não usa mais essa flag
+                  dueRound: currentRoundRef.current + 1,
+                  shouldChargeOnNextExpenses: true,
                 },
               }
         );

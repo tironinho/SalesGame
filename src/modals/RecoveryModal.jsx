@@ -278,7 +278,7 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
             onGoLoan={() => setStep('loan')}
             onGoReduce={() => setStep('reduce')}
             onGoFire={() => setStep('fire')}
-            onDeclareBankruptcy={() => resolveTop?.({ type: 'TRIGGER_BANKRUPTCY', source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })}
+            onDeclareBankruptcy={() => safeResolve({ type: 'TRIGGER_BANKRUPTCY', source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })}
           />
         )}
 
