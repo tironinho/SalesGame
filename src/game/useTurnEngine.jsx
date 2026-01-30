@@ -80,6 +80,8 @@ export function useTurnEngine({
   setShowBankruptOverlay,
   lastRollTurnKey,
   setLastRollTurnKey,
+  turnSeq = 0,
+  setTurnSeq,
 }) {
   const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
   // ===== Modais =====
@@ -102,12 +104,17 @@ export function useTurnEngine({
   const modalLocksRef = React.useRef(0)
   React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
 
-  // ✅ Anti-double-roll: snapshot local do último "turnKey" rolado (não depende de lock)
+  // ✅ Anti-double-roll: snapshot local do último "turnKey" rolado (sincronizado com turnSeq)
   const lastRollTurnKeyRef = React.useRef(lastRollTurnKey ?? null)
   React.useEffect(() => {
     lastRollTurnKeyRef.current = lastRollTurnKey ?? null
   }, [lastRollTurnKey])
-  
+
+  const turnSeqRef = React.useRef(turnSeq ?? 0)
+  React.useEffect(() => {
+    turnSeqRef.current = typeof turnSeq === 'number' ? turnSeq : 0
+  }, [turnSeq])
+
   // ✅ CORREÇÃO: Flag para indicar que uma modal está sendo aberta (evita race condition)
   const openingModalRef = React.useRef(false)
   
@@ -1092,8 +1099,7 @@ export function useTurnEngine({
     // ✅ CORREÇÃO CRÍTICA: PLAYER_DELTA nunca inclui gameOver/winner (evita vazamento de estado antigo)
     broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, {
       kind: 'PLAYER_DELTA',
-      // ✅ Persistido no Supabase: impede rolar 2x no mesmo turno mesmo com unlock/refresh/snapshot
-      lastRollTurnKey: `${currentRoundRef.current}:${turnIdxRef.current}:${String(ownerId)}`,
+      lastRollTurnKey: typeof turnSeqRef.current === 'number' ? String(turnSeqRef.current) : null,
     })
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
@@ -2439,17 +2445,20 @@ export function useTurnEngine({
                 currentRoundRef.current = finalRound
                 return finalRound
               })
-              // ✅ CORREÇÃO: Passa roundFlags atualizado no patch para garantir sincronização
-              const patch = {}
-              if (turnData.nextRoundFlags) {
-                patch.roundFlags = turnData.nextRoundFlags
+              const nextTurnSeq = (typeof turnSeqRef.current === 'number' ? turnSeqRef.current : 0) + 1
+              if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+              turnSeqRef.current = nextTurnSeq
+
+              const patch = {
+                roundFlags: turnData.nextRoundFlags ?? undefined,
+                round: turnData.shouldIncrementRound ? roundToBroadcast : undefined,
+                turnPlayerId: turnData.nextTurnPlayerId,
+                turnSeq: nextTurnSeq,
+                lastRollTurnKey: null,
               }
-              if (turnData.shouldIncrementRound) {
-                patch.round = roundToBroadcast
-              }
-              if (turnData.nextTurnPlayerId) {
-                patch.turnPlayerId = turnData.nextTurnPlayerId // ✅ CORREÇÃO MULTIPLAYER: turnPlayerId autoritativo
-              }
+              if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
+              if (turnData.shouldIncrementRound) patch.round = roundToBroadcast
+              if (turnData.nextTurnPlayerId) patch.turnPlayerId = turnData.nextTurnPlayerId
               broadcastState(latestPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
               pendingTurnDataRef.current = null // Limpa os dados após usar
               setTurnLockBroadcast(false)
@@ -2627,14 +2636,24 @@ export function useTurnEngine({
         return
       }
 
-      // ✅ HARD GUARD: se já há troca de turno pendente/em progresso, bloqueia ação (evita double-roll)
-      if (turnChangeInProgressRef.current || pendingTurnDataRef.current) {
-        console.log('[DEBUG] 🚫 onAction bloqueado - turnChangeInProgress/pendingTurn', {
-          turnChangeInProgress: turnChangeInProgressRef.current,
-          pendingTurn: Boolean(pendingTurnDataRef.current),
-          act,
-        })
+      if (turnChangeInProgressRef.current) {
+        console.log('[DEBUG] 🚫 onAction bloqueado - turnChangeInProgress')
         return
+      }
+
+      const currentTurnKey =
+        typeof turnSeqRef.current === 'number'
+          ? String(turnSeqRef.current)
+          : null
+      if (currentTurnKey && lastRollTurnKeyRef.current === currentTurnKey) {
+        console.warn('[ROLL_BLOCK] already rolled this turn', { currentTurnKey })
+        return
+      }
+      if (currentTurnKey) {
+        lastRollTurnKeyRef.current = currentTurnKey
+        try {
+          if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(currentTurnKey)
+        } catch {}
       }
 
       // Cash audit: define um trace/meta para correlacionar o "turn/action".

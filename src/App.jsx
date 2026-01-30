@@ -252,6 +252,8 @@ export default function App() {
   const [winner, setWinner] = useState(null)
   // ✅ Anti-double-roll persistido (independente do lock)
   const [lastRollTurnKey, setLastRollTurnKey] = useState(null)
+  // ✅ turnSeq: contador monotônico do turno (1 jogador: 0→1→2…; evita [ROLL_BLOCK])
+  const [turnSeq, setTurnSeq] = useState(0)
 
   // ====== HUD do meu jogador
   const [meHud, setMeHud] = useState({
@@ -370,7 +372,8 @@ export default function App() {
           setRound(1)
           setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
-          // não troca fase automaticamente aqui; fase é conduzida pelo usuário
+          setTurnSeq(0)
+          setLastRollTurnKey(null)
           setLog(['Jogo iniciado!'])
           return
         }
@@ -1011,7 +1014,8 @@ export default function App() {
       setGameOver(false)
       setWinner(null)
       setLastRollTurnKey(null)
-      console.log('[NET] ✅ START detectado - resetando gameOver=false, winner=null')
+      setTurnSeq(0)
+      console.log('[NET] ✅ START detectado - resetando gameOver=false, winner=null, turnSeq=0')
     } else {
       // ✅ Monotônico: gameOver nunca volta para false (exceto em START)
       setGameOver(prev => prev || !!netState.gameOver);
@@ -1028,7 +1032,10 @@ export default function App() {
     if (netState.lastRollTurnKey !== undefined) {
       setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
     }
-    
+    if (typeof netState.turnSeq === 'number') {
+      setTurnSeq(netState.turnSeq)
+    }
+
     // ✅ Log obrigatório
     if (netState.gameOver === true) {
       console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${netState.winner?.name ?? netState.winner ?? "N/A"}`);
@@ -1336,6 +1343,7 @@ export default function App() {
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         roundFlags: nextRoundFlags,
+        turnSeq: 0,
         lastRollTurnKey: null,
         stateId,
         actionId,
@@ -1423,6 +1431,10 @@ export default function App() {
       if (patch && patch.lastRollTurnKey !== undefined) {
         statePatch.lastRollTurnKey = patch.lastRollTurnKey ? String(patch.lastRollTurnKey) : null
       }
+      if (patch && patch.turnSeq !== undefined) {
+        statePatch.turnSeq = Number(patch.turnSeq)
+        setTurnSeq(Number(patch.turnSeq))
+      }
       commitGamePatch({
         playersDeltaById,
         statePatch
@@ -1467,15 +1479,19 @@ export default function App() {
     // ✅ CORREÇÃO CRÍTICA: Reset explícito de refs antes de START
     lastLocalStateRef.current = null
     playersBeforeRef.current = null
-    
+    setTurnSeq(0)
+    setLastRollTurnKey(null)
+
     // rede
     broadcastState(normalized, 0, 1, false, null, {
       turnPlayerId: firstPlayerId,
-      round: 1,  // ✅ Explícito: round=1
-      gameOver: false,  // ✅ Explícito: gameOver=false
-      winner: null,  // ✅ Explícito: winner=null
+      round: 1,
+      gameOver: false,
+      winner: null,
       roundFlags: Array(normalized.length).fill(false),
-      isStartGame: true // ✅ CORREÇÃO: Marca como START GAME (snapshot completo permitido)
+      turnSeq: 0,
+      lastRollTurnKey: null,
+      isStartGame: true
     })
     // entre abas
     defer(() => {
@@ -1580,7 +1596,7 @@ export default function App() {
     round, setRound,
     turnIdx, setTurnIdx,
     turnPlayerId, setTurnPlayerId,
-    turnOrder,  // ✅ CORREÇÃO DESSYNC: Passa turnOrder para o hook
+    turnOrder,
     roundFlags, setRoundFlags,
     isMyTurn,
     isMine,
@@ -1596,6 +1612,8 @@ export default function App() {
     setShowBankruptOverlay,
     lastRollTurnKey,
     setLastRollTurnKey,
+    turnSeq,
+    setTurnSeq,
   })
 
   // ====== Jogo (derivações + logs) ======
@@ -1606,25 +1624,26 @@ export default function App() {
   const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
   const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
   const lockOwnerOk = turnLock ? (lockOwner != null && String(lockOwner) === String(myUid)) : true
-  const currentTurnKey = useMemo(() => {
-    if (!turnPlayerId) return null
-    const derived = players.findIndex(p => String(p?.id) === String(turnPlayerId))
-    const idx = derived >= 0 ? derived : turnIdx
-    return `${round}:${idx}:${String(turnPlayerId)}`
-  }, [round, turnIdx, turnPlayerId, players])
+  // ✅ Chave do turno por turnSeq (monotônico; funciona com 1–4 jogadores)
+  const currentTurnKey =
+    typeof turnSeq === 'number'
+      ? String(turnSeq)
+      : null
   const alreadyRolledThisTurn =
-    !!currentTurnKey && !!lastRollTurnKey && String(lastRollTurnKey) === String(currentTurnKey)
+    !!currentTurnKey &&
+    !!lastRollTurnKey &&
+    String(lastRollTurnKey) === String(currentTurnKey)
   const controlsCanRoll =
-    !!turnPlayerId &&
-    players.length > 0 &&
-    isMyTurnExact &&
+    !gameOver &&
+    turnPlayerId != null &&
+    myUid != null &&
+    String(turnPlayerId) === String(myUid) &&
     turnLock === false &&
     lockOwnerOk &&
     Number(modalLocks || 0) === 0 &&
-    alreadyRolledThisTurn !== true &&
-    gameOver !== true &&
-    isCurrentPlayerBankrupt !== true &&
-    isWaitingRevenue !== true
+    !alreadyRolledThisTurn &&
+    !isCurrentPlayerBankrupt &&
+    !isWaitingRevenue
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
