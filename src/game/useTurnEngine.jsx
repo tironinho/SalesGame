@@ -2637,16 +2637,6 @@ export function useTurnEngine({
         return
       }
 
-      // ✅ Flag persistida: já rolou neste turno (independente do lock)
-      const currentTurnKey = `${currentRoundRef.current}:${turnIdxRef.current}:${String(turnPlayerId)}`
-      if (lastRollTurnKeyRef.current && String(lastRollTurnKeyRef.current) === String(currentTurnKey)) {
-        console.warn('[ROLL_BLOCK] already rolled this turn', { currentTurnKey })
-        return
-      }
-      try {
-        if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(currentTurnKey)
-      } catch {}
-
       // Cash audit: define um trace/meta para correlacionar o "turn/action".
       // (não altera schema do state; apenas runtime)
       try {
