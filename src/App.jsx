@@ -1506,7 +1506,13 @@ export default function App() {
   }
 
   // ====== "é minha vez?" (declaração movida para antes do useEffect do watchdog)
-  const current = players[turnIdx]
+  const current = useMemo(() => {
+    if (turnPlayerId) {
+      const found = players.find(p => String(p.id) === String(turnPlayerId))
+      if (found) return found
+    }
+    return players[turnIdx]
+  }, [players, turnPlayerId, turnIdx])
 
   // ====== Validação do estado do jogo (modo debug)
   useEffect(() => {

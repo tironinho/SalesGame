@@ -158,7 +158,17 @@ useEffect(() => {
     navigatedOnce.current = false
     refreshAll()
     const off = onLobbyRealtime(lobbyId, () => refreshAll())
-    return off
+    // ✅ CORREÇÃO: Polling para garantir navegação em caso de race condition
+    const pollInterval = setInterval(() => {
+      if (!navigatedOnce.current) {
+        refreshAll()
+      }
+    }, 1000)
+
+    return () => {
+      off()
+      clearInterval(pollInterval)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId])
 
