@@ -263,8 +263,34 @@ export function crossedTile(oldPos, newPos, tileIndex /* zero-based */) {
 }
 
 // ======= Auxiliares de turnos =======
-export function countAlivePlayers(players) {
-  return players.reduce((acc, p) => acc + (p?.bankrupt ? 0 : 1), 0)
+export function countAlivePlayers(players = []) {
+  const list = Array.isArray(players) ? players : []
+
+  // Se não houver ids, mantém o comportamento antigo (por índice)
+  let hasAnyId = false
+  const byId = new Map()
+
+  for (const p of list) {
+    const idRaw = p?.id
+    const id = idRaw === undefined || idRaw === null ? '' : String(idRaw)
+    if (!id) continue
+    hasAnyId = true
+
+    const prev = byId.get(id) || { bankrupt: false }
+    // bankrupt é sticky: se qualquer snapshot marcar bankrupt=true, considera falido
+    if (p?.bankrupt) prev.bankrupt = true
+    byId.set(id, prev)
+  }
+
+  if (!hasAnyId) {
+    return list.reduce((acc, p) => acc + (p?.bankrupt ? 0 : 1), 0)
+  }
+
+  let alive = 0
+  for (const v of byId.values()) {
+    if (!v.bankrupt) alive += 1
+  }
+  return alive
 }
 
 export function findNextAliveIdx(players, fromIdx) {

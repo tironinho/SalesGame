@@ -319,6 +319,69 @@ export function useTurnEngine({
     console.log('[DEBUG] 🔄 currentRoundRef atualizado para:', round)
   }, [round])
 
+  // ✅ Regra de falência por quantidade inicial de jogadores:
+  // 1 jogador: termina quando ele declarar falência (alive === 0)
+  // 2+ jogadores: termina quando sobrar <= 1 vivo (alive <= 1)
+  const uniquePlayerCount = React.useCallback((arr) => {
+    const list = Array.isArray(arr) ? arr : []
+    const ids = list
+      .map(p => p?.id)
+      .filter(v => v !== undefined && v !== null)
+      .map(v => String(v))
+      .filter(Boolean)
+
+    if (ids.length === 0) return list.length
+    return new Set(ids).size
+  }, [])
+
+  const initialPlayerCountRef = React.useRef(null)
+
+  React.useEffect(() => {
+    if (gameOver) return
+    const n = uniquePlayerCount(players)
+    if (!n) return
+
+    // START reseta turnSeq para 0 e round para 1 (ver App.jsx)
+    const isFreshStart = Number(turnSeq || 0) === 0 && Number(round || 1) === 1
+    if (isFreshStart) {
+      initialPlayerCountRef.current = n
+      return
+    }
+
+    // Nunca diminui
+    if (initialPlayerCountRef.current == null || n > initialPlayerCountRef.current) {
+      initialPlayerCountRef.current = n
+    }
+  }, [players, round, turnSeq, gameOver, uniquePlayerCount])
+
+  const decideEndgameAfterBankruptcy = React.useCallback((nextPlayers) => {
+    const initialN = Math.max(initialPlayerCountRef.current ?? 0, uniquePlayerCount(nextPlayers))
+    const alive = countAlivePlayers(nextPlayers)
+
+    const shouldEnd = initialN <= 1 ? (alive === 0) : (alive <= 1)
+    if (!shouldEnd) return { shouldEnd: false, alive, winner: null }
+
+    // Winner: se sobrou 1 vivo, pega ele por id (bankrupt sticky)
+    let winnerPlayer = null
+    if (alive === 1) {
+      const byId = new Map()
+      for (const p of (nextPlayers || [])) {
+        const idRaw = p?.id
+        const id = idRaw === undefined || idRaw === null ? '' : String(idRaw)
+        if (!id) continue
+        const entry = byId.get(id) || { bankrupt: false, player: null }
+        if (p?.bankrupt) entry.bankrupt = true
+        if (!p?.bankrupt && !entry.player) entry.player = p
+        byId.set(id, entry)
+      }
+      for (const entry of byId.values()) {
+        if (!entry.bankrupt && entry.player) { winnerPlayer = entry.player; break }
+      }
+    }
+
+    return { shouldEnd: true, alive, winner: winnerPlayer }
+  }, [uniquePlayerCount])
+
   // ✅ refs do estado mais recente (evita stale no tick / winner)
   const playersRef = React.useRef(players)
   React.useEffect(() => { playersRef.current = players }, [players])
@@ -686,17 +749,22 @@ export function useTurnEngine({
               }
               // Processa falência
               const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
-              const alive = countAlivePlayers(updatedPlayers)
-              if (alive <= 1) {
-                const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
-                const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
+              const decision = decideEndgameAfterBankruptcy(updatedPlayers)
+              if (decision.shouldEnd) {
+                const safeRound = currentRoundRef.current
+                const finalWinner = decision.winner
+
                 setWinner(finalWinner)
-                // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
                 commitLocalPlayers(updatedPlayers)
                 setGameOver(true)
                 setTurnLockBroadcast(false)
-                // ✅ CORREÇÃO: ENDGAME patch explícito
-                broadcastState(updatedPlayers, turnIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
+
+                broadcastState(updatedPlayers, turnIdx, safeRound, true, finalWinner, {
+                  kind: 'ENDGAME',
+                  round: safeRound,
+                  gameOver: true,
+                  winner: finalWinner,
+                })
                 return failRes(updatedPlayers)
               }
               const ownerIdx = idxById(updatedPlayers, ownerId)
@@ -890,15 +958,22 @@ export function useTurnEngine({
       } else if (recoveryRes.action === 'BANKRUPT') {
         // Processa falência
         const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
-        const alive = countAlivePlayers(updatedPlayers)
-        if (alive <= 1) {
-          const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
-          setWinner(winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
-          // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
+        const decision = decideEndgameAfterBankruptcy(updatedPlayers)
+        if (decision.shouldEnd) {
+          const safeRound = currentRoundRef.current
+          const finalWinner = decision.winner
+
+          setWinner(finalWinner)
           commitLocalPlayers(updatedPlayers)
           setGameOver(true)
           setTurnLockBroadcast(false)
-          broadcastState(updatedPlayers, turnIdx, round, true, winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null)
+
+          broadcastState(updatedPlayers, turnIdx, safeRound, true, finalWinner, {
+            kind: 'ENDGAME',
+            round: safeRound,
+            gameOver: true,
+            winner: finalWinner,
+          })
           return failRes(updatedPlayers)
         }
         const ownerIdx = idxById(updatedPlayers, ownerId)
@@ -2751,11 +2826,12 @@ export function useTurnEngine({
         if (!res) return
 
         if (res?.type === 'TRIGGER_BANKRUPTCY') {
-          // ✅ Mesmo fluxo do botão da lateral: confirma primeiro
           const ok = await openModalAndWait(
             <BankruptcyModal playerName={current?.name || 'Jogador'} />
           )
-          if (ok === true) onAction?.({ type: 'BANKRUPT' })
+          if (ok === true) {
+            await onAction({ type: 'BANKRUPT' })
+          }
           return
         }
 
@@ -3234,15 +3310,22 @@ export function useTurnEngine({
       )
       appendLog(`${curPlayers[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
 
-      const alive = countAlivePlayers(nextPlayers)
-      if (alive <= 1) {
-        const winnerIdx = nextPlayers.findIndex(p => !p?.bankrupt)
-        const finalWinner = winnerIdx >= 0 ? nextPlayers[winnerIdx] : null
+      const decision = decideEndgameAfterBankruptcy(nextPlayers)
+      if (decision.shouldEnd) {
+        const safeRound = currentRoundRef.current
+        const finalWinner = decision.winner
+
         setWinner(finalWinner)
         commitLocalPlayers(nextPlayers)
         setGameOver(true)
         setTurnLockBroadcast(false)
-        broadcastState(nextPlayers, curIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
+
+        broadcastState(nextPlayers, curIdx, safeRound, true, finalWinner, {
+          kind: 'ENDGAME',
+          round: safeRound,
+          gameOver: true,
+          winner: finalWinner,
+        })
         return
       }
 
@@ -3271,7 +3354,8 @@ export function useTurnEngine({
     gameOver, appendLog, broadcastState,
     setPlayers, setRound, setTurnIdx, setTurnLockBroadcast, setGameOver, setWinner,
     requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay,
-    commitLocalPlayers, commitLocalMeta
+    commitLocalPlayers, commitLocalMeta,
+    decideEndgameAfterBankruptcy,
   ])
 
   // ====== auto-unlock removido ======
