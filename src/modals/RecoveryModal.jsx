@@ -13,8 +13,18 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
   const [step, setStep] = useState('menu') // 'menu' | 'loan' | 'reduce' | 'fire'
 
   const close = () => {
-    if (!canClose) return // Não permite fechar se canClose for false
+    if (!canClose) return
     popModal ? popModal(false) : resolveTop?.(null)
+  }
+
+  // ✅ FIX: safeResolve estava sendo usado mas não existia
+  const safeResolve = (payload) => {
+    try {
+      resolveTop?.(payload) // fecha a modal e devolve payload para openModalAndWait
+    } catch (e) {
+      console.error('[RecoveryModal] safeResolve falhou:', e)
+      try { popModal?.() } catch {}
+    }
   }
 
   // --- preços de compra (manual) -> crédito = 50% ---

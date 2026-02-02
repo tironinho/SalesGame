@@ -2750,9 +2750,12 @@ export function useTurnEngine({
         const res = await openModalAndWait(<RecoveryModal playerName={current?.name || 'Jogador'} currentPlayer={current} />)
         if (!res) return
 
-        if (res && res.type === 'TRIGGER_BANKRUPTCY') {
-          // Fecha o fluxo atual e dispara a falência real
-          onAction({ type: 'BANKRUPT' })
+        if (res?.type === 'TRIGGER_BANKRUPTCY') {
+          // ✅ Mesmo fluxo do botão da lateral: confirma primeiro
+          const ok = await openModalAndWait(
+            <BankruptcyModal playerName={current?.name || 'Jogador'} />
+          )
+          if (ok === true) onAction?.({ type: 'BANKRUPT' })
           return
         }
 
