@@ -704,8 +704,10 @@ export default function App() {
     const me = String(myUid || meId || "")
     if (!me) return false
     if (!turnPlayerId) return false
+    const mePlayer = players.find(p => String(p.id) === me)
+    if (mePlayer?.bankrupt) return false
     return String(turnPlayerId) === me
-  }, [turnPlayerId, myUid, meId])
+  }, [turnPlayerId, myUid, meId, players])
 
   // ✅ coerência: mantém turnIdx <-> turnPlayerId sincronizados (evita desync UI vs engine)
   useEffect(() => {
@@ -1939,7 +1941,13 @@ export default function App() {
       </footer>
 
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
-      {showBankruptOverlay && <BankruptOverlay />}
+      {showBankruptOverlay && (
+        <BankruptOverlay
+          playerName={meHudLive?.name || current?.name || 'Jogador'}
+          onClose={() => setShowBankruptOverlay(false)}
+          autoCloseMs={1500}
+        />
+      )}
     </div>
     </ModalProvider>
   )

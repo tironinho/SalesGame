@@ -55,6 +55,17 @@ import { runEvents } from './engine/gameEffects'
 
 const ENGINE_V2 = false
 
+function findNextActiveIndex(players, fromIdx) {
+  const n = players?.length || 0
+  if (!n) return -1
+  for (let step = 1; step <= n; step++) {
+    const idx = (fromIdx + step) % n
+    const p = players[idx]
+    if (p && !p.bankrupt) return idx
+  }
+  return -1
+}
+
 /**
  * Hook do motor de turnos.
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
@@ -2849,7 +2860,7 @@ export function useTurnEngine({
       if (!isMyTurn || !pushModal || !awaitTop) return
       ;(async () => {
         const ok = await openModalAndWait(<BankruptcyModal playerName={current?.name || 'Jogador'} />)
-        if (ok) onAction?.({ type: 'BANKRUPT' })
+        if (ok === true) onAction?.({ type: 'BANKRUPT' })
       })()
       return
     }
@@ -3207,41 +3218,48 @@ export function useTurnEngine({
       return;
     }
 
-    if (act.type === 'BANKRUPT'){
-      const curIdx = turnIdx
-      try {
-        const amI = String(players[curIdx]?.id) === String(myUid)
-        if (amI) setShowBankruptOverlay?.(true)
-      } catch {}
+    if (act.type === 'BANKRUPT') {
+      if (String(turnPlayerId) !== String(myUid)) return
 
-      const updatedPlayers = players.map((p, i) => (i === curIdx ? { ...p, bankrupt: true } : p))
-      appendLog(`${players[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
+      const myId = String(myUid)
+      const curPlayers = pendingTurnDataRef.current?.nextPlayers || playersRef.current || players
+      const curIdx = curPlayers.findIndex(p => String(p.id) === myId)
+      if (curIdx < 0) return
 
-      const alive = countAlivePlayers(updatedPlayers)
+      const nextPlayers = curPlayers.map(p =>
+        String(p.id) === myId ? { ...p, bankrupt: true } : p
+      )
+      appendLog(`${curPlayers[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
+
+      const alive = countAlivePlayers(nextPlayers)
       if (alive <= 1) {
-        const winnerIdx = updatedPlayers.findIndex(p => !p?.bankrupt)
-        const finalWinner = winnerIdx >= 0 ? updatedPlayers[winnerIdx] : null
+        const winnerIdx = nextPlayers.findIndex(p => !p?.bankrupt)
+        const finalWinner = winnerIdx >= 0 ? nextPlayers[winnerIdx] : null
         setWinner(finalWinner)
-        // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
-        commitLocalPlayers(updatedPlayers)
+        commitLocalPlayers(nextPlayers)
         setGameOver(true)
         setTurnLockBroadcast(false)
-        // ✅ CORREÇÃO: ENDGAME patch explícito
-        broadcastState(updatedPlayers, turnIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
+        broadcastState(nextPlayers, curIdx, round, true, finalWinner, { kind: 'ENDGAME', gameOver: true, winner: finalWinner })
         return
       }
 
-      const nextIdx = findNextAliveIdx(updatedPlayers, curIdx)
-      // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
-      commitLocalPlayers(updatedPlayers)
-      setTurnIdx(nextIdx)
-      if (setTurnPlayerId) {
-        const np = updatedPlayers[nextIdx]
-        setTurnPlayerId(np?.id ? String(np.id) : null)
-      }
+      const nextIdx = findNextActiveIndex(nextPlayers, curIdx)
+      const nextTurnPlayerId = nextIdx >= 0 ? (nextPlayers[nextIdx]?.id ? String(nextPlayers[nextIdx].id) : null) : null
+      const nextTurnSeq = (typeof turnSeqRef?.current === 'number' ? turnSeqRef.current : 0) + 1
+      if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+      turnSeqRef.current = nextTurnSeq
+
+      commitLocalPlayers(nextPlayers)
+      setTurnIdx(nextIdx >= 0 ? nextIdx : 0)
+      if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
       setTurnLockBroadcast(false)
-      broadcastState(updatedPlayers, nextIdx, currentRoundRef.current)
-      if (DEBUG_LOGS) console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada (falência) - posição final:', updatedPlayers[nextIdx]?.pos)
+      broadcastState(nextPlayers, nextIdx >= 0 ? nextIdx : 0, currentRoundRef.current, false, null, {
+        turnPlayerId: nextTurnPlayerId,
+        turnSeq: nextTurnSeq,
+        lastRollTurnKey: null,
+      })
+      setShowBankruptOverlay?.(true)
+      if (DEBUG_LOGS) console.log('[DEBUG] 🏁 BANKRUPT - próximo turno:', nextTurnPlayerId)
       return
     }
     if (DEBUG_LOGS) console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)

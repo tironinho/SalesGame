@@ -1,36 +1,30 @@
-// src/modals/BankruptcyModal.jsx
-import React from 'react'
-import { useModal } from './ModalContext'
+// src/modals/BankruptOverlay.jsx
+import React, { useEffect } from 'react'
 import ModalBase from './ModalBase'
 
-export default function BankruptcyModal({ playerName = 'Jogador' }) {
-  const { resolveTop, closeModal } = useModal()
+export default function BankruptOverlay({
+  playerName = 'Jogador',
+  onClose,
+  autoCloseMs = 1500, // fecha sozinho para não travar a partida
+}) {
+  useEffect(() => {
+    if (!autoCloseMs) return
+    const id = setTimeout(() => onClose?.(), autoCloseMs)
+    return () => clearTimeout(id)
+  }, [autoCloseMs, onClose])
 
   return (
-    <ModalBase width={700} onClose={closeModal}>
-      <div className="bankruptcyModal">
-        <div className="paper" style={{ padding: 24 }}>
-          <h2 style={{ marginTop: 0 }}>Declarar Falência</h2>
-          <p>
-            Tem certeza que deseja declarar <b>Falência</b>, <b>{playerName}</b>?
-            <br />
-            Esta ação é irreversível e você não poderá mais jogar.
-          </p>
+    <ModalBase onClose={onClose} zIndex={4000}>
+      <div style={{ padding: 24 }}>
+        <h2 style={{ marginTop: 0 }}>Falência declarada</h2>
+        <p>
+          <b>{playerName}</b>, você foi marcado como <b>FALIDO</b>.
+          <br />
+          Seu turno será pulado e você não poderá mais executar ações.
+        </p>
 
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
-            <button
-              onClick={() => { closeModal(); resolveTop(false) }}
-              className="btn"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={() => { closeModal(); resolveTop(true) }}
-              className="btn btn-danger"
-            >
-              Sim, declarar falência
-            </button>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+          <button className="btn" onClick={onClose}>OK</button>
         </div>
       </div>
     </ModalBase>
