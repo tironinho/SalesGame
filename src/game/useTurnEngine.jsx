@@ -475,30 +475,15 @@ export function useTurnEngine({
         openingModalRef.current = false
         console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
 
-        // ✅ CORREÇÃO: Timeout de segurança (15s) para evitar travamentos
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Modal timeout')), 15000)
-        )
-        
-        const payload = await Promise.race([awaitTop(), timeoutPromise])
+        const payload = await awaitTop()
         modalResolved = true
-        
-        // ✅ CORREÇÃO: Pequeno delay após resolver para garantir que a modal foi completamente fechada
+
+        // ✅ Pequeno delay após resolver para garantir que a modal foi completamente fechada
         await new Promise(resolve => setTimeout(resolve, 50))
         return payload ?? null
       } catch (err) {
         console.error('[DEBUG] openModalAndWait - erro aguardando modal:', err)
-        
-        // ✅ CORREÇÃO: Se timeout, força fechamento
-        if (err.message === 'Modal timeout') {
-          console.warn('[WARN] modal timeout -> auto-close')
-          try {
-            safeCloseTop({ action: 'SKIP' })
-          } catch {}
-        }
-        
-        // ✅ CORREÇÃO OBRIGATÓRIA 1: NUNCA decrementar no catch - apenas marcar para finally decrementar
-        modalResolved = true // garante decremento no finally
+        modalResolved = true
         return null
       } finally {
         openingModalRef.current = false
