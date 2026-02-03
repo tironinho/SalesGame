@@ -66,6 +66,20 @@ function findNextActiveIndex(players, fromIdx) {
   return -1
 }
 
+// ✅ Próximo índice jogável (pula bankrupt)
+function pickNextAliveIndex(playersArr, fromIdx) {
+  const arr = Array.isArray(playersArr) ? playersArr : []
+  const n = arr.length
+  if (!n) return 0
+
+  const start = Number.isFinite(fromIdx) ? fromIdx : 0
+  for (let step = 1; step <= n; step++) {
+    const idx = (start + step) % n
+    if (!arr[idx]?.bankrupt) return idx
+  }
+  return Math.max(0, Math.min(start, n - 1))
+}
+
 /**
  * Hook do motor de turnos.
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
@@ -913,6 +927,52 @@ export function useTurnEngine({
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
             commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
+          } else if (recoveryModalRes.type === 'TRIGGER_BANKRUPTCY') {
+            console.log('[DEBUG] ✅ RecoveryModal pediu TRIGGER_BANKRUPTCY - abrindo confirmação de falência...')
+
+            const confirmRes = await openModalAndWait(<BankruptcyModal playerName={cur?.name || 'Jogador'} />)
+
+            if (confirmRes === true) {
+              console.log('[DEBUG] ✅ Falência confirmada via RecoveryModal (TRIGGER_BANKRUPTCY)')
+
+              const currIdx = Number(turnIdxRef.current ?? turnIdx) || 0
+              const basePlayers = Array.isArray(playersRef.current) ? playersRef.current : currentPlayers
+              const nextPlayers = basePlayers.map((p, idx) => {
+                if (idx !== currIdx) return p
+                return { ...p, bankrupt: true, cash: 0 }
+              })
+
+              commitLocalPlayers(nextPlayers)
+
+              const alive = nextPlayers.filter(p => !p?.bankrupt)
+              if (alive.length <= 1) {
+                endGamePendingRef.current = true
+                pendingTurnDataRef.current = { endGame: true, nextPlayers }
+                return failRes(nextPlayers)
+              }
+
+              const nextIdx = pickNextAliveIndex(nextPlayers, currIdx)
+              const nextPid = String(nextPlayers?.[nextIdx]?.id ?? '')
+              const nextRound = Number(currentRoundRef.current) || 1
+              const nextRoundFlags =
+                (roundFlagsRef?.current && typeof roundFlagsRef.current === 'object')
+                  ? roundFlagsRef.current
+                  : (typeof roundFlags === 'object' ? roundFlags : {})
+
+              pendingTurnDataRef.current = {
+                nextPlayers,
+                nextTurnIdx: nextIdx,
+                nextTurnPlayerId: nextPid,
+                nextRound,
+                shouldIncrementRound: false,
+                nextRoundFlags,
+              }
+
+              return failRes(nextPlayers)
+            }
+
+            console.log('[DEBUG] Falência cancelada no RecoveryModal - mantendo fluxo de recuperação')
+            return await handleInsufficientFunds(requiredAmount, context, action, currentPlayers)
           } else {
             console.log('[DEBUG] ❌ Nenhuma condição foi atendida! Tipo:', recoveryModalRes.type, 'Action:', recoveryModalRes.action)
           }
