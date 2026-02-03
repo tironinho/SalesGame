@@ -29,12 +29,12 @@ const createTestPlayer = (overrides = {}) => ({
 
 describe('Game Math Validation', () => {
   describe('computeDespesasFor', () => {
-    test('deve calcular manutenção inicial corretamente (2100)', () => {
+    test('deve calcular manutenção inicial corretamente (manual)', () => {
       const player = createTestPlayer()
       const manutencao = computeDespesasFor(player)
       
-      // Valor base: 1000 + Vendedor Comum: 1000 + Mix D: 50 + ERP D: 50 = 2100
-      expect(manutencao).toBe(2100)
+      // Vendedor 1000 + Carteira 50 + Mix D 50 + ERP D 50 = 1150
+      expect(manutencao).toBe(1150)
     })
 
     test('deve calcular manutenção com múltiplos vendedores', () => {
@@ -44,8 +44,8 @@ describe('Game Math Validation', () => {
       })
       const manutencao = computeDespesasFor(player)
       
-      // Base: 1000 + Vendedores: 3*1000 + Mix: 5*50 + ERP: 3*50 = 1000+3000+250+150 = 4400
-      expect(manutencao).toBe(4400)
+      // Vendedores: 3*1000 + Mix: 5*50 + ERP: 3*50 + Carteira: 5*50 = 3000+250+150+250 = 3650
+      expect(manutencao).toBe(3650)
     })
 
     test('deve calcular manutenção com certificados', () => {
@@ -67,8 +67,8 @@ describe('Game Math Validation', () => {
       })
       const manutencao = computeDespesasFor(player)
       
-      // Base: 1000 + Vendedor: 1000 + Mix: 2*50 + ERP: 3*50 + Gestores: 2*3000 = 1000+1000+100+150+6000 = 8250
-      expect(manutencao).toBe(8250)
+      // Vendedor: 1000 + Mix: 2*50 + ERP: 3*50 + Carteira: 2*50 + Gestores: 2*3000 = 1000+100+150+100+6000 = 7350
+      expect(manutencao).toBe(7350)
     })
   })
 

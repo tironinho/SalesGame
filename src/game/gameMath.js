@@ -132,30 +132,39 @@ export function computeDespesasFor(player = {}) {
   const qInside = num(player.insideSales);
   const qField  = num(player.fieldSales);
   const qGestor = num(player.gestores ?? player.gestoresComerciais ?? player.managers);
+  const qClientes = num(player.clients);
+  const qColabs = qComum + qInside + qField + qGestor;
 
   const cComum  = certCount(player, 'comum');
   const cInside = certCount(player, 'inside');
   const cField  = certCount(player, 'field');
   const cGestor = certCount(player, 'gestor');
 
-  // CORREÇÃO A: VENDEDOR COMUM baseDesp = 1000 (vem de VENDOR_RULES.comum.baseDesp).
-  const dComum  = qComum  * (VENDOR_RULES.comum.baseDesp  + VENDOR_RULES.comum.incDesp  * cComum )
-  const dInside = qInside * (VENDOR_RULES.inside.baseDesp + VENDOR_RULES.inside.incDesp * cInside)
-  const dField  = qField  * (VENDOR_RULES.field.baseDesp  + VENDOR_RULES.field.incDesp  * cField )
-  const dGestor = qGestor * (VENDOR_RULES.gestor.baseDesp + VENDOR_RULES.gestor.incDesp * cGestor)
+  const mixLevel = String(player.mixProdutos || 'D').toUpperCase();
+  const erpLevel = String(player.erpLevel || player.erpSistemas || 'D').toUpperCase();
 
-  const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
-  const mixDesp = (MIX_RULES[mixLvl]?.despPerClient || 0) * num(player.clients)
+  const dComum =
+    (VENDOR_RULES.comum.baseDesp * qComum) +
+    (VENDOR_RULES.comum.incDesp * cComum * qComum);
 
-  const erpLvl = String(player.erpLevel || 'D').toUpperCase();
-  const colaboradores = qComum + qInside + qField + qGestor;
-  const erpDesp = (ERP_RULES[erpLvl]?.desp || 0) * colaboradores
+  const dInside =
+    (VENDOR_RULES.inside.baseDesp * qInside) +
+    (VENDOR_RULES.inside.incDesp * cInside * qInside);
+  const dField =
+    (VENDOR_RULES.field.baseDesp * qField) +
+    (VENDOR_RULES.field.incDesp * cField * qField);
 
-  const extras = 0;
-  const baseMaintenance = 1000; // Valor base de manutenção inicial
+  const dGestor =
+    (VENDOR_RULES.gestor.baseDesp * qGestor) +
+    (VENDOR_RULES.gestor.incDesp * cGestor * qGestor);
 
-  const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + mixDesp + erpDesp + extras + baseMaintenance));
-  return total
+  const dMix = (MIX_RULES[mixLevel]?.despPerClient || 0) * qClientes;
+  const dErp = (ERP_RULES[erpLevel]?.desp || 0) * qColabs;
+
+  const dCarteiraClientes = 50 * qClientes;
+
+  const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + dMix + dErp + dCarteiraClientes));
+  return total;
 }
 
 // ======= Mutações simples =======
