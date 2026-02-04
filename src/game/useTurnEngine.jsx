@@ -927,33 +927,71 @@ export function useTurnEngine({
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
             commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
-          } else if (recoveryModalRes.type === 'TRIGGER_BANKRUPTCY') {
+          } else if (recoveryModalRes?.type === 'TRIGGER_BANKRUPTCY') {
             console.log('[DEBUG] ✅ RecoveryModal pediu TRIGGER_BANKRUPTCY - abrindo confirmação de falência...')
 
             const confirmRes = await openModalAndWait(<BankruptcyModal playerName={cur?.name || 'Jogador'} />)
 
             if (confirmRes === true) {
-              console.log('[DEBUG] ✅ Falência confirmada via RecoveryModal (TRIGGER_BANKRUPTCY)')
+              console.log('[BANKRUPTCY] RecoveryModal confirmou falência — preparando troca de turno completa')
 
               const currIdx = Number(turnIdxRef.current ?? turnIdx) || 0
               const basePlayers = Array.isArray(playersRef.current) ? playersRef.current : currentPlayers
-              const nextPlayers = basePlayers.map((p, idx) => {
-                if (idx !== currIdx) return p
+              const bankruptId = basePlayers?.[currIdx]?.id
+
+              const nextPlayers = (basePlayers || []).map(p => {
+                if (!p) return p
+                if (p.id !== bankruptId) return p
                 return { ...p, bankrupt: true, cash: 0 }
               })
 
+              const decision = decideEndgameAfterBankruptcy(nextPlayers)
+              const endGame = !!decision?.shouldEnd
+              const winnerPlayer = decision?.winner ?? null
+
               commitLocalPlayers(nextPlayers)
 
-              const alive = nextPlayers.filter(p => !p?.bankrupt)
-              if (alive.length <= 1) {
-                endGamePendingRef.current = true
-                pendingTurnDataRef.current = { endGame: true, nextPlayers }
+              if (endGame) {
+                const baseTurnSeq = Number(turnSeqRef.current ?? turnSeq ?? 0) || 0
+                const nextTurnSeq = baseTurnSeq + 1
+
+                if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+                turnSeqRef.current = nextTurnSeq
+                if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+                lastRollTurnKeyRef.current = null
+
+                setWinner(winnerPlayer)
+                setGameOver(true)
+
+                pendingTurnDataRef.current = null
+                turnChangeInProgressRef.current = false
+
+                broadcastState(
+                  nextPlayers,
+                  currIdx,
+                  currentRoundRef.current,
+                  true,
+                  winnerPlayer,
+                  {
+                    kind: 'ENDGAME',
+                    lastAction: 'BANKRUPT',
+                    gameOver: true,
+                    winner: winnerPlayer,
+                    round: currentRoundRef.current,
+                    turnPlayerId: winnerPlayer?.id ?? bankruptId ?? (turnPlayerIdRef.current ?? turnPlayerId),
+                    turnSeq: nextTurnSeq,
+                    lastRollTurnKey: null,
+                    lastTurnAt: Date.now(),
+                  }
+                )
+
+                setTurnLockBroadcast(false)
                 return failRes(nextPlayers)
               }
 
               const nextIdx = pickNextAliveIndex(nextPlayers, currIdx)
-              const nextPid = String(nextPlayers?.[nextIdx]?.id ?? '')
-              const nextRound = Number(currentRoundRef.current) || 1
+              const nextTurnPlayerId = nextPlayers?.[nextIdx]?.id
+
               const nextRoundFlags =
                 (roundFlagsRef?.current && typeof roundFlagsRef.current === 'object')
                   ? roundFlagsRef.current
@@ -962,10 +1000,11 @@ export function useTurnEngine({
               pendingTurnDataRef.current = {
                 nextPlayers,
                 nextTurnIdx: nextIdx,
-                nextTurnPlayerId: nextPid,
-                nextRound,
+                nextTurnPlayerId: nextTurnPlayerId != null ? String(nextTurnPlayerId) : null,
+                nextRound: currentRoundRef.current,
                 shouldIncrementRound: false,
                 nextRoundFlags,
+                meta: { kind: 'BANKRUPT', source: 'RecoveryModal' },
               }
 
               return failRes(nextPlayers)
@@ -1001,40 +1040,81 @@ export function useTurnEngine({
           return failRes(currentPlayers)
         }
       } else if (recoveryRes.action === 'BANKRUPT') {
-        // Processa falência
-        const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
-        const decision = decideEndgameAfterBankruptcy(updatedPlayers)
-        if (decision.shouldEnd) {
-          const safeRound = currentRoundRef.current
-          const finalWinner = decision.winner
+        console.log('[BANKRUPTCY] InsufficientFundsModal: player declarou falência — preparando troca de turno completa')
 
-          setWinner(finalWinner)
-          commitLocalPlayers(updatedPlayers)
-          setGameOver(true)
-          setTurnLockBroadcast(false)
+        const currIdx = Number(turnIdxRef.current ?? turnIdx) || 0
+        const basePlayers = Array.isArray(playersRef.current) ? playersRef.current : currentPlayers
+        const bankruptId = basePlayers?.[currIdx]?.id
 
-          broadcastState(updatedPlayers, turnIdx, safeRound, true, finalWinner, {
-            kind: 'ENDGAME',
-            round: safeRound,
-            gameOver: true,
-            winner: finalWinner,
-          })
-          return failRes(updatedPlayers)
-        }
-        const ownerIdx = idxById(updatedPlayers, ownerId)
-        const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
-        // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
-        const nextPlayer = updatedPlayers[nextIdx]
-        const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
-        // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
-        commitLocalPlayers(updatedPlayers)
-        setTurnIdx(nextIdx)
-        if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
-        setTurnLockBroadcast(false)
-        broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
-          turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
+        const nextPlayers = (basePlayers || []).map(p => {
+          if (!p) return p
+          if (p.id !== bankruptId) return p
+          return { ...p, bankrupt: true, cash: 0 }
         })
-        return failRes(updatedPlayers)
+
+        const decision = decideEndgameAfterBankruptcy(nextPlayers)
+        const endGame = !!decision?.shouldEnd
+        const winnerPlayer = decision?.winner ?? null
+
+        commitLocalPlayers(nextPlayers)
+
+        if (endGame) {
+          const baseTurnSeq = Number(turnSeqRef.current ?? turnSeq ?? 0) || 0
+          const nextTurnSeq = baseTurnSeq + 1
+
+          if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+          turnSeqRef.current = nextTurnSeq
+          if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+          lastRollTurnKeyRef.current = null
+
+          setWinner(winnerPlayer)
+          setGameOver(true)
+
+          pendingTurnDataRef.current = null
+          turnChangeInProgressRef.current = false
+
+          broadcastState(
+            nextPlayers,
+            currIdx,
+            currentRoundRef.current,
+            true,
+            winnerPlayer,
+            {
+              kind: 'ENDGAME',
+              lastAction: 'BANKRUPT',
+              gameOver: true,
+              winner: winnerPlayer,
+              round: currentRoundRef.current,
+              turnPlayerId: winnerPlayer?.id ?? bankruptId ?? (turnPlayerIdRef.current ?? turnPlayerId),
+              turnSeq: nextTurnSeq,
+              lastRollTurnKey: null,
+              lastTurnAt: Date.now(),
+            }
+          )
+
+          setTurnLockBroadcast(false)
+          return failRes(nextPlayers)
+        }
+
+        const nextIdx = pickNextAliveIndex(nextPlayers, currIdx)
+        const nextTurnPlayerId = nextPlayers?.[nextIdx]?.id
+
+        const nextRoundFlags =
+          (roundFlagsRef?.current && typeof roundFlagsRef.current === 'object')
+            ? roundFlagsRef.current
+            : (typeof roundFlags === 'object' ? roundFlags : {})
+
+        pendingTurnDataRef.current = {
+          nextPlayers,
+          nextTurnIdx: nextIdx,
+          nextTurnPlayerId: nextTurnPlayerId != null ? String(nextTurnPlayerId) : null,
+          nextRound: currentRoundRef.current,
+          shouldIncrementRound: false,
+          nextRoundFlags,
+          meta: { kind: 'BANKRUPT', source: 'InsufficientFundsModal' },
+        }
+
+        return failRes(nextPlayers)
       } else {
         setTurnLockBroadcast(false)
         return failRes(currentPlayers)
