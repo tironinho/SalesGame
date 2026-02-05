@@ -25,6 +25,9 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
+  const normLevel = (v) => { const L = String(v || '').toUpperCase(); return ['A', 'B', 'C', 'D'].includes(L) ? L : '' }
+  const current = normLevel(currentLevel) || 'D'
+
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
@@ -32,18 +35,13 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
   }
 
   const handleBuy = async (level) => {
-    // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
-    // Se erpOwned foi fornecido, verifica se o nível está possuído
-    // Se não foi fornecido, usa currentLevel como fallback
-    const isOwned = erpOwned 
-      ? (erpOwned[level] === true)
-      : (currentLevel === level)
-    
-    if (isOwned) {
-      return // Não permite comprar o mesmo nível que já está possuído
-    }
+    const desired = normLevel(level)
+    if (!desired) return
 
-    const values = LEVELS[level]
+    // ✅ Bloqueia só recompra do nível ATUAL
+    if (desired === current) return
+
+    const values = LEVELS[desired]
     const need = Number(values?.compra || 0)
     const cash = Number(currentCash || 0)
 
@@ -60,7 +58,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
       await awaitTop()
       return
     }
-    onResolve?.({ action: 'BUY', level, values })
+    onResolve?.({ action: 'BUY', level: desired, values })
   }
 
   // UX: trava scroll e foca no X (ESC/backdrop não fecham)
@@ -106,12 +104,9 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
-            // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
-            const isOwned = erpOwned 
-              ? (erpOwned[k] === true)
-              : (currentLevel === k)
+            const isOwned = current === k  // ✅ apenas o atual
             const isDisabled = isOwned
-            
+
             return (
               <div key={k} style={{
                 ...S.cardItem, 

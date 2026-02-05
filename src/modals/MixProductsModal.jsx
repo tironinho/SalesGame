@@ -30,23 +30,20 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
     D: { compra:  1000, despesa: MIX_RULES.D.despPerClient, faturamento: MIX_RULES.D.fatPerClient, color:'#6b7280', pill:'NÍVEL D', label:'5 produtos'   },
   }
 
-  async function resolveBuy(level){
-    // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
-    // Se mixOwned foi fornecido, verifica se o nível está possuído
-    // Se não foi fornecido, usa currentLevel como fallback
-    const isOwned = mixOwned 
-      ? (mixOwned[level] === true)
-      : (currentLevel === level)
-    
-    if (isOwned) {
-      return // Não permite comprar o mesmo nível que já está possuído
-    }
+  const normLevel = (v) => { const L = String(v || '').toUpperCase(); return ['A', 'B', 'C', 'D'].includes(L) ? L : '' }
+  const current = normLevel(currentLevel) || 'D'
 
-    const row = LEVELS[level]
+  async function resolveBuy(level) {
+    const desired = normLevel(level)
+    if (!desired) return
+
+    // ✅ Bloqueia só recompra do nível ATUAL
+    if (desired === current) return
+
+    const row = LEVELS[desired]
     const need = Number(row?.compra || 0)
     const cash = Number(currentCash)
 
-    // valida saldo somente se currentCash foi fornecido
     if (Number.isFinite(cash) && cash >= 0 && cash < need) {
       pushModal(
         <InsufficientFundsModal
@@ -60,7 +57,8 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
       await awaitTop()
       return
     }
-    onResolve?.({ action:'BUY', level, ...row })
+
+    onResolve?.({ action: 'BUY', level: desired, ...row })
   }
 
   function resolveSkip(){ onResolve?.({ action:'SKIP' }) }
@@ -93,12 +91,9 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
         <div style={S.cards}>
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
-            // ✅ CORREÇÃO: Verifica se o nível já está possuído (permite recompra de níveis reduzidos)
-            const isOwned = mixOwned 
-              ? (mixOwned[k] === true)
-              : (currentLevel === k)
+            const isOwned = current === k  // ✅ apenas o atual
             const isDisabled = isOwned
-            
+
             return (
               <div key={k} style={{
                 ...S.cardItem, 
