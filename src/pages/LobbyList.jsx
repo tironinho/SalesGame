@@ -74,6 +74,17 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     btn: { padding: '12px 16px', border: 0, borderRadius: 12, fontWeight: 800, cursor: 'pointer' },
     btnPrimary: { background: '#4f46e5', color: '#fff', boxShadow: '0 8px 24px rgba(79,70,229,.25)' },
     btnSecondary: { background: '#20222a', color: '#fff', border: '1px solid #2b2e38' },
+    // Área rolável (scroll interno, pois o body tem overflow:hidden no CSS global)
+    // - overflowY: 'scroll' força reservar a barra
+    // - maxHeight limita a área para a grid realmente “estourar” e rolar
+    scrollArea: {
+      flex: '1 1 auto',
+      minHeight: 0,
+      overflowY: 'scroll',
+      maxHeight: 'calc(100vh - 180px)',
+      paddingRight: 10,
+      scrollbarGutter: 'stable',
+    },
     grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 },
     card: { background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.00) 100%)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 10px 20px rgba(0,0,0,.25)' },
     cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
@@ -100,33 +111,35 @@ export default function LobbyList({ onEnterRoom, playerName }) {
         {rows.length === 0 && !loading ? (
           <div style={styles.empty}>Nenhuma sala criada ainda. Clique em <b>Criar Lobby</b> para começar.</div>
         ) : (
-          <div style={styles.grid}>
-            {rows.map(r => {
-              const isFull = (r.players ?? 0) >= (r.max ?? 4)
-              const isOpen = (r.status ?? 'open') === 'open'
-              const disabled = isFull || !isOpen
+          <div className="lobbyScroll" style={styles.scrollArea}>
+            <div style={styles.grid}>
+              {rows.map(r => {
+                const isFull = (r.players ?? 0) >= (r.max ?? 4)
+                const isOpen = (r.status ?? 'open') === 'open'
+                const disabled = isFull || !isOpen
 
-              return (
-                <div key={r.id} style={styles.card}>
-                  <div style={styles.cardHeader}>
-                    <div style={styles.lobbyName} title={r.name}>{r.name}</div>
-                    <span style={styles.meta}>{r.players ?? 0}/{r.max ?? 4}</span>
-                  </div>
+                return (
+                  <div key={r.id} style={styles.card}>
+                    <div style={styles.cardHeader}>
+                      <div style={styles.lobbyName} title={r.name}>{r.name}</div>
+                      <span style={styles.meta}>{r.players ?? 0}/{r.max ?? 4}</span>
+                    </div>
 
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={styles.meta}>status: {r.status ?? 'open'}</span>
-                    <button
-                      style={{ ...styles.joinBtn, ...(disabled ? styles.disabled : {}) }}
-                      disabled={disabled}
-                      onClick={() => handleJoin(r.id)}
-                      title={disabled ? (isFull ? 'Sala cheia' : 'Sala não está aberta') : 'Entrar na sala'}
-                    >
-                      Entrar
-                    </button>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <span style={styles.meta}>status: {r.status ?? 'open'}</span>
+                      <button
+                        style={{ ...styles.joinBtn, ...(disabled ? styles.disabled : {}) }}
+                        disabled={disabled}
+                        onClick={() => handleJoin(r.id)}
+                        title={disabled ? (isFull ? 'Sala cheia' : 'Sala não está aberta') : 'Entrar na sala'}
+                      >
+                        Entrar
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
