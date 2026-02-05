@@ -1544,8 +1544,30 @@ export default function App() {
   }, [players, isMine, meHud])
 
   // ====== Totais do HUD (faturamento/ despesas / etc.)
+  const me = useMemo(() => players.find(isMine) || players[0] || null, [players, isMine])
   const totals = useMemo(() => {
-    const me = players.find(isMine) || players[0] || {}
+    if (!me) {
+      return {
+        faturamento: 0,
+        manutencao: 0,
+        emprestimos: 0,
+        vendedoresComuns: 0,
+        fieldSales: 0,
+        insideSales: 0,
+        mixProdutos: 'D',
+        bens: 0,
+        erpSistemas: 'D',
+        clientes: 0,
+        onboarding: false,
+        az: 0,
+        am: 0,
+        rox: 0,
+        gestores: 0,
+        gestoresComerciais: 0,
+        possibAt: 0,
+        clientsAt: 0,
+      }
+    }
     const fat = computeFaturamentoFor(me)
     const desp = computeDespesasFor(me)
     const { cap, inAtt } = capacityAndAttendance(me)
@@ -1575,7 +1597,27 @@ export default function App() {
       possibAt: cap,
       clientsAt: inAtt,
     }
-  }, [players, isMine, DEBUG_LOGS, DEBUG_VALIDATE])
+  }, [
+    me?.id,
+    me?.clients,
+    me?.mixProdutos,
+    me?.erpLevel,
+    me?.vendedoresComuns,
+    me?.fieldSales,
+    me?.insideSales,
+    me?.gestores,
+    me?.gestoresComerciais,
+    me?.managers,
+    me?.bens,
+    me?.onboarding,
+    me?.az,
+    me?.am,
+    me?.rox,
+    me?.loanPending?.amount,
+    me?.loanPending?.charged,
+    DEBUG_LOGS,
+    DEBUG_VALIDATE,
+  ])
 
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
