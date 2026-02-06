@@ -4,11 +4,23 @@ import {
   getOrCreateTabPlayerId,     // <-- id por ABA
   makeId,                     // opcional, se quiser usar id novo ao criar
 } from '../auth'
-import { listLobbies, createLobby, joinLobby, onLobbiesRealtime } from '../lib/lobbies'
+import { listLobbies, onLobbiesRealtime, cleanupLobbiesOnce, getLobbyConfig, createLobby, joinLobby } from '../lib/lobbies'
 
 export default function LobbyList({ onEnterRoom, playerName }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const cfg = getLobbyConfig()
+
+    cleanupLobbiesOnce().catch(err => console.warn('[cleanup] falha:', err))
+
+    const t = setInterval(() => {
+      cleanupLobbiesOnce().catch(err => console.warn('[cleanup] falha:', err))
+    }, cfg.cleanupIntervalMs)
+
+    return () => clearInterval(t)
+  }, [])
 
   async function refresh() {
     setLoading(true)

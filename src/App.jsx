@@ -45,7 +45,7 @@ import { getOrCreateTabPlayerId, setTabPlayerName } from './auth'
 import { useGameNet } from './net/GameNetProvider.jsx'
 
 // Gerenciamento de salas
-import { leaveRoom } from './lib/lobbies'
+import { leaveRoom, startLobbyHeartbeat } from './lib/lobbies'
 
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
@@ -698,6 +698,13 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
   const netStateId = net?.stateId
+
+  useEffect(() => {
+    if (!net?.enabled) return
+    if (!currentLobbyId) return
+    const stop = startLobbyHeartbeat({ lobbyId: currentLobbyId, playerId: meId })
+    return stop
+  }, [net?.enabled, currentLobbyId, meId])
   
   // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {

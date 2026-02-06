@@ -11,6 +11,7 @@ import {
   joinLobby,
   setPlayerName,
   getLatestMatch,          // <<< novo: verificar se já existe match
+  startLobbyHeartbeat, // ✅ NOVO
 } from '../lib/lobbies'
 import {
   getOrCreateTabPlayerId,   // id por ABA
@@ -149,6 +150,12 @@ useEffect(() => {
     window.removeEventListener('beforeunload', onHide);
   };
 }, [lobbyId, meId]);
+
+  useEffect(() => {
+    if (!lobbyId) return
+    const stop = startLobbyHeartbeat({ lobbyId, playerId: meId })
+    return stop
+  }, [lobbyId, meId])
 
 
   useEffect(() => {
