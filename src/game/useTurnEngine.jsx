@@ -2548,6 +2548,8 @@ export function useTurnEngine({
 
           // propaga para todos (obrigatório)
           broadcastState(finalPlayers || [], turnIdxRef.current, 5, true, champ, {
+            kind: 'ENDGAME',
+            lastAction: 'ENDGAME',
             round: 5,
             gameOver: true,
             winner: champ,
