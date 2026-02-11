@@ -99,32 +99,55 @@ export function computeFaturamentoFor(player = {}) {
   const cField  = certCount(player, 'field');
   const cGestor = certCount(player, 'gestor');
 
-  // faturamento não usa utilização
-  const fatComum  = qComum  * (VENDOR_RULES.comum.baseFat  + VENDOR_RULES.comum.incFat  * cComum )
-  const fatInside = qInside * (VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * cInside)
-  const fatField  = qField  * (VENDOR_RULES.field.baseFat  + VENDOR_RULES.field.incFat  * cField )
+  const dynamicRevenue = Math.max(0, num(player.revenue));
 
-  let vendorRevenue = fatComum + fatInside + fatField;
+  const { cap, inAtt } = capacityAndAttendance(player);
 
-  // bônus gestor
-  const colaboradores = qComum + qInside + qField;
-  const cobertura = colaboradores > 0 ? Math.min(1, (qGestor * MANAGER_MANAGES_UP_TO) / colaboradores) : 0
-  // CORREÇÃO B: 0 certificados => 0% boost (array começa com 0 no índice 0).
-  const c = Math.max(0, cGestor)
-  const boost = MANAGER_BOOST_BY_CERT[Math.min(c, MANAGER_BOOST_BY_CERT.length - 1)] || 0
-  vendorRevenue = vendorRevenue * (1 + cobertura * boost)
+  // Regras 1, 2 e 4: sem atendimento efetivo, não há faturamento de vendas
+  if (cap <= 0 || inAtt <= 0) return dynamicRevenue;
 
-  const mixLvl = String(player.mixProdutos || 'D').toUpperCase();
-  const mixFat = (MIX_RULES[mixLvl]?.fatPerClient || 0) * num(player.clients)
+  // Receita por cliente atendido
+  const rateComum  = VENDOR_RULES.comum.baseFat + VENDOR_RULES.comum.incFat * cComum;
+  const rateInside = VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * cInside;
+  const rateField  = VENDOR_RULES.field.baseFat + VENDOR_RULES.field.incFat * cField;
 
-  const erpLvl = String(player.erpLevel || 'D').toUpperCase();
-  const staff = colaboradores + qGestor; // por colaborador (inclui gestores)
-  const erpFat = (ERP_RULES[erpLvl]?.fat || 0) * staff
+  // Capacidade por tipo
+  const capComum  = qComum * VENDOR_RULES.comum.cap;
+  const capInside = qInside * VENDOR_RULES.inside.cap;
+  const capField  = qField * VENDOR_RULES.field.cap;
 
-  const dynamicRevenue = num(player.revenue);
+  const capTotal = capComum + capInside + capField;
+  const safeCap = capTotal > 0 ? capTotal : cap;
 
-  const total = Math.max(0, Math.floor(vendorRevenue + mixFat + erpFat + dynamicRevenue));
-  return total
+  // Potencial total se tudo estivesse atendendo (capacidade cheia)
+  const potentialSales =
+    capComum * rateComum +
+    capInside * rateInside +
+    capField * rateField;
+
+  // Utilização real
+  const util = Math.min(1, inAtt / safeCap);
+  let vendorsFat = Math.floor(potentialSales * util);
+
+  // Gestor boost permanece como estava
+  const boostPct = MANAGER_BOOST_BY_CERT[Math.min(3, cGestor)] || 0;
+  if (qGestor > 0 && boostPct > 0) {
+    vendorsFat = Math.floor(vendorsFat * (1 + boostPct));
+  }
+
+  // Mix de produtos só fatura clientes atendidos
+  const mixLevel = String(player.mixProdutos || 'D').toUpperCase();
+  const mixFatPerClient = MIX_RULES[mixLevel]?.fatPerClient || 0;
+  const mixFat = mixFatPerClient * inAtt;
+
+  // ERP por colaborador
+  const erpLevel = String(player.erpLevel || player.erpSistemas || 'D').toUpperCase();
+  const erpFatPerStaff = ERP_RULES[erpLevel]?.fatPerStaff ?? ERP_RULES[erpLevel]?.fat ?? 0;
+
+  const qColabs = qComum + qInside + qField + qGestor;
+  const erpFat = erpFatPerStaff * qColabs;
+
+  return Math.max(0, Math.floor(vendorsFat + mixFat + erpFat + dynamicRevenue));
 }
 
 export function computeDespesasFor(player = {}) {
