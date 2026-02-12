@@ -74,10 +74,6 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
   // === BARALHO (só cartas com efeito financeiro direto + as 2 solicitadas) ===
   const CARDS = useMemo(() => [
     // ----- SORTE -----
-    { id:'gov_fgts', kind:'SORTE', title:'Ação Governamental Positiva',
-      text:'Liberação de FGTS aumentou o poder de compra. Receba 5 novos clientes (se tiver equipe para atender).',
-      clientsDelta:+5 },
-
     { id:'referral_bonus', kind:'SORTE', title:'Indicação Lucrativa',
       text:'Um cliente indicou amigos e a primeira compra foi ótima. Receba R$ 800,00.',
       cashDelta:+800 },
