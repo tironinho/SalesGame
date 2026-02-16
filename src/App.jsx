@@ -280,6 +280,7 @@ export default function App() {
   // ✅ BUG 2 FIX: Refs para watchdog anti-trava
   const lockSinceRef = useRef(null)
   const lastNetApplyAtRef = useRef(0)
+  const fixedCorruptLockRef = React.useRef(null)
 
   // ✅ Invariante: turnLock=true nunca pode ficar com lockOwner null.
   useEffect(() => {
@@ -916,150 +917,139 @@ export default function App() {
   }, [players, turnIdx, round])
 
   useEffect(() => {
-    // ✅ CORREÇÃO: Verifica se net está habilitado e pronto
     if (!net?.enabled || !net?.ready) return
     if (!netState) return
 
-    // ✅ Snapshot monotônico: nunca aplica versão igual/menor (evita flicker/rollback)
-    if (typeof netVersion !== 'number') return
-    if (netVersion <= lastAppliedNetVersionRef.current) return
-    lastAppliedNetVersionRef.current = netVersion
-    try {
-      const incomingStateIdRaw = netState?.stateId ?? netState?.actionId ?? netStateId ?? null
-      lastAppliedStateIdRef.current = (incomingStateIdRaw === null || incomingStateIdRaw === undefined) ? null : String(incomingStateIdRaw)
-    } catch {}
-
-    // ✅ CORREÇÃO MULTIPLAYER: Aplica snapshot COMPLETO sempre que netVersion avançar
-    // REMOVIDO: todas as heurísticas de rejeição (stateVersion, timestamp local, "mudança recente")
-    // O servidor (netVersion) é a única autoridade
-    
     const np = Array.isArray(netState.players) ? netState.players : null
-    // turnIdx remoto é legado e NÃO é fonte de verdade
     const nr = Number.isInteger(netState.round) ? netState.round : null
 
-    // ✅ TURNO: turnPlayerId é a ÚNICA fonte de verdade.
     const incomingTurnId =
       (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== '')
         ? String(netState.turnPlayerId)
         : null
+
+    // stateId/actionId muda a cada commit e é um ótimo “dedupe” mesmo se version resetar
+    let incomingStateId = null
+    try {
+      const raw = netState?.stateId ?? netState?.actionId ?? netStateId ?? null
+      incomingStateId = (raw === null || raw === undefined) ? null : String(raw)
+    } catch {}
+
+    const versionIsNumber = (typeof netVersion === 'number')
+
+    // Detecta START/RESET (mesma heurística do teu código, mas usada ANTES do gate)
+    const heuristicReset = (
+      nr === 1 &&
+      Array.isArray(np) && np.length > 0 &&
+      np.every(p => Number(p?.pos ?? 0) === 0) &&
+      (netState.gameOver === false || netState.gameOver == null) &&
+      !netState.winner
+    )
+    const isStartState = (netState.kind === 'START') || (netState.isStartGame === true) || heuristicReset
+
+    const sameStateId = !!incomingStateId && (lastAppliedStateIdRef.current === incomingStateId)
+
+    // ✅ Gate correto:
+    // - aplica se for START (mesmo com version menor)
+    // - OU se stateId mudou (mesmo com version repetida/menor)
+    // - OU se netVersion aumentou (caso normal)
+    const shouldApply =
+      isStartState ||
+      (!!incomingStateId && !sameStateId) ||
+      (versionIsNumber && netVersion > lastAppliedNetVersionRef.current)
+
+    if (!shouldApply) return
+
+    // marca aplicado (não exige monotonicidade estrita)
+    if (versionIsNumber) lastAppliedNetVersionRef.current = netVersion
+    if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
+    else if (isStartState && versionIsNumber) lastAppliedStateIdRef.current = `START:${netVersion}`
+
+    // --- aplica turno (turnPlayerId é a fonte de verdade) ---
     if (incomingTurnId && String(turnPlayerId || '') !== incomingTurnId) {
       setTurnPlayerId(incomingTurnId)
     }
 
-    // ✅ CORREÇÃO MULTIPLAYER: Aplica players SEMPRE quando netVersion avançar (snapshot autoritativo)
+    // --- aplica players ---
     if (np) {
-      // Normaliza players antes de aplicar (garante ordem consistente)
       const normalizedPlayers = normalizePlayers(np)
       setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
-      // Atualiza baseline para próximo merge
       playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
-      if (DEBUG_LOGS) console.log('[NET] ✅ Aplicado players (snapshot autoritativo) - netVersion:', netVersion, 'playersOrdered:', normalizedPlayers.map(p => ({ id: p.id, seat: p.seat })))
 
-      // turnIdx é DERIVADO localmente do turnPlayerId (nunca do remoto)
+      // turnIdx derivado do turnPlayerId (nunca do remoto)
       if (incomingTurnId) {
         const derivedTurnIdx = normalizedPlayers.findIndex(p => String(p.id) === String(incomingTurnId))
         if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
-          if (DEBUG_LOGS) console.log('[NET] ✅ derived turnIdx from turnPlayerId:', derivedTurnIdx, 'turnPlayerId:', incomingTurnId)
           setTurnIdx(derivedTurnIdx)
         }
       }
     }
-    
+
+    // --- round ---
     if (nr !== null) {
-      // ✅ FIX: evita round regredir por snapshots antigos, MAS permite reset de jogo (START)
-      const isResetState = (
-        nr === 1 &&
-        Array.isArray(np) && np.length > 0 &&
-        np.every(p => Number(p?.pos ?? 0) === 0) &&
-        (netState.gameOver === false || netState.gameOver == null)
-      )
       const safeNr = clampRound(nr)
       setRound(prev => {
-        const finalRound = isResetState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr))
+        const finalRound = (isStartState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr)))
         return finalRound
       })
     }
-    
-    // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
     if (netState.gameOver === true || netState.winner) {
       setRound(MAX_ROUNDS)
     }
 
-    // ✅ CORREÇÃO: Aplica roundFlags do estado autoritativo
+    // --- roundFlags ---
     if (netState.roundFlags !== undefined) {
-      if (Array.isArray(netState.roundFlags)) {
-        setRoundFlags(netState.roundFlags)
-        if (DEBUG_LOGS) console.log('[NET] applied remote includes roundFlags?', true, 'length:', netState.roundFlags.length)
-      } else if (typeof netState.roundFlags === 'object') {
-        // Se for objeto, converte para array (compatibilidade)
-        const flagsArray = Object.values(netState.roundFlags)
-        setRoundFlags(flagsArray)
-        if (DEBUG_LOGS) console.log('[NET] applied remote includes roundFlags?', true, 'converted from object, length:', flagsArray.length)
-      }
+      if (Array.isArray(netState.roundFlags)) setRoundFlags(netState.roundFlags)
+      else if (typeof netState.roundFlags === 'object' && netState.roundFlags) setRoundFlags(Object.values(netState.roundFlags))
     }
 
-    // ✅ LOCKS: aplicar do Supabase (estado compartilhado) e sanar invariantes
-    if (typeof netState.turnLock !== 'undefined') {
-      setTurnLock(!!netState.turnLock)
+    // --- LOCKS (estado compartilhado) ---
+    if (typeof netState.turnLock !== 'undefined') setTurnLock(!!netState.turnLock)
+    if (typeof netState.lockOwner !== 'undefined') setLockOwner(netState.lockOwner ? String(netState.lockOwner) : null)
+
+    // ✅ INVARIANTE CRÍTICA:
+    // Se chegar turnLock=true SEM lockOwner => isso trava TODOS (porque controlsCanRoll exige !turnLock).
+    // Nesse caso, limpamos o lock localmente e tentamos limpar no Supabase 1 vez por stateId.
+    const corruptLock = (netState.turnLock === true) && (!netState.lockOwner || String(netState.lockOwner) === '')
+    if (corruptLock) {
+      const fixKey = incomingStateId || (versionIsNumber ? `v:${netVersion}` : 'noid')
+      if (fixedCorruptLockRef.current !== fixKey) {
+        fixedCorruptLockRef.current = fixKey
+        console.warn('[NET] turnLock=true sem lockOwner; limpando lock (anti-trava).', { fixKey })
+        setTurnLock(false)
+        setLockOwner(null)
+        try { commitRemoteState({ turnLock: false, lockOwner: null }) } catch {}
+      }
+    } else {
+      fixedCorruptLockRef.current = null
     }
-    if (typeof netState.lockOwner !== 'undefined') {
-      setLockOwner(netState.lockOwner ? String(netState.lockOwner) : null)
-    }
-    if (netState.turnLock === true && (!netState.lockOwner) && incomingTurnId) {
-      setLockOwner(incomingTurnId)
-    }
+
     lastNetApplyAtRef.current = Date.now()
 
-    // ✅ CORREÇÃO CRÍTICA: Permite reset de gameOver/winner em START, mas protege em outros casos
-    const isStartState = netState.kind === 'START' || (
-      nr === 1 &&
-      Array.isArray(np) && np.length > 0 &&
-      np.every(p => Number(p?.pos ?? 0) === 0) &&
-      (netState.gameOver === false || netState.gameOver == null)
-    )
-    
+    // --- START reset explícito ---
     if (isStartState) {
-      // ✅ START: permite reset explícito
       setGameOver(false)
       setWinner(null)
       setLastRollTurnKey(null)
       setTurnSeq(0)
-      console.log('[NET] ✅ START detectado - resetando gameOver=false, winner=null, turnSeq=0')
     } else {
-      // ✅ Monotônico: gameOver nunca volta para false (exceto em START)
-      setGameOver(prev => prev || !!netState.gameOver);
-      
-      // ✅ Monotônico: winner nunca some depois que gameOver=true (exceto em START)
+      setGameOver(prev => prev || !!netState.gameOver)
       setWinner(prev => {
-        const willBeGameOver = (!!netState.gameOver || !!netState.winner);
-        if (willBeGameOver && prev && (!netState.winner)) return prev;
-        return netState.winner ?? prev;
-      });
+        const willBeGameOver = (!!netState.gameOver || !!netState.winner)
+        if (willBeGameOver && prev && (!netState.winner)) return prev
+        return netState.winner ?? prev
+      })
     }
 
-    // ✅ Anti-double-roll: aplica chave autoritativa do Supabase
-    if (netState.lastRollTurnKey !== undefined) {
-      setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
-    }
-    if (typeof netState.turnSeq === 'number') {
-      setTurnSeq(netState.turnSeq)
-    }
+    // --- anti-double-roll autoritativo ---
+    if (netState.lastRollTurnKey !== undefined) setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
+    if (typeof netState.turnSeq === 'number') setTurnSeq(netState.turnSeq)
 
-    // ✅ Log obrigatório
-    if (netState.gameOver === true) {
-      console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${netState.winner?.name ?? netState.winner ?? "N/A"}`);
-    }
-
-    // ✅ CORREÇÃO MULTIPLAYER: Log de aplicação do snapshot autoritativo
-    if (DEBUG_LOGS) console.log('[NET] ✅ applied remote snapshot - netVersion:', netVersion, 'turnPlayerId:', netState.turnPlayerId, 'round:', nr)
-
-    // ✅ INIT_GUARD: marca hidratação real quando há turno/players válidos vindos da rede
+    // init guard
     try {
       const hasPlayers = Array.isArray(netState.players) && netState.players.length > 0
       const hasTurn = netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== ''
-      if (hasPlayers && hasTurn) {
-        hydratedFromNetRef.current = true
-      }
+      if (hasPlayers && hasTurn) hydratedFromNetRef.current = true
     } catch {}
   }, [netVersion, netState, netStateId, net?.enabled, net?.ready, DEBUG_LOGS])
 
@@ -1354,6 +1344,8 @@ export default function App() {
         roundFlags: nextRoundFlags,
         turnSeq: 0,
         lastRollTurnKey: null,
+        turnLock: false,
+        lockOwner: null,
         stateId,
         actionId,
         kind: 'START',
@@ -1870,6 +1862,25 @@ export default function App() {
           setPhase('game')
         }}
         />
+      </ModalProvider>
+    )
+  }
+
+  // 4) Jogo
+  if (!Array.isArray(players) || players.length === 0) {
+    return (
+      <ModalProvider>
+        <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff' }}>
+          <div style={{ maxWidth: 520, padding: 16 }}>
+            <div style={{ fontSize: 18, marginBottom: 8 }}>Carregando estado do jogo...</div>
+            <div style={{ opacity: .75, marginBottom: 12 }}>
+              Aguardando snapshot do Supabase (START). Se ficar preso, volte para Lobbies e entre novamente.
+            </div>
+            <button onClick={() => setPhase('lobbies')} style={{ padding:'10px 12px', borderRadius: 10 }}>
+              Voltar para Lobbies
+            </button>
+          </div>
+        </div>
       </ModalProvider>
     )
   }
