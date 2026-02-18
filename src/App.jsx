@@ -1982,14 +1982,37 @@ export default function App() {
                 setPhase('lobbies')
               }}
               onRestart={() => {
-                const reset = players.map(p => applyStarterKit({ ...p, cash:18000, bens:4000, pos:0 }))
-                setPlayers(reset, { source: 'RESTART' })
-                setTurnIdx(0)
-                setRound(1)
-                setRoundFlags(new Array(reset.length).fill(false))
+                // ✅ Reset LIMPO: não herda estado da partida anterior
+                const freshPlayers = players.map((p, i) =>
+                  applyStarterKit({
+                    id: p.id,
+                    name: p.name,
+                    color: p.color,
+                    seat: Number.isFinite(p.seat) ? p.seat : i,
+                    joinOrder: Number.isFinite(p.joinOrder) ? p.joinOrder : i,
+
+                    // estado inicial padrão
+                    cash: 18000,
+                    bens: 4000,
+                    pos: 0,
+                    bankrupt: false,
+
+                    // zera flags e travas que podem vazar de partida anterior
+                    waitingAtRevenue: false,
+                    lastRevenueRound: 0,
+                    loanPending: null,
+                    emprestimos: 0,
+                    revenue: 0
+                  })
+                )
+
+                // ✅ limpa turnlock global antes de reiniciar
+                setTurnLockBroadcast(false)
+
+                // ✅ reinicia sincronizando para todos (resolve desync / estado preso)
+                broadcastStart(freshPlayers)
+
                 setLog(['Novo jogo iniciado!'])
-                setGameOver(false)
-                setWinner(null)
               }}
             />
           )}
