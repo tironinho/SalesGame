@@ -40,6 +40,23 @@ export function ModalProvider({ children }) {
   // Compatibilidade (código legado): resolveTop = closeTop
   const resolveTop = closeTop
 
+  const closeAll = React.useCallback((payload = { type: 'MODAL_FORCE_CLOSED' }) => {
+    setStack((prev) => {
+      try {
+        for (const m of prev) {
+          const key = String(m?.id ?? '')
+          if (!key) continue
+          const resolver = resolversByIdRef.current.get(key)
+          if (typeof resolver === 'function') {
+            try { resolver(payload) } catch {}
+          }
+          resolversByIdRef.current.delete(key)
+        }
+      } catch {}
+      return []
+    })
+  }, [])
+
   // utilitários para botões
   const closeModal = () => closeTop({ action: 'SKIP' })
   const popModal = () => closeTop(false)
@@ -69,8 +86,8 @@ export function ModalProvider({ children }) {
   // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
   const value = useMemo(
-    () => ({ pushModal, awaitTop, resolveTop, closeTop, closeModal, popModal, closeById }),
-    []
+    () => ({ stack, pushModal, awaitTop, resolveTop, closeTop, closeAll, closeById, popModal, closeModal }),
+    [stack, closeAll, closeById, closeTop]
   )
 
   return (
