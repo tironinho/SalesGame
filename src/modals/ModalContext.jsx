@@ -5,10 +5,21 @@ const ModalCtx = createContext(null)
 export function ModalProvider({ children }) {
   const [stack, setStack] = useState([]) // [{id, el}]
   const stackRef = useRef(stack)
-  const resolversByIdRef = useRef(new Map()) // id -> resolve(payload)
+  // Map<id, Set<resolve(payload)>>
+  const resolversByIdRef = useRef(new Map())
 
   useEffect(() => {
     stackRef.current = stack
+  }, [stack])
+
+  // limpeza defensiva: se algum id sumir do stack por caminho indireto, limpa waiters órfãos
+  useEffect(() => {
+    const activeIds = new Set(stack.map((m) => String(m?.id ?? '')))
+    for (const [id] of resolversByIdRef.current.entries()) {
+      if (!activeIds.has(String(id))) {
+        resolversByIdRef.current.delete(id)
+      }
+    }
   }, [stack])
 
   const mkId = () => {
@@ -18,15 +29,33 @@ export function ModalProvider({ children }) {
     return String(Date.now() + Math.random())
   }
 
+  const resolveAllForId = React.useCallback((id, payload) => {
+    const key = String(id ?? '')
+    if (!key) return
+    const waiters = resolversByIdRef.current.get(key)
+    if (!waiters || waiters.size === 0) return
+    resolversByIdRef.current.delete(key)
+    for (const resolve of waiters) {
+      try { resolve(payload ?? null) } catch {}
+    }
+  }, [])
+
   const closeById = React.useCallback((id, payload) => {
     const key = String(id ?? '')
     if (!key) return
-    const resolver = resolversByIdRef.current.get(key)
-    if (resolver) {
-      resolversByIdRef.current.delete(key)
-      try { resolver(payload) } catch {}
-    }
     setStack((prev) => prev.filter((m) => String(m.id) !== key))
+    resolveAllForId(key, payload)
+  }, [resolveAllForId])
+
+  const closeAll = React.useCallback((payload = { action: 'CLOSE_ALL' }) => {
+    const entries = Array.from(resolversByIdRef.current.entries())
+    setStack([])
+    for (const [, waiters] of entries) {
+      for (const resolve of waiters) {
+        try { resolve(payload ?? null) } catch {}
+      }
+    }
+    resolversByIdRef.current.clear()
   }, [])
 
   // ✅ API exigida pelo engine: fecha a modal do topo e resolve (se houver)
@@ -40,39 +69,22 @@ export function ModalProvider({ children }) {
   // Compatibilidade (código legado): resolveTop = closeTop
   const resolveTop = closeTop
 
-  const closeAll = React.useCallback((payload = { type: 'MODAL_FORCE_CLOSED' }) => {
-    setStack((prev) => {
-      try {
-        for (const m of prev) {
-          const key = String(m?.id ?? '')
-          if (!key) continue
-          const resolver = resolversByIdRef.current.get(key)
-          if (typeof resolver === 'function') {
-            try { resolver(payload) } catch {}
-          }
-          resolversByIdRef.current.delete(key)
-        }
-      } catch {}
-      return []
-    })
-  }, [])
-
   // utilitários para botões
-  const closeModal = () => closeTop({ action: 'SKIP' })
-  const popModal = () => closeTop(false)
+  const closeModal = React.useCallback(() => closeTop({ action: 'SKIP' }), [closeTop])
+  const popModal = React.useCallback(() => closeTop(false), [closeTop])
 
   // abre uma modal (topo). Clonamos o elemento para injetar onResolve.
-  const pushModal = (element) => {
+  const pushModal = React.useCallback((element) => {
     const id = mkId()
     const elWithResolve = React.cloneElement(element, {
       onResolve: (payload) => closeById(id, payload),
     })
     setStack((s) => [...s, { id, el: elWithResolve }])
     return id
-  }
+  }, [closeById])
 
   // retorna uma promise que será resolvida quando a modal do topo chamar onResolve / closeTop
-  const awaitTop = () =>
+  const awaitTop = React.useCallback(() =>
     new Promise((resolve) => {
       const cur = stackRef.current
       if (!cur || cur.length === 0) {
@@ -80,14 +92,23 @@ export function ModalProvider({ children }) {
         return
       }
       const top = cur[cur.length - 1]
-      resolversByIdRef.current.set(String(top.id), resolve)
-    })
+      const key = String(top.id)
+      const map = resolversByIdRef.current
+      let waiters = map.get(key)
+      if (!waiters) {
+        waiters = new Set()
+        map.set(key, waiters)
+      } else if (waiters.size > 0) {
+        console.warn('[ModalContext] awaitTop duplicado para o mesmo modal id:', key, 'waiters:', waiters.size + 1)
+      }
+      waiters.add(resolve)
+    }), [])
 
   // ⚠️ Sem listener de ESC: somente botões fecham a modal
 
   const value = useMemo(
-    () => ({ stack, pushModal, awaitTop, resolveTop, closeTop, closeAll, closeById, popModal, closeModal }),
-    [stack, closeAll, closeById, closeTop]
+    () => ({ stack, pushModal, awaitTop, resolveTop, closeTop, closeModal, popModal, closeById, closeAll }),
+    [stack, pushModal, awaitTop, resolveTop, closeTop, closeModal, popModal, closeById, closeAll]
   )
 
   return (
