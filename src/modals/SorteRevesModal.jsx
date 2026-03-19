@@ -148,10 +148,6 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
       text:'Se não tiver Mix nível A, pague R$ 7.000,00.',
       _compute:(p)=>({ cashDelta: hasMixA(p) ? 0 : -7000 }) },
 
-    { id:'env_fine_20k', kind:'REVES', title:'Impacto Ambiental',
-      text:'Multa ambiental. Pague R$ 20.000,00.',
-      cashDelta:-20000 },
-
     { id:'key_client_at_risk', kind:'REVES', title:'Cliente Chave em Risco',
       text:'Sem certificado AMARELO: perca 1 cliente e pague R$ 2.000,00.',
       _compute:(p)=> hasYellowCert(p) ? { clientsDelta:0, cashDelta:0, _overrideText:'Você possui certificado amarelo. Nada acontece.' }
@@ -206,9 +202,9 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
       text:'Expedição expressa. Pague R$ 2.000,00.',
       cashDelta:-2000 },
 
-    { id:'reg_change_30k', kind:'REVES', title:'Regulamentação Nova',
-      text:'Adequação de processos. Pague R$ 30.000,00.',
-      cashDelta:-30000 },
+    { id:'reg_change_10k', kind:'REVES', title:'Regulamentação Nova',
+      text:'Adequação de processos. Pague R$ 10.000,00.',
+      cashDelta:-10000 },
 
     { id:'bad_mix_2500', kind:'REVES', title:'Mix de Produtos Desequilibrado',
       text:'Descontos e liquidações. Pague R$ 2.500,00.',
