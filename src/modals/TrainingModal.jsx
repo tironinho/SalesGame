@@ -45,7 +45,7 @@ const PRODUCTS = [
  * - ownedByType?: { [vendorType]: Set<string> | string[] }
  * - canTrain?: { comum?:boolean|number|string, field?:boolean|number|string, inside?:boolean|number|string, gestor?:boolean|number|string }
  */
-export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = {} }) {
+export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = {}, allowBack = false }) {
   // Normaliza: aceita 0/1, números em string, booleanos
   const toNum = (v) => (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
   const hasRole = (v) => {
@@ -189,6 +189,7 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   // Trava o scroll e foca no X
   useEffect(() => {
@@ -317,7 +318,10 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
             </div>
 
             <div style={S.btnRow}>
-              <button type="button" style={{ ...S.bigBtn, background:'#444' }} onClick={handleClose}>Não comprar</button>
+              {allowBack && (
+                <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>Voltar</button>
+              )}
+              <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={handleClose}>Não comprar</button>
               <button
                 type="button"
                 disabled={purchases.length === 0}

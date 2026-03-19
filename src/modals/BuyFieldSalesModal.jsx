@@ -23,6 +23,7 @@ export default function BuyFieldSalesModal({
   unitExpense = VENDOR_RULES.field.baseDesp,
   attendsUpTo = VENDOR_RULES.field.cap,
   currentCash = 0,
+  allowBack = false,
 }) {
   const closeRef = useRef(null)
   const inputRef = useRef(null)
@@ -65,6 +66,7 @@ export default function BuyFieldSalesModal({
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   const handleBuy = async () => {
     if (!canBuy) return
@@ -208,6 +210,11 @@ export default function BuyFieldSalesModal({
         </div>
 
         <div style={styles.actions}>
+          {allowBack && (
+            <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
           <button
             type="button"
             style={{ ...styles.bigBtn, background:'#666', color:'#fff' }}

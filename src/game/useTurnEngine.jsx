@@ -1462,23 +1462,25 @@ export function useTurnEngine({
     if (isDirectBuyTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const cashNow = nextPlayers[curIdx]?.cash ?? myCash
+        const getCash = () => nextPlayers[curIdx]?.cash ?? myCash
+        let currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />)
+        if (!currentSelection) return
 
-        const res = await openModalAndWait(<DirectBuyModal currentCash={cashNow} />)
-        if (!res) return
-
-        if (res.action === 'OPEN') {
-          const open = String(res.open || '').toUpperCase()
+        while (currentSelection && currentSelection.action === 'OPEN') {
+          const open = String(currentSelection.open || '').toUpperCase()
 
           if (open === 'MIX') {
             const currentMixLevel = players[curIdx]?.mixProdutos || null
             const mixOwned = players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
             const r2 = await openModalAndWait(<MixProductsModal 
-              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentCash={getCash()}
               currentLevel={currentMixLevel}
               mixOwned={mixOwned}
+              allowBack={true}
             />)
-            if (r2 && r2.action === 'BUY') {
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY') {
               const price = Number(r2.compra || 0)
               const level = String(r2.level || 'D')
               if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
@@ -1497,13 +1499,15 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'MANAGER') {
-            const r2 = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+            const r2 = await openModalAndWait(<ManagerModal currentCash={getCash()} allowBack={true} />)
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY' || r2.action === 'HIRE') {
               const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
               const cashDelta = Number(
                 (typeof r2.cashDelta !== 'undefined'
@@ -1522,13 +1526,15 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'INSIDE') {
-            const r2 = await openModalAndWait(<InsideSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+            const r2 = await openModalAndWait(<InsideSalesModal currentCash={getCash()} allowBack={true} />)
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY' || r2.action === 'HIRE') {
               const cost = Number(r2.cost ?? r2.total ?? 0)
               if (!requireFunds(curIdx, cost, 'contratar Inside Sales')) { setTurnLockBroadcast(false); return }
               const qty  = Number(r2.headcount ?? r2.qty ?? 1)
@@ -1537,13 +1543,15 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'FIELD') {
-            const r2 = await openModalAndWait(<FieldSalesModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
+            const r2 = await openModalAndWait(<FieldSalesModal currentCash={getCash()} allowBack={true} />)
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'HIRE' || r2.action === 'BUY') {
               const qty = Number(r2.headcount ?? r2.qty ?? 1)
               const deltas = {
                 cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
@@ -1558,13 +1566,15 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'COMMON') {
-            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
-            if (r2 && r2.action === 'BUY') {
+            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCash()} allowBack={true} />)
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY') {
               const qty  = Number(r2.headcount ?? r2.qty ?? 0)
               const deltas = {
                 cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
@@ -1579,19 +1589,22 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'ERP') {
             const currentErpLevel = players[curIdx]?.erpLevel || null
             const erpOwned = players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
             const r2 = await openModalAndWait(<ERPSystemsModal 
-              currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+              currentCash={getCash()}
               currentLevel={currentErpLevel}
               erpOwned={erpOwned}
+              allowBack={true}
             />)
-            if (r2 && r2.action === 'BUY') {
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY') {
               const price = Number(r2.values?.compra || 0)
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
@@ -1599,14 +1612,16 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'CLIENTS') {
             const buyerCash = Number(nextPlayers.find(p => String(p.id) === ownerId)?.cash ?? myCash)
-            const r2 = await openModalAndWait(<ClientsModal currentCash={buyerCash} />)
-            if (r2 && r2.action === 'BUY') {
+            const r2 = await openModalAndWait(<ClientsModal currentCash={buyerCash} allowBack={true} />)
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY') {
               const cost  = Number(r2.totalCost || 0)
               if (buyerCash < cost) {
                 appendLog('Saldo insuficiente para comprar Clientes.')
@@ -1631,8 +1646,8 @@ export function useTurnEngine({
                 broadcastState(upd, turnIdx, currentRoundRef.current)
                 return upd
               })
+              return
             }
-            return
           }
 
           if (open === 'TRAINING') {
@@ -1650,8 +1665,11 @@ export function useTurnEngine({
                 inside: ownerForTraining?.trainingsByVendor?.inside || [],
                 gestor: ownerForTraining?.trainingsByVendor?.gestor || []
               }}
+              allowBack={true}
             />)
-            if (r2 && r2.action === 'BUY') {
+            if (!r2 || r2.action === 'SKIP') return
+            if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
+            if (r2.action === 'BUY') {
               const trainCost = Number(r2.grandTotal || 0)
               if (!requireFunds(curIdx, trainCost, 'comprar Treinamento')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
@@ -1659,13 +1677,14 @@ export function useTurnEngine({
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
+              return
             }
-            return
           }
         }
 
         // Fallback: BUY direto
-        if (res.action === 'BUY') {
+        if (currentSelection && currentSelection.action === 'BUY') {
+          const res = currentSelection
           const isClientsBuy =
             res.kind === 'CLIENTS' ||
             res.modal === 'CLIENTS' ||
@@ -2347,26 +2366,31 @@ export function useTurnEngine({
           
           if (ev.type === 'DIRECT_BUY_PURCHASE') {
             openingModalRef.current = true
-            const res = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />)
-            if (!res) continue
+            let currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />)
+            if (!currentSelection) continue
             
-            if (res.action === 'OPEN') {
-              const open = String(res.open || '').toUpperCase()
+            while (currentSelection && currentSelection.action === 'OPEN') {
+              const open = String(currentSelection.open || '').toUpperCase()
               const meForBuy = getById(localPlayers, ownerId) || meNow
 
               if (open === 'MIX') {
-                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.mixProdutos || null} mixOwned={meForBuy?.mixOwned || meForBuy?.mix || {}} />)
-                if (r2 && r2.action === 'BUY') {
+                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.mixProdutos || null} mixOwned={meForBuy?.mixOwned || meForBuy?.mix || {}} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY') {
                   const price = Number(r2.compra || 0)
                   if (getCurrentCash() >= price) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, bensDelta: price, mixProdutosSet: String(r2.level || 'D'), mixBaseSet: { despesaPorCliente: Number(r2.despesa || 0), faturamentoPorCliente: Number(r2.faturamento || 0) } }))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'MANAGER') {
-                const r2 = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} />)
-                if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+                const r2 = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY' || r2.action === 'HIRE') {
                   const qty = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
                   const cashD = Number(typeof r2.cashDelta !== 'undefined' ? r2.cashDelta : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
                   if (getCurrentCash() >= (cashD < 0 ? -cashD : 0)) {
@@ -2374,20 +2398,26 @@ export function useTurnEngine({
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'INSIDE') {
-                const r2 = await openModalAndWait(<InsideSalesModal currentCash={getCurrentCash()} />)
-                if (r2 && (r2.action === 'BUY' || r2.action === 'HIRE')) {
+                const r2 = await openModalAndWait(<InsideSalesModal currentCash={getCurrentCash()} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY' || r2.action === 'HIRE') {
                   const cost = Number(r2.cost ?? r2.total ?? 0)
                   if (getCurrentCash() >= cost) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, insideSalesDelta: Number(r2.headcount ?? r2.qty ?? 1) }))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'FIELD') {
-                const r2 = await openModalAndWait(<FieldSalesModal currentCash={getCurrentCash()} />)
-                if (r2 && (r2.action === 'HIRE' || r2.action === 'BUY')) {
+                const r2 = await openModalAndWait(<FieldSalesModal currentCash={getCurrentCash()} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'HIRE' || r2.action === 'BUY') {
                   const qty = Number(r2.headcount ?? r2.qty ?? 1)
                   const deltas = { cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))), manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0), revenueDelta: Number(r2.revenueDelta || 0), fieldSalesDelta: qty }
                   if (getCurrentCash() >= (deltas.cashDelta < 0 ? -deltas.cashDelta : 0)) {
@@ -2395,10 +2425,13 @@ export function useTurnEngine({
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'COMMON') {
-                const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} />)
-                if (r2 && r2.action === 'BUY') {
+                const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY') {
                   const qty = Number(r2.headcount ?? r2.qty ?? 0)
                   const deltas = { cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))), vendedoresComunsDelta: qty, manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0), revenueDelta: Number(r2.revenueDelta || 0) }
                   if (getCurrentCash() >= (deltas.cashDelta < 0 ? -deltas.cashDelta : 0)) {
@@ -2406,42 +2439,53 @@ export function useTurnEngine({
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'ERP') {
-                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.erpLevel || null} erpOwned={meForBuy?.erpOwned || meForBuy?.erp || {}} />)
-                if (r2 && r2.action === 'BUY') {
+                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.erpLevel || null} erpOwned={meForBuy?.erpOwned || meForBuy?.erp || {}} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY') {
                   const price = Number(r2.values?.compra || 0)
                   if (getCurrentCash() >= price) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'CLIENTS') {
-                const r2 = await openModalAndWait(<ClientsModal currentCash={getCurrentCash()} />)
-                if (r2 && r2.action === 'BUY') {
+                const r2 = await openModalAndWait(<ClientsModal currentCash={getCurrentCash()} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY') {
                   const cost = Number(r2.totalCost || 0)
                   if (getCurrentCash() >= cost) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -cost, clientsDelta: Number(r2.qty || 0), manutencaoDelta: Number(r2.maintenanceDelta || 0), bensDelta: Number(r2.bensDelta || cost) }))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               } else if (open === 'TRAINING') {
-                const r2 = await openModalAndWait(<TrainingModal canTrain={{ comum: Number(meForBuy?.vendedoresComuns) || 0, field: Number(meForBuy?.fieldSales) || 0, inside: Number(meForBuy?.insideSales) || 0, gestor: Number(meForBuy?.gestores ?? meForBuy?.gestoresComerciais ?? meForBuy?.managers) || 0 }} ownedByType={{ comum: meForBuy?.trainingsByVendor?.comum || [], field: meForBuy?.trainingsByVendor?.field || [], inside: meForBuy?.trainingsByVendor?.inside || [], gestor: meForBuy?.trainingsByVendor?.gestor || [] }} />)
-                if (r2 && r2.action === 'BUY') {
+                const r2 = await openModalAndWait(<TrainingModal canTrain={{ comum: Number(meForBuy?.vendedoresComuns) || 0, field: Number(meForBuy?.fieldSales) || 0, inside: Number(meForBuy?.insideSales) || 0, gestor: Number(meForBuy?.gestores ?? meForBuy?.gestoresComerciais ?? meForBuy?.managers) || 0 }} ownedByType={{ comum: meForBuy?.trainingsByVendor?.comum || [], field: meForBuy?.trainingsByVendor?.field || [], inside: meForBuy?.trainingsByVendor?.inside || [], gestor: meForBuy?.trainingsByVendor?.gestor || [] }} allowBack={true} />)
+                if (!r2 || r2.action === 'SKIP') break
+                if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
+                if (r2.action === 'BUY') {
                   const trainCost = Number(r2.grandTotal || 0)
                   if (getCurrentCash() >= trainCost) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyTrainingPurchase(p, r2))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
+                  break
                 }
               }
-            } else if (res.action === 'BUY') {
-              const total = Number(res.total ?? res.amount ?? 0)
+            }
+            if (currentSelection?.action === 'BUY') {
+              const total = Number(currentSelection.total ?? currentSelection.amount ?? 0)
               if (getCurrentCash() >= total) {
-                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -total, directBuysPush: [(res.item || { total })] }))
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -total, directBuysPush: [(currentSelection.item || { total })] }))
                 commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                 if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
               }

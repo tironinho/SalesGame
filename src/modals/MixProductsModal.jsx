@@ -18,7 +18,7 @@ import { MIX_RULES } from '../game/gameRules'
  *  - currentLevel?: string (nível atual do Mix: 'A', 'B', 'C', 'D' ou null)
  *  - mixOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
  */
-export default function MixProductsModal({ onResolve, currentCash, currentLevel = null, mixOwned = null }) {
+export default function MixProductsModal({ onResolve, currentCash, currentLevel = null, mixOwned = null, allowBack = false }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
@@ -62,6 +62,7 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
   }
 
   function resolveSkip(){ onResolve?.({ action:'SKIP' }) }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   // UX: trava scroll e foca no X (ESC/backdrop não fecham)
   useEffect(() => {
@@ -133,6 +134,11 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
         </div>
 
         <div style={S.actions}>
+          {allowBack && (
+            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
           <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={resolveSkip}>
             Não comprar
           </button>

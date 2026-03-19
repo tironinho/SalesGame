@@ -21,7 +21,7 @@ const LEVELS = {
  *  - currentLevel?: string (nível atual do ERP: 'A', 'B', 'C', 'D' ou null)
  *  - erpOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
  */
-export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null, erpOwned = null }) {
+export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null, erpOwned = null, allowBack = false }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
 
@@ -33,6 +33,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   const handleBuy = async (level) => {
     const desired = normLevel(level)
@@ -145,7 +146,12 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
         </div>
 
         <div style={S.actions}>
-          <button type="button" style={{ ...S.bigBtn, background:'#444' }} onClick={handleClose}>
+          {allowBack && (
+            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
+          <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>
         </div>

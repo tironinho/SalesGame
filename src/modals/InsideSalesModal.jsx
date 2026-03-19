@@ -20,7 +20,7 @@ import { VENDOR_RULES } from '../game/gameRules'
  * Props:
  *  - currentCash?: number (saldo atual do jogador)
  */
-export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
+export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack = false }) {
   const closeRef = useRef(null)
   const [qty, setQty] = useState('')
   const { pushModal, awaitTop } = useModal()
@@ -50,6 +50,7 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   const bump = (n) => {
     const cur = Number(qty) || 0
@@ -196,6 +197,11 @@ export default function InsideSalesModal({ onResolve, currentCash = 0 }) {
         </div>
 
         <div style={S.actions}>
+          {allowBack && (
+            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
           <button type="button" style={{ ...S.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>

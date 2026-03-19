@@ -31,6 +31,7 @@ export default function BuyCommonSellersModal({
   unitExpense = VENDOR_RULES.comum.baseDesp,
   attendsUpTo = VENDOR_RULES.comum.cap,
   currentCash = 0,
+  allowBack = false,
 }) {
   const [qty, setQty] = useState('')
   const closeRef = useRef(null)
@@ -76,6 +77,7 @@ export default function BuyCommonSellersModal({
     ev?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   const handleBuy = async () => {
     if (!canBuy) return
@@ -237,6 +239,11 @@ export default function BuyCommonSellersModal({
         </div>
 
         <div style={styles.actions}>
+          {allowBack && (
+            <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
           <button
             type="button"
             style={{ ...styles.bigBtn, background:'#666', color:'#fff' }}

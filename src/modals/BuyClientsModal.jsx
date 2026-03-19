@@ -26,6 +26,7 @@ export default function BuyClientsModal({
   unitAcquisition = 1000,
   unitMaintenance = 50,
   currentCash = 0,
+  allowBack = false,
 }) {
   const closeRef = useRef(null)
   const inputRef = useRef(null)
@@ -56,6 +57,7 @@ export default function BuyClientsModal({
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
+  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
 
   const handleBuy = async () => {
     if (!canBuy) return
@@ -185,6 +187,11 @@ export default function BuyClientsModal({
         </div>
 
         <div style={styles.actions}>
+          {allowBack && (
+            <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+              Voltar
+            </button>
+          )}
           <button type="button" style={{ ...styles.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>
