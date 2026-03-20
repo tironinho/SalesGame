@@ -258,7 +258,7 @@ export const testBusinessRules = () => {
   
   // Teste 3: Empréstimo pendente
   const playerWithLoan = createTestPlayer({ 
-    loanPending: { amount: 5000, dueRound: 2, charged: false }
+    loanPending: { amount: 5000, charged: false, waitingFullLap: true, eligibleOnExpenses: false, declaredAtRound: 1 }
   })
   console.assert(playerWithLoan.loanPending !== null, `Jogador deve ter empréstimo pendente`)
   console.assert(playerWithLoan.loanPending.amount === 5000, `Valor do empréstimo deve ser 5000`)

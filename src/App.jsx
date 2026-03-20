@@ -528,14 +528,21 @@ export default function App() {
                 console.log('[App] SYNC - Detectadas compras locais, preservando estado local completo', {
                   localClients, remoteClients, localVendedores, remoteVendedores
                 })
+
+                const loanStateChanged = !isSameValue(localPlayer.loanPending, syncedPlayer.loanPending)
                 
-                // Preserva estado local completo (compras), mas aceita propriedades críticas do remoto
                 return {
-                  ...localPlayer, // Preserva estado local completo
-                  // ✅ CORREÇÃO: Aceita posição autoritativa do remoto (não faz Math.max)
+                  ...localPlayer,
                   pos: syncedPlayer.pos,
                   bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
-                  // Preserva dados de progresso local
+
+                  ...(loanStateChanged
+                    ? {
+                        cash: Number(syncedPlayer.cash || 0),
+                        loanPending: syncedPlayer.loanPending ?? null,
+                      }
+                    : {}),
+
                   az: localPlayer.az || syncedPlayer.az || 0,
                   am: localPlayer.am || syncedPlayer.am || 0,
                   rox: localPlayer.rox || syncedPlayer.rox || 0,

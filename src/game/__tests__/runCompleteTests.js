@@ -505,7 +505,7 @@ export const runCompleteTestSuite = () => {
     
     // Empréstimo pendente
     const playerWithLoan = createTestPlayer({ 
-      loanPending: { amount: 5000, dueRound: 2, charged: false }
+      loanPending: { amount: 5000, charged: false, waitingFullLap: true, eligibleOnExpenses: false, declaredAtRound: 1 }
     })
     console.log(`✅ Empréstimo pendente: ${playerWithLoan.loanPending !== null} (esperado: true)`)
     report.results.push({

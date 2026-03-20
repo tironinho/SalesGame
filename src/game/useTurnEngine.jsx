@@ -783,22 +783,23 @@ export function useTurnEngine({
             }
             
             const amt = Number(recoveryModalRes.amount || 0)
+            const newLoanPending = {
+              amount: amt,
+              charged: false,
+              waitingFullLap: true,
+              eligibleOnExpenses: false,
+              declaredAtRound: currentRoundRef.current,
+            }
+            console.log('[LOAN DEBUG] criado', { ownerId, amount: amt, loanPending: newLoanPending })
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
-                loanPending: {
-                  amount: amt,
-                  charged: false,
-                  declaredAtRound: currentRoundRef.current,
-                  dueRound: currentRoundRef.current + 1,
-                  shouldChargeOnNextExpenses: true,
-                },
+                loanPending: newLoanPending,
                 pos: p.pos
             }))
             console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
-            console.log('[DEBUG] Novo loanPending:', getById(updatedPlayers, ownerId)?.loanPending)
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
             commitLocalPlayers(updatedPlayers)
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
@@ -1908,26 +1909,7 @@ export function useTurnEngine({
     const isLuckMisfortuneTile = [3,14,22,26,35,41,48,54].includes(landedOneBased)
     const canRunSequenced = isMyTurn && !!pushModal && !!awaitTop
 
-    // === EMPRÉSTIMO: cobra na mesma casa a partir da rodada seguinte (ao passar/parar) ===
-    // Regra: se o jogador PARAR (estiver na casa) ou PASSAR pela casa onde declarou o empréstimo,
-    // a partir da rodada seguinte, ele paga o valor do empréstimo e marca como quitado.
-    const loan = getById(nextPlayers, ownerId)?.loanPending || {}
-    const loanAmount = Math.max(0, Math.floor(Number(loan.amount || 0)))
-    const dueRound = Number(loan.dueRound || 0)
-    const duePos = Number.isFinite(Number(loan.duePos))
-      ? Number(loan.duePos)
-      : (Number.isFinite(Number(loan.declaredAtPos)) ? Number(loan.declaredAtPos) : null)
-
-    const passedDuePos = duePos !== null && crossedTile(oldPos, newPos, duePos)
-
-    const shouldChargeLoanNow =
-      loanAmount > 0 &&
-      !loan.charged &&
-      duePos !== null &&
-      currentRoundRef.current >= dueRound &&
-      passedDuePos
-
-    const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldChargeLoanNow || shouldProcessPurchaseInQueue
+    const shouldRunSequenced = crossedStart1 || crossedExpenses23 || isLuckMisfortuneTile || shouldProcessPurchaseInQueue
 
     if (canRunSequenced && shouldRunSequenced) {
       const td = pendingTurnDataRef.current
@@ -1939,13 +1921,6 @@ export function useTurnEngine({
       }
 
       const events = []
-      
-      // ✅ LOAN: cobra empréstimo quando passar/parar na casa onde foi feito (rodada seguinte)
-      if (shouldChargeLoanNow && !td._once.loanDue) {
-        td._once.loanDue = true
-        const loanAt = forwardDist(oldPos, duePos, TRACK_LEN)
-        events.push({ type: 'LOAN', at: loanAt, loanAmount, duePos })
-      }
       
       if (crossedStart1 && !td._once.faturamento) {
         td._once.faturamento = true
@@ -1991,50 +1966,36 @@ export function useTurnEngine({
           const meNow = getById(localPlayers, ownerId) || {}
           if (!meNow?.id) break
 
-          // ✅ LOAN: Cobrança de empréstimo (na mesma casa onde foi feito, rodada seguinte)
-          if (ev.type === 'LOAN') {
-            openingModalRef.current = true
-            const evLoanAmount = ev.loanAmount || 0
-            const evDuePos = ev.duePos
-
-            if (evLoanAmount > 0) {
-              await openModalAndWait(
-                <DespesasOperacionaisModal expense={0} loanCharge={evLoanAmount} />
-              )
-
-              // WHY: handleInsufficientFunds já debita o valor - não debitar manualmente depois!
-              const loanRes = await handleInsufficientFunds(evLoanAmount, 'Empréstimo', 'pagar', localPlayers)
-              localPlayers = loanRes.players
-
-              if (loanRes.ok) {
-                // ✅ Marca como quitado (SEM debitar novamente - handleInsufficientFunds já fez isso)
-                localPlayers = mapById(localPlayers, ownerId, (p) => ({
-                  ...p,
-                  loanPending: {
-                    ...(p.loanPending || {}),
-                    charged: true,
-                    chargedAtRound: currentRoundRef.current,
-                    chargedAtPos: evDuePos,
-                    // compat: limpa flag antiga caso exista em estados persistidos
-                    shouldChargeOnNextExpenses: false,
-                  },
-                }))
-
-                commitLocalPlayers(localPlayers)
-                broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
-                if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
-                appendLog(`${meNow.name} pagou empréstimo: -$${evLoanAmount.toLocaleString()}`)
-              }
-            }
-
-            continue
-          }
-
           if (ev.type === 'REVENUE') {
             openingModalRef.current = true
             const fat = Math.max(0, Math.floor(computeFaturamentoFor(meNow)))
+            console.log('[LOAN DEBUG] revenue/arm', { ownerId, before: meNow.loanPending || null })
             await openModalAndWait(<FaturamentoDoMesModal value={fat} />)
-            localPlayers = mapById(localPlayers, ownerId, (p) => ({ ...p, cash: (Number(p.cash) || 0) + fat }))
+
+            localPlayers = mapById(localPlayers, ownerId, (p) => {
+              const lp = p.loanPending || null
+              const shouldArmLoan =
+                lp &&
+                Number(lp.amount) > 0 &&
+                lp.charged !== true &&
+                lp.eligibleOnExpenses !== true
+
+              return {
+                ...p,
+                cash: (Number(p.cash) || 0) + fat,
+                ...(shouldArmLoan
+                  ? {
+                      loanPending: {
+                        ...lp,
+                        waitingFullLap: false,
+                        eligibleOnExpenses: true,
+                      },
+                    }
+                  : {}),
+              }
+            })
+
+            console.log('[LOAN DEBUG] armed after full lap', { ownerId, loanPending: getById(localPlayers, ownerId)?.loanPending || null })
             commitLocalPlayers(localPlayers)
             broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
@@ -2047,18 +2008,21 @@ export function useTurnEngine({
           if (ev.type === 'EXPENSES') {
             openingModalRef.current = true
             const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
-            const lp = meNow.loanPending || {}
-            const dueRound = Number.isFinite(Number(lp.dueRound))
-              ? Number(lp.dueRound)
-              : (Number.isFinite(Number(lp.declaredAtRound)) ? Number(lp.declaredAtRound) + 1 : null)
-            const canChargeByRound = (dueRound == null) ? true : (currentRoundRef.current >= dueRound)
+            const lp = meNow.loanPending || null
+
             const shouldChargeLoan =
-              Number(lp.amount) > 0 &&
-              lp.charged !== true &&
-              (lp.shouldChargeOnNextExpenses === true) &&
-              canChargeByRound
-            const loanCharge = shouldChargeLoan ? Math.max(0, Math.floor(Number(lp.amount))) : 0
+              Number(lp?.amount) > 0 &&
+              lp?.charged !== true &&
+              lp?.eligibleOnExpenses === true &&
+              lp?.waitingFullLap !== true
+
+            const loanCharge = shouldChargeLoan
+              ? Math.max(0, Math.floor(Number(lp?.amount || 0)))
+              : 0
+
             const totalCharge = expense + loanCharge
+
+            console.log('[LOAN DEBUG] expenses/check', { ownerId, loanPending: lp, shouldChargeLoan })
 
             await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
             // WHY: handleInsufficientFunds retorna { ok, players } para manter snapshot consistente
@@ -2073,16 +2037,10 @@ export function useTurnEngine({
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             if (shouldChargeLoan) {
+              console.log('[LOAN DEBUG] limpo', { ownerId })
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
-                loanPending: {
-                  ...(p.loanPending || {}),
-                  amount: 0,
-                  paidAmount: loanCharge,
-                  charged: true,
-                  chargedAtRound: currentRoundRef.current,
-                  shouldChargeOnNextExpenses: false,
-                },
+                loanPending: null,
               }))
               commitLocalPlayers(localPlayers)
               broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
@@ -3168,9 +3126,9 @@ export function useTurnEngine({
                 loanPending: {
                   amount: amt,
                   charged: false,
+                  waitingFullLap: true,
+                  eligibleOnExpenses: false,
                   declaredAtRound: currentRoundRef.current,
-                  dueRound: currentRoundRef.current + 1,
-                  shouldChargeOnNextExpenses: true,
                 },
               }
         );
