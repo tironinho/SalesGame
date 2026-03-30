@@ -10,18 +10,56 @@ import ModalBase from "../modals/ModalBase";
  *   Se usada “solta”, aceita `onExit`.
  */
 export default function FinalWinners({ players = [], onExit, onResolve }) {
-  // classifica por patrimônio (cash + bens) e pega o top 3
-  const top3 = useMemo(() => {
+  const rankedPlayers = useMemo(() => {
     const ranked = [...players]
-      .map((p) => ({
-        ...p,
-        patrimonio: (Number(p.cash) || 0) + (Number(p.bens) || 0),
-      }))
-      .sort((a, b) => b.patrimonio - a.patrimonio);
+      .map((player) => {
+        const isBankrupt = !!player?.bankrupt
+        const cash = Number(player?.cash || 0)
+        const bens = Number(player?.bens || 0)
+        const patrimonio = isBankrupt ? 0 : (cash + bens)
 
+        return {
+          ...player,
+          cash,
+          bens,
+          patrimonio,
+          isBankrupt,
+        }
+      })
+      .sort((a, b) => {
+        if (a.isBankrupt !== b.isBankrupt) {
+          return a.isBankrupt ? 1 : -1
+        }
+
+        if (b.patrimonio !== a.patrimonio) {
+          return b.patrimonio - a.patrimonio
+        }
+
+        if (b.cash !== a.cash) {
+          return b.cash - a.cash
+        }
+
+        return String(a.name || '').localeCompare(String(b.name || ''))
+      })
+
+    console.log(
+      '[BANKRUPTCY DEBUG] final ranking',
+      ranked.map((p) => ({
+        name: p.name,
+        bankrupt: p.isBankrupt,
+        cash: p.cash,
+        bens: p.bens,
+        patrimonio: p.patrimonio,
+      }))
+    )
+
+    return ranked
+  }, [players])
+
+  const top3 = useMemo(() => {
     // layout: esquerda(2º), centro(1º), direita(3º)
-    return [ranked[1], ranked[0], ranked[2]];
-  }, [players]);
+    return [rankedPlayers[1], rankedPlayers[0], rankedPlayers[2]]
+  }, [rankedPlayers])
 
   const first = top3?.[1];
   const second = top3?.[0];

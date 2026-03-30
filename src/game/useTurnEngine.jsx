@@ -89,6 +89,33 @@ const makeLoanId = (ownerId) => {
   return `loan:${ownerId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
 }
 
+const applyBankruptcyState = (p = {}) => {
+  console.log('[BANKRUPTCY DEBUG] applying bankruptcy state', {
+    playerId: p?.id,
+    name: p?.name,
+  })
+
+  return {
+    ...p,
+    bankrupt: true,
+    cash: 0,
+    bens: 0,
+    clients: 0,
+    vendedoresComuns: 0,
+    fieldSales: 0,
+    insideSales: 0,
+    gestores: 0,
+    gestoresComerciais: 0,
+    managers: 0,
+    manutencao: 0,
+    revenue: 0,
+    loanPending: null,
+    waitingAtRevenue: false,
+    mixProdutos: 'D',
+    erpLevel: 'D',
+  }
+}
+
 /**
  * Hook do motor de turnos.
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
@@ -756,7 +783,7 @@ export function useTurnEngine({
                 return failRes(currentPlayers)
               }
               // Processa falência
-              const updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({ ...p, bankrupt: true }))
+              const updatedPlayers = mapById(currentPlayers, ownerId, (p) => applyBankruptcyState(p))
               const decision = decideEndgameAfterBankruptcy(updatedPlayers)
               if (decision.shouldEnd) {
                 const safeRound = currentRoundRef.current
@@ -952,7 +979,7 @@ export function useTurnEngine({
               const nextPlayers = (basePlayers || []).map(p => {
                 if (!p) return p
                 if (p.id !== bankruptId) return p
-                return { ...p, bankrupt: true, cash: 0 }
+                return applyBankruptcyState(p)
               })
 
               const decision = decideEndgameAfterBankruptcy(nextPlayers)
@@ -1059,7 +1086,7 @@ export function useTurnEngine({
         const nextPlayers = (basePlayers || []).map(p => {
           if (!p) return p
           if (p.id !== bankruptId) return p
-          return { ...p, bankrupt: true, cash: 0 }
+          return applyBankruptcyState(p)
         })
 
         const decision = decideEndgameAfterBankruptcy(nextPlayers)
@@ -3534,7 +3561,7 @@ export function useTurnEngine({
       if (curIdx < 0) return
 
       const nextPlayers = curPlayers.map(p =>
-        String(p.id) === myId ? { ...p, bankrupt: true } : p
+        String(p.id) === myId ? applyBankruptcyState(p) : p
       )
       appendLog(`${curPlayers[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
 
