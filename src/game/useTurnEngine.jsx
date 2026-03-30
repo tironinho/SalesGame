@@ -80,6 +80,15 @@ function pickNextAliveIndex(playersArr, fromIdx) {
   return Math.max(0, Math.min(start, n - 1))
 }
 
+const makeLoanId = (ownerId) => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `loan:${ownerId}:${crypto.randomUUID()}`
+    }
+  } catch {}
+  return `loan:${ownerId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
+}
+
 /**
  * Hook do motor de turnos.
  * Recebe estados do App e devolve handlers (advanceAndMaybeLap, onAction, nextTurn).
@@ -2008,13 +2017,103 @@ export function useTurnEngine({
           if (ev.type === 'EXPENSES') {
             openingModalRef.current = true
             const expense = Math.max(0, Math.floor(computeDespesasFor(meNow)))
-            const lp = meNow.loanPending || null
+            let freshMe = getById(localPlayers, ownerId) || meNow
+            let lp = freshMe.loanPending || null
+            let currentLoanId = String(lp?.loanId || '')
+
+            if (lp && Number(lp.amount) > 0 && !lp.loanId) {
+              const normalizedLoanId = makeLoanId(ownerId)
+
+              localPlayers = mapById(localPlayers, ownerId, (p) => ({
+                ...p,
+                loanPending: {
+                  ...(p.loanPending || {}),
+                  loanId: normalizedLoanId,
+                },
+              }))
+
+              freshMe = getById(localPlayers, ownerId) || freshMe
+              lp = freshMe.loanPending || lp
+              currentLoanId = String(lp?.loanId || '')
+            }
+
+            const alreadyChargedThisLoan =
+              !!currentLoanId &&
+              String(freshMe.lastChargedLoanId || '') === currentLoanId
+
+            if (lp && alreadyChargedThisLoan) {
+              localPlayers = mapById(localPlayers, ownerId, (p) => ({
+                ...p,
+                loanPending: null,
+              }))
+
+              freshMe = getById(localPlayers, ownerId) || {
+                ...freshMe,
+                loanPending: null,
+              }
+              lp = null
+              currentLoanId = ''
+            }
+
+            const declaredAtRound = Number(lp?.declaredAtRound || 0)
+            const reachedRevenueAfterLoan =
+              Number(freshMe.lastRevenueRound || 0) >= (declaredAtRound + 1)
+
+            console.log('[LOAN DEBUG] expenses/pre-check', {
+              ownerId,
+              loanPending: lp,
+              currentLoanId,
+              lastChargedLoanId: freshMe.lastChargedLoanId || null,
+              lastRevenueRound: freshMe.lastRevenueRound || 0,
+              declaredAtRound,
+              reachedRevenueAfterLoan,
+            })
+
+            if (
+              lp &&
+              Number(lp.amount) > 0 &&
+              lp.charged !== true &&
+              reachedRevenueAfterLoan &&
+              String(lp?.stage || '').toUpperCase() !== 'ARMED_FOR_NEXT_EXPENSES'
+            ) {
+              localPlayers = mapById(localPlayers, ownerId, (p) => ({
+                ...p,
+                loanPending: {
+                  ...(p.loanPending || {}),
+                  stage: 'ARMED_FOR_NEXT_EXPENSES',
+                  waitingFullLap: false,
+                  eligibleOnExpenses: true,
+                },
+              }))
+
+              freshMe = getById(localPlayers, ownerId) || freshMe
+              lp = freshMe.loanPending || lp
+
+              console.log('[LOAN DEBUG] normalized armed in expenses', {
+                ownerId,
+                loanPending: lp,
+              })
+            }
+
+            const normalizedLoanStage = String(
+              lp?.stage ||
+              (
+                lp?.eligibleOnExpenses === true && lp?.waitingFullLap !== true
+                  ? 'ARMED_FOR_NEXT_EXPENSES'
+                  : (
+                      reachedRevenueAfterLoan
+                        ? 'ARMED_FOR_NEXT_EXPENSES'
+                        : 'WAITING_FULL_LAP'
+                    )
+              )
+            ).toUpperCase()
 
             const shouldChargeLoan =
               Number(lp?.amount) > 0 &&
               lp?.charged !== true &&
-              lp?.eligibleOnExpenses === true &&
-              lp?.waitingFullLap !== true
+              normalizedLoanStage === 'ARMED_FOR_NEXT_EXPENSES' &&
+              !!currentLoanId &&
+              !alreadyChargedThisLoan
 
             const loanCharge = shouldChargeLoan
               ? Math.max(0, Math.floor(Number(lp?.amount || 0)))
@@ -2022,30 +2121,30 @@ export function useTurnEngine({
 
             const totalCharge = expense + loanCharge
 
-            console.log('[LOAN DEBUG] expenses/check', { ownerId, loanPending: lp, shouldChargeLoan })
-
             await openModalAndWait(<DespesasOperacionaisModal expense={expense} loanCharge={loanCharge} />)
-            // WHY: handleInsufficientFunds retorna { ok, players } para manter snapshot consistente
+
             const expensesRes = await handleInsufficientFunds(totalCharge, 'Despesas Operacionais', 'pagar', localPlayers)
             if (!expensesRes?.ok) return
-            // ✅ CRÍTICO: Usa o snapshot retornado, não playersRef.current
+
             localPlayers = expensesRes.players
 
-            // ✅ CORREÇÃO: Sempre faz commit após despesas serem aplicadas (ANTES de verificar empréstimo)
-            commitLocalPlayers(localPlayers)
-            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
-            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
-
             if (shouldChargeLoan) {
-              console.log('[LOAN DEBUG] limpo', { ownerId })
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
                 loanPending: null,
+                lastChargedLoanId: currentLoanId,
               }))
-              commitLocalPlayers(localPlayers)
-              broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
-              if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
+
+              console.log('[LOAN DEBUG] liquidado', {
+                ownerId,
+                currentLoanId,
+                lastChargedLoanId: currentLoanId,
+              })
             }
+
+            commitLocalPlayers(localPlayers)
+            broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
+            if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
             if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)

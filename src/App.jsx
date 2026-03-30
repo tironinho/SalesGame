@@ -68,6 +68,20 @@ const defer = (fn) =>
     ? queueMicrotask(fn)
     : Promise.resolve().then(fn)
 
+const getVisibleLoanPending = (player = {}) => {
+  const lp = player?.loanPending || null
+  const loanId = String(lp?.loanId || '')
+  const lastChargedLoanId = String(player?.lastChargedLoanId || '')
+
+  const isAlreadyPaid =
+    !!loanId &&
+    !!lastChargedLoanId &&
+    loanId === lastChargedLoanId
+
+  if (isAlreadyPaid) return null
+  return lp
+}
+
 export default function App() {
   const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
   const DEBUG_VALIDATE = import.meta.env.DEV && localStorage.getItem('SALES_DEBUG_VALIDATE') === '1'
@@ -1574,6 +1588,7 @@ export default function App() {
         clientsAt: 0,
       }
     }
+    const visibleLoanPending = getVisibleLoanPending(me)
     const fat = computeFaturamentoFor(me)
     const desp = computeDespesasFor(me)
     const { cap, inAtt } = capacityAndAttendance(me)
@@ -1588,7 +1603,7 @@ export default function App() {
     return {
       faturamento: fat,
       manutencao: desp,
-      emprestimos: (me.loanPending && !me.loanPending.charged) ? Number(me.loanPending.amount || 0) : 0,
+      emprestimos: visibleLoanPending ? Number(visibleLoanPending.amount || 0) : 0,
       vendedoresComuns: me.vendedoresComuns || 0,
       fieldSales: me.fieldSales || 0,
       insideSales: me.insideSales || 0,
