@@ -1,16 +1,26 @@
 import React from 'react'
 import S from './recoveryStyles'
 
-export default function RecoveryMenu({ playerName, loanAvailable, hasPendingLoan, onGoLoan, onGoReduce, onGoFire, onDeclareBankruptcy }) {
+export default function RecoveryMenu({
+  playerName,
+  loanAvailable,
+  hasPendingLoan,
+  hasTakenLoanInMatch,
+  loanBlockedInMatch,
+  onGoLoan,
+  onGoReduce,
+  onGoFire,
+  onDeclareBankruptcy
+}) {
   return (
     <div style={S.body}>
       <p style={S.lead}>
         Você está sem dinheiro, {playerName}. Escolha uma das opções:
       </p>
 
-      {hasPendingLoan && (
+      {loanBlockedInMatch && (
         <div style={{...S.lead, color: '#ef4444', fontWeight: 'bold', marginBottom: '16px'}}>
-          ⚠️ Você já possui um empréstimo pendente. Cada jogador só pode ter um empréstimo por vez.
+          ⚠️ Cada jogador só pode pegar empréstimo uma única vez por partida.
         </div>
       )}
 
@@ -32,13 +42,13 @@ export default function RecoveryMenu({ playerName, loanAvailable, hasPendingLoan
         <button 
           style={{
             ...S.cta, 
-            background: hasPendingLoan ? '#6b7280' : '#16a34a',
-            cursor: hasPendingLoan ? 'not-allowed' : 'pointer'
+            background: loanBlockedInMatch ? '#6b7280' : '#16a34a',
+            cursor: loanBlockedInMatch ? 'not-allowed' : 'pointer'
           }} 
-          onClick={hasPendingLoan ? undefined : onGoLoan}
-          disabled={hasPendingLoan}
+          onClick={loanBlockedInMatch ? undefined : onGoLoan}
+          disabled={loanBlockedInMatch}
         >
-          {hasPendingLoan ? 'EMPRÉSTIMO (JÁ REALIZADO)' : 'EMPRÉSTIMO'}
+          {loanBlockedInMatch ? 'EMPRÉSTIMO (INDISPONÍVEL NESTA PARTIDA)' : 'EMPRÉSTIMO'}
         </button>
         <button 
           style={{

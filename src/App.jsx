@@ -134,7 +134,7 @@ export default function App() {
       'mixProdutos', 'erpLevel',
       'az', 'am', 'rox', 'onboarding',
       'trainingByVendor', 'trainingsByVendor',
-      'loanPending', 'waitingAtRevenue', 'revenue', 'lastRevenueRound',
+      'loanPending', 'loanTakenInMatch', 'lastChargedLoanId', 'waitingAtRevenue', 'revenue', 'lastRevenueRound',
       'erpOwned', 'erp', 'mixOwned', 'mix',
       'directBuys', 'directBuysPush', 'trainings', 'mixBase',
     ]
@@ -166,6 +166,8 @@ export default function App() {
     erpLevel: obj.erpLevel ?? 'D',
     clients: obj.clients ?? 1,
     vendedoresComuns: obj.vendedoresComuns ?? 1,
+    loanTakenInMatch: obj.loanTakenInMatch ?? false,
+    lastChargedLoanId: obj.lastChargedLoanId ?? null,
   })
 
   // ✅ CORREÇÃO: Normaliza ordem dos players para garantir consistência entre clientes
@@ -549,6 +551,7 @@ export default function App() {
                   ...localPlayer,
                   pos: syncedPlayer.pos,
                   bankrupt: syncedPlayer.bankrupt ?? localPlayer.bankrupt,
+                  loanTakenInMatch: !!syncedPlayer.loanTakenInMatch,
 
                   ...(loanStateChanged
                     ? {
@@ -583,6 +586,7 @@ export default function App() {
                 bens: Number(syncedPlayer.bens || 0),
                 manutencao: syncedPlayer.manutencao,
                 loanPending: syncedPlayer.loanPending,
+                loanTakenInMatch: !!syncedPlayer.loanTakenInMatch,
                 // Preserva dados de progresso local
                 az: localPlayer.az || syncedPlayer.az || 0,
                 am: localPlayer.am || syncedPlayer.am || 0,
@@ -2023,6 +2027,8 @@ export default function App() {
                     waitingAtRevenue: false,
                     lastRevenueRound: 0,
                     loanPending: null,
+                    loanTakenInMatch: false,
+                    lastChargedLoanId: null,
                     emprestimos: 0,
                     revenue: 0
                   })

@@ -89,6 +89,18 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     return loanPending && Number(loanPending.amount) > 0
   }, [snapshot.raw?.loanPending])
 
+  const hasTakenLoanInMatch = useMemo(() => {
+    return !!snapshot.raw?.loanTakenInMatch
+  }, [snapshot.raw?.loanTakenInMatch])
+
+  const loanBlockedInMatch = hasPendingLoan || hasTakenLoanInMatch
+
+  console.log('[LOAN DEBUG] recovery snapshot', {
+    playerId: snapshot.raw?.id,
+    loanTakenInMatch: !!snapshot.raw?.loanTakenInMatch,
+    loanPending: snapshot.raw?.loanPending || null,
+  })
+
   // opções do menu (mantidas)
   const REDUCE_OPTIONS = useMemo(
     () => [
@@ -285,6 +297,8 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
             playerName={snapshot.name}
             loanAvailable={loanAvailable}
             hasPendingLoan={hasPendingLoan}
+            hasTakenLoanInMatch={hasTakenLoanInMatch}
+            loanBlockedInMatch={loanBlockedInMatch}
             onGoLoan={() => setStep('loan')}
             onGoReduce={() => setStep('reduce')}
             onGoFire={() => setStep('fire')}
@@ -295,9 +309,9 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
         {step === 'loan' && (
           <RecoveryLoan
             loanAvailable={loanAvailable}
+            alreadyHasLoan={loanBlockedInMatch}
             onBack={() => setStep('menu')}
             onConfirm={(payload) => {
-              // Passa o payload completo do RecoveryLoan
               console.log('[DEBUG] RecoveryModal recebeu payload do RecoveryLoan:', payload)
               console.log('[DEBUG] RecoveryModal chamando resolveTop com:', payload)
               const result = resolveTop?.({ ...(payload || {}), source: { modal: 'RecoveryModal', file: 'src/modals/RecoveryModal.jsx' } })

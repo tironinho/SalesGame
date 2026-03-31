@@ -92,7 +92,7 @@ export default function RecoveryLoan({
             background: 'rgba(255,0,0,.06)'
           }}
         >
-          Você já possui um empréstimo ativo. Não é possível pegar outro.
+          Você já utilizou o empréstimo desta partida. Não é possível pegar outro.
         </div>
       )}
 

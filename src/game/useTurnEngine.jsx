@@ -761,63 +761,38 @@ export function useTurnEngine({
             broadcastState(updatedPlayers, turnIdx, currentRoundRef.current)
           } else if (recoveryModalRes.type === 'LOAN') {
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
-            
-            // Verifica se o jogador já tem um empréstimo pendente
-            const currentLoan = (getById(currentPlayers, ownerId) || {}).loanPending
-            if (currentLoan && Number(currentLoan.amount) > 0 && currentLoan.charged !== true) {
-              console.log('[DEBUG] ❌ Jogador já possui empréstimo pendente:', currentLoan)
-              // Mostra modal informando que já tem empréstimo - NÃO PODE FECHAR
+
+            const currentPlayer = getById(currentPlayers, ownerId) || {}
+            const currentLoan = currentPlayer.loanPending || null
+            const alreadyUsedLoanInMatch = !!currentPlayer.loanTakenInMatch
+
+            if (
+              alreadyUsedLoanInMatch ||
+              (currentLoan && Number(currentLoan.amount) > 0 && currentLoan.charged !== true)
+            ) {
+              console.log('[LOAN DEBUG] bloqueado por empréstimo único da partida', {
+                ownerId,
+                loanTakenInMatch: currentPlayer?.loanTakenInMatch,
+                loanPending: currentLoan || null,
+              })
+
               const loanModalRes = await openModalAndWait(
                 <InsufficientFundsModal
                   requiredAmount={requiredAmount}
-                  currentCash={Number((getById(currentPlayers, ownerId) || {}).cash || 0)}
-                  title="Empréstimo já realizado"
-                  message={`Você já possui um empréstimo pendente de R$ ${Number(currentLoan.amount).toLocaleString()}. Cada jogador só pode ter um empréstimo por vez.`}
+                  currentCash={Number(currentPlayer.cash || 0)}
+                  title="Empréstimo indisponível"
+                  message="Cada jogador só pode pegar empréstimo uma única vez por partida."
                   showRecoveryOptions={false}
-                  canClose={false} // NÃO PODE FECHAR
+                  canClose={false}
                 />
               )
-              // Força o jogador a declarar falência se já tem empréstimo
+
               if (!loanModalRes || loanModalRes.action !== 'BANKRUPT') {
                 setTurnLockBroadcast(false)
                 return failRes(currentPlayers)
               }
-              // Processa falência
-              const updatedPlayers = mapById(currentPlayers, ownerId, (p) => applyBankruptcyState(p))
-              const decision = decideEndgameAfterBankruptcy(updatedPlayers)
-              if (decision.shouldEnd) {
-                const safeRound = currentRoundRef.current
-                const finalWinner = decision.winner
-
-                setWinner(finalWinner)
-                commitLocalPlayers(updatedPlayers)
-                setGameOver(true)
-                setTurnLockBroadcast(false)
-
-                broadcastState(updatedPlayers, turnIdx, safeRound, true, finalWinner, {
-                  kind: 'ENDGAME',
-                  round: safeRound,
-                  gameOver: true,
-                  winner: finalWinner,
-                })
-                return failRes(updatedPlayers)
-              }
-              const ownerIdx = idxById(updatedPlayers, ownerId)
-              const nextIdx = findNextAliveIdx(updatedPlayers, ownerIdx >= 0 ? ownerIdx : curIdx)
-              // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador
-              const nextPlayer = updatedPlayers[nextIdx]
-              const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
-              // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
-              commitLocalPlayers(updatedPlayers)
-              setTurnIdx(nextIdx)
-              if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
-              setTurnLockBroadcast(false)
-              broadcastState(updatedPlayers, nextIdx, currentRoundRef.current, false, null, {
-                turnPlayerId: nextTurnPlayerId // ✅ CORREÇÃO: turnPlayerId autoritativo
-              })
-              return failRes(updatedPlayers)
             }
-            
+
             const amt = Number(recoveryModalRes.amount || 0)
             const newLoanPending = {
               amount: amt,
@@ -826,14 +801,18 @@ export function useTurnEngine({
               eligibleOnExpenses: false,
               declaredAtRound: currentRoundRef.current,
             }
-            console.log('[LOAN DEBUG] criado', { ownerId, amount: amt, loanPending: newLoanPending })
+            console.log('[LOAN DEBUG] criado', {
+              ownerId,
+              loanTakenInMatch: true,
+            })
             console.log('[DEBUG] Valor do empréstimo:', amt)
             console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
-                ...p,
-                cash: (Number(p.cash) || 0) + amt,
-                loanPending: newLoanPending,
-                pos: p.pos
+              ...p,
+              cash: (Number(p.cash) || 0) + amt,
+              loanTakenInMatch: true,
+              loanPending: newLoanPending,
+              pos: p.pos
             }))
             console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
@@ -3237,8 +3216,18 @@ export function useTurnEngine({
       const cur = players[curIdx];
 
       const lp = cur?.loanPending || null
-      if (lp && Number(lp.amount) > 0 && lp.charged !== true) {
-        appendLog(`${cur?.name || 'Jogador'} já possui um empréstimo pendente.`)
+      const alreadyUsedLoanInMatch = !!cur?.loanTakenInMatch
+
+      if (
+        alreadyUsedLoanInMatch ||
+        (lp && Number(lp.amount) > 0 && lp.charged !== true)
+      ) {
+        console.log('[LOAN DEBUG] bloqueado por empréstimo único da partida', {
+          ownerId: cur?.id,
+          loanTakenInMatch: cur?.loanTakenInMatch,
+          loanPending: lp || null,
+        })
+        appendLog(`${cur?.name || 'Jogador'} já utilizou o empréstimo desta partida.`);
         return
       }
 
@@ -3249,6 +3238,7 @@ export function useTurnEngine({
             : {
                 ...p,
                 cash: (Number(p.cash) || 0) + amt,
+                loanTakenInMatch: true,
                 loanPending: {
                   amount: amt,
                   charged: false,
