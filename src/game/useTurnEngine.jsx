@@ -44,6 +44,7 @@ import {
 } from './gameMath'
 import { buildClientsPurchaseDeltas } from './clientsPurchase'
 import { buildManagerPurchaseDeltas } from './managersPurchase'
+import { buildCommonSellersPurchaseDeltas } from './commonSellersPurchase'
 import { setCashAuditContext } from '../debug/cashAudit'
 import { mkCashMeta } from '../debug/cashMeta'
 
@@ -1586,17 +1587,18 @@ export function useTurnEngine({
           }
 
           if (open === 'COMMON') {
-            const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCash()} allowBack={true} />)
+            const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId)
+            const r2 = await openModalAndWait(
+              <BuyCommonSellersModal
+                currentCash={getCash()}
+                currentPlayer={buyerPlayer || null}
+                allowBack={true}
+              />
+            )
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY') {
-              const qty  = Number(r2.headcount ?? r2.qty ?? 0)
-              const deltas = {
-                cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))),
-                vendedoresComunsDelta: qty,
-                manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0),
-                revenueDelta: Number(r2.revenueDelta ?? 0),
-              }
+              const deltas = buildCommonSellersPurchaseDeltas(r2)
               const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
@@ -1857,15 +1859,15 @@ export function useTurnEngine({
     if (isCommonSellersTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const res = await openModalAndWait(<BuyCommonSellersModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
+        const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || nextPlayers[curIdx]
+        const res = await openModalAndWait(
+          <BuyCommonSellersModal
+            currentCash={buyerPlayer?.cash ?? myCash}
+            currentPlayer={buyerPlayer || null}
+          />
+        )
         if (!res || res.action !== 'BUY') return
-        const qty  = Number(res.headcount ?? res.qty ?? 0)
-        const deltas = {
-          cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
-          vendedoresComunsDelta: qty,
-          manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
-          revenueDelta: Number(res.revenueDelta ?? 0),
-        }
+        const deltas = buildCommonSellersPurchaseDeltas(res)
         const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
         if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Vendedores Comuns')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
@@ -2379,15 +2381,15 @@ export function useTurnEngine({
           
           if (ev.type === 'COMMON_PURCHASE') {
             openingModalRef.current = true
-            const res = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} />)
+            const buyerPlayer = getById(localPlayers, ownerId)
+            const res = await openModalAndWait(
+              <BuyCommonSellersModal
+                currentCash={getCurrentCash()}
+                currentPlayer={buyerPlayer || null}
+              />
+            )
             if (res && res.action === 'BUY') {
-              const qty = Number(res.headcount ?? res.qty ?? 0)
-              const deltas = {
-                cashDelta: Number(res.cashDelta ?? -(Number(res.totalHire ?? res.total ?? res.cost ?? 0))),
-                vendedoresComunsDelta: qty,
-                manutencaoDelta: Number(res.expenseDelta ?? res.totalExpense ?? 0),
-                revenueDelta: Number(res.revenueDelta || 0),
-              }
+              const deltas = buildCommonSellersPurchaseDeltas(res)
               const payAbs = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (getCurrentCash() >= payAbs) {
                 localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
@@ -2500,12 +2502,18 @@ export function useTurnEngine({
                   break
                 }
               } else if (open === 'COMMON') {
-                const r2 = await openModalAndWait(<BuyCommonSellersModal currentCash={getCurrentCash()} allowBack={true} />)
+                const buyerPlayer = getById(localPlayers, ownerId)
+                const r2 = await openModalAndWait(
+                  <BuyCommonSellersModal
+                    currentCash={getCurrentCash()}
+                    currentPlayer={buyerPlayer || null}
+                    allowBack={true}
+                  />
+                )
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
-                  const qty = Number(r2.headcount ?? r2.qty ?? 0)
-                  const deltas = { cashDelta: Number(r2.cashDelta ?? -(Number(r2.totalHire ?? r2.total ?? r2.cost ?? 0))), vendedoresComunsDelta: qty, manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? 0), revenueDelta: Number(r2.revenueDelta || 0) }
+                  const deltas = buildCommonSellersPurchaseDeltas(r2)
                   if (getCurrentCash() >= (deltas.cashDelta < 0 ? -deltas.cashDelta : 0)) {
                     localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)

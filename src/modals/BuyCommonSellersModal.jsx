@@ -2,7 +2,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { VENDOR_RULES } from '../game/gameRules'
+import { buildCommonSellersPurchaseDeltas } from '../game/commonSellersPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
 /**
  * Modal de compra de Vendedores Comuns (faz tudo)
@@ -24,6 +27,8 @@ import { VENDOR_RULES } from '../game/gameRules'
  *      hudUpdate:{ category:'Vendedores Comuns', addQty:number }
  *    }
  *  • { action:'SKIP' }
+ *  - currentCash?: number
+ *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
 export default function BuyCommonSellersModal({
   onResolve,
@@ -31,6 +36,7 @@ export default function BuyCommonSellersModal({
   unitExpense = VENDOR_RULES.comum.baseDesp,
   attendsUpTo = VENDOR_RULES.comum.cap,
   currentCash = 0,
+  currentPlayer = null,
   allowBack = false,
 }) {
   const [qty, setQty] = useState('')
@@ -65,6 +71,44 @@ export default function BuyCommonSellersModal({
   const totalExpense = useMemo(() => qtyNum * monthly,   [qtyNum, monthly])
 
   const canBuy = qtyNum > 0
+
+  const purchaseImpact = useMemo(() => {
+    const playerSnapshot = currentPlayer || { cash: cashNow }
+    const draftPayload = {
+      action: 'BUY',
+      role: 'COMMON',
+      qty: qtyNum,
+      headcount: qtyNum,
+      unitHire: priceHire,
+      unitExpense: monthly,
+      totalHire,
+      totalExpense,
+      total: totalHire,
+      cost: totalHire,
+      attendsUpTo,
+      cashDelta: -totalHire,
+      expenseDelta: totalExpense,
+      revenueDelta: revenuePerSeller * qtyNum,
+      revenuePerSeller,
+      hudUpdate: { category: 'Vendedores Comuns', addQty: qtyNum },
+    }
+    const deltas = buildCommonSellersPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: totalHire,
+    })
+  }, [
+    currentPlayer,
+    cashNow,
+    qtyNum,
+    priceHire,
+    monthly,
+    totalHire,
+    totalExpense,
+    attendsUpTo,
+    revenuePerSeller,
+  ])
 
   const setBoundedQty = (val) => {
     const n = Math.floor(Number(val) || 0)
@@ -175,6 +219,13 @@ export default function BuyCommonSellersModal({
           <br/>Digite o número de vendedores:
         </h2>
 
+        <p className="purchasePreviewHint">
+          O Vendedor Comum aumenta a capacidade de atendimento em {attendsUpTo} clientes, gera
+          faturamento e adiciona uma despesa mensal. Treinamentos podem aumentar seu
+          faturamento e suas despesas. Gestores certificados podem potencializar o
+          faturamento dos vendedores.
+        </p>
+
         <div style={styles.inlineInfo}>
           <div>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
           <div>Máximo por saldo: <b>{maxQtyByCash}</b></div>
@@ -238,6 +289,8 @@ export default function BuyCommonSellersModal({
           <div>Despesa mensal total: <b>$ {Number(totalExpense).toLocaleString()}</b></div>
         </div>
 
+        <PurchaseImpactPreview impact={purchaseImpact} />
+
         <div style={styles.actions}>
           {allowBack && (
             <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
@@ -292,7 +345,9 @@ const styles = {
     width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a',
     color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
     boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
-    position:'relative'
+    position:'relative',
+    maxHeight: '92vh',
+    overflowY: 'auto',
   },
   close: {
     position:'absolute', right:10, top:10, width:36, height:36,
