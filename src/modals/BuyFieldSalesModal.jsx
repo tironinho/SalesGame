@@ -2,7 +2,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { VENDOR_RULES } from '../game/gameRules'
+import { buildFieldSalesPurchaseDeltas } from '../game/fieldSalesPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
 /**
  * Modal de compra de Field Sales (Representantes Comerciais)
@@ -16,6 +19,7 @@ import { VENDOR_RULES } from '../game/gameRules'
  *  - unitExpense?: number  (despesa mensal por vendedor — padrão 2000, “s/ certificado”)
  *  - attendsUpTo?: number  (qtd. clientes atendidos por vendedor — infográfico)
  *  - currentCash?: number  (saldo atual do jogador para validar compra)
+ *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
 export default function BuyFieldSalesModal({
   onResolve,
@@ -23,6 +27,7 @@ export default function BuyFieldSalesModal({
   unitExpense = VENDOR_RULES.field.baseDesp,
   attendsUpTo = VENDOR_RULES.field.cap,
   currentCash = 0,
+  currentPlayer = null,
   allowBack = false,
 }) {
   const closeRef = useRef(null)
@@ -50,6 +55,39 @@ export default function BuyFieldSalesModal({
   const revenuePer    = VENDOR_RULES.field.baseFat // faturamento base “S/ certificado”
   const totalRevenue  = qtyNum * revenuePer
   const canBuy        = qtyNum > 0
+
+  const purchaseImpact = useMemo(() => {
+    const playerSnapshot = currentPlayer || { cash: cashNow }
+    const draftPayload = {
+      action: 'BUY',
+      qty: qtyNum,
+      unitHire: priceHire,
+      unitExpense: monthly,
+      totalHire,
+      totalExpense,
+      cashDelta: -totalHire,
+      expenseDelta: totalExpense,
+      revenueDelta: totalRevenue,
+      cost: totalHire,
+      total: totalHire,
+      role: 'FIELD',
+    }
+    const deltas = buildFieldSalesPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: totalHire,
+    })
+  }, [
+    currentPlayer,
+    cashNow,
+    qtyNum,
+    priceHire,
+    monthly,
+    totalHire,
+    totalExpense,
+    totalRevenue,
+  ])
 
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
   const expenseAt = (certs) => VENDOR_RULES.field.baseDesp + VENDOR_RULES.field.incDesp * Math.max(0, certs)
@@ -146,6 +184,13 @@ export default function BuyFieldSalesModal({
           <br/>Digite o número de vendedores:
         </h2>
 
+        <p className="purchasePreviewHint">
+          O Field Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
+          gera faturamento e adiciona uma despesa mensal. Treinamentos aumentam seu
+          faturamento e suas despesas. Gestores certificados podem potencializar o
+          faturamento dos vendedores.
+        </p>
+
         <div style={styles.inlineInfo}>
           <div>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
           <div>Máximo por saldo: <b>{maxQtyByCash}</b></div>
@@ -209,6 +254,8 @@ export default function BuyFieldSalesModal({
           <div>Despesa mensal total: <b>$ {Number(totalExpense).toLocaleString()}</b></div>
         </div>
 
+        <PurchaseImpactPreview impact={purchaseImpact} />
+
         <div style={styles.actions}>
           {allowBack && (
             <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
@@ -250,7 +297,7 @@ function Row({ label, hire, expense, revenue }) {
 
 const styles = {
   wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: { width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px', boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative' },
+  card: { width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px', boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative', maxHeight:'92vh', overflowY:'auto' },
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
   title: { margin:'6px 0 12px', fontWeight:800, lineHeight:1.3 },
   inlineInfo: { display:'flex', justifyContent:'space-between', gap:10, margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap' },
