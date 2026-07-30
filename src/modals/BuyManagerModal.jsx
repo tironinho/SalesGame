@@ -2,7 +2,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { MANAGER_BOOST_BY_CERT, MANAGER_MANAGES_UP_TO, VENDOR_RULES } from '../game/gameRules'
+import { buildManagerPurchaseDeltas } from '../game/managersPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
 /**
  * Modal para compra de Gestor Comercial.
@@ -18,6 +21,7 @@ import { MANAGER_BOOST_BY_CERT, MANAGER_MANAGES_UP_TO, VENDOR_RULES } from '../g
  *  - unitExpense?: number  (despesa mensal por gestor — padrão 3000)
  *  - managesUpTo?: number  (qtd. colaboradores por gestor — padrão 7, informativo)
  *  - currentCash?: number  (saldo atual do jogador para validação)
+ *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
 export default function BuyManagerModal({
   onResolve,
@@ -25,6 +29,7 @@ export default function BuyManagerModal({
   unitExpense = VENDOR_RULES.gestor.baseDesp,
   managesUpTo = MANAGER_MANAGES_UP_TO,
   currentCash = 0,
+  currentPlayer = null,
   allowBack = false,
 }) {
   const closeRef = useRef(null)
@@ -51,6 +56,27 @@ export default function BuyManagerModal({
   const totalHire    = qtyNum * priceHire
   const totalExpense = qtyNum * monthly
   const canBuy       = qtyNum > 0
+
+  const purchaseImpact = useMemo(() => {
+    const playerSnapshot = currentPlayer || { cash: cashNow }
+    const draftPayload = {
+      qty: qtyNum,
+      headcount: qtyNum,
+      managersQty: qtyNum,
+      cost: totalHire,
+      total: totalHire,
+      totalHire,
+      totalExpense,
+      cashDelta: -totalHire,
+      expenseDelta: totalExpense,
+    }
+    const deltas = buildManagerPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: totalHire,
+    })
+  }, [currentPlayer, cashNow, qtyNum, totalHire, totalExpense])
 
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
   const expenseAt = (certs) => VENDOR_RULES.gestor.baseDesp + VENDOR_RULES.gestor.incDesp * Math.max(0, certs)
@@ -160,6 +186,12 @@ export default function BuyManagerModal({
           <br/>Digite o número de gestores:
         </h2>
 
+        <p className="purchasePreviewHint">
+          O Gestor Comercial aumenta suas despesas mensais e não aumenta diretamente a
+          capacidade de atendimento. Pelas regras atuais, o aumento de faturamento dos
+          vendedores só acontece quando o gestor possui certificação.
+        </p>
+
         <div style={styles.inlineInfo}>
           <div>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
           <div>Máximo por saldo: <b>{maxQtyByCash}</b></div>
@@ -241,6 +273,8 @@ export default function BuyManagerModal({
           <div>Despesa mensal total: <b>$ {Number(totalExpense).toLocaleString()}</b></div>
         </div>
 
+        <PurchaseImpactPreview impact={purchaseImpact} />
+
         <div style={styles.actions}>
           {allowBack && (
             <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
@@ -290,7 +324,9 @@ const styles = {
     width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a',
     color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
     boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
-    position:'relative'
+    position:'relative',
+    maxHeight: '92vh',
+    overflowY: 'auto',
   },
   close: {
     position:'absolute', right:10, top:10, width:36, height:36,

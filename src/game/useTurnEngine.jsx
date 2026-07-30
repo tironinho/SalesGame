@@ -43,6 +43,7 @@ import {
   findNextAliveIdx,
 } from './gameMath'
 import { buildClientsPurchaseDeltas } from './clientsPurchase'
+import { buildManagerPurchaseDeltas } from './managersPurchase'
 import { setCashAuditContext } from '../debug/cashAudit'
 import { mkCashMeta } from '../debug/cashMeta'
 
@@ -1521,25 +1522,22 @@ export function useTurnEngine({
           }
 
           if (open === 'MANAGER') {
-            const r2 = await openModalAndWait(<ManagerModal currentCash={getCash()} allowBack={true} />)
+            const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId)
+            const r2 = await openModalAndWait(
+              <ManagerModal
+                currentCash={getCash()}
+                currentPlayer={buyerPlayer || null}
+                allowBack={true}
+              />
+            )
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY' || r2.action === 'HIRE') {
-              const qty  = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
-              const cashDelta = Number(
-                (typeof r2.cashDelta !== 'undefined'
-                  ? r2.cashDelta
-                  : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
-              )
-              const payAbs = cashDelta < 0 ? -cashDelta : 0
+              const managerDeltas = buildManagerPurchaseDeltas(r2)
+              const payAbs = managerDeltas.cashDelta < 0 ? -managerDeltas.cashDelta : 0
               if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
-              const mexp = Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0)
               setPlayers(ps => {
-                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
-                  cashDelta,
-                  gestoresDelta: qty,
-                  manutencaoDelta: mexp
-                }))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, managerDeltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1810,19 +1808,19 @@ export function useTurnEngine({
     if (isManagerTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const res = await openModalAndWait(<ManagerModal currentCash={nextPlayers[curIdx]?.cash ?? myCash} />)
-        if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
-        const qty  = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
-        const cashDelta = Number(
-          (typeof res.cashDelta !== 'undefined'
-            ? res.cashDelta
-            : -(Number(res.cost ?? res.total ?? res.totalHire ?? 0)))
+        const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || nextPlayers[curIdx]
+        const res = await openModalAndWait(
+          <ManagerModal
+            currentCash={buyerPlayer?.cash ?? myCash}
+            currentPlayer={buyerPlayer || null}
+          />
         )
-        const payAbs = cashDelta < 0 ? -cashDelta : 0
+        if (!res || (res.action !== 'BUY' && res.action !== 'HIRE')) return
+        const managerDeltas = buildManagerPurchaseDeltas(res)
+        const payAbs = managerDeltas.cashDelta < 0 ? -managerDeltas.cashDelta : 0
         if (payAbs > 0 && !requireFunds(curIdx, payAbs, 'contratar Gestor')) { setTurnLockBroadcast(false); return }
-        const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
         setPlayers(ps => {
-          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp }))
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, managerDeltas))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -2333,14 +2331,18 @@ export function useTurnEngine({
           
           if (ev.type === 'MANAGER_PURCHASE') {
             openingModalRef.current = true
-            const res = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} />)
+            const buyerPlayer = getById(localPlayers, ownerId)
+            const res = await openModalAndWait(
+              <ManagerModal
+                currentCash={getCurrentCash()}
+                currentPlayer={buyerPlayer || null}
+              />
+            )
             if (res && (res.action === 'BUY' || res.action === 'HIRE')) {
-              const qty = Number(res.headcount ?? res.qty ?? res.managersQty ?? 1)
-              const cashDelta = Number(typeof res.cashDelta !== 'undefined' ? res.cashDelta : -(Number(res.cost ?? res.total ?? res.totalHire ?? 0)))
-              const payAbs = cashDelta < 0 ? -cashDelta : 0
+              const managerDeltas = buildManagerPurchaseDeltas(res)
+              const payAbs = managerDeltas.cashDelta < 0 ? -managerDeltas.cashDelta : 0
               if (getCurrentCash() >= payAbs) {
-                const mexp = Number(res.expenseDelta ?? res.totalExpense ?? res.maintenanceDelta ?? 0)
-                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta, gestoresDelta: qty, manutencaoDelta: mexp }))
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, managerDeltas))
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                 if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
@@ -2450,14 +2452,21 @@ export function useTurnEngine({
                   break
                 }
               } else if (open === 'MANAGER') {
-                const r2 = await openModalAndWait(<ManagerModal currentCash={getCurrentCash()} allowBack={true} />)
+                const buyerPlayer = getById(localPlayers, ownerId)
+                const r2 = await openModalAndWait(
+                  <ManagerModal
+                    currentCash={getCurrentCash()}
+                    currentPlayer={buyerPlayer || null}
+                    allowBack={true}
+                  />
+                )
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY' || r2.action === 'HIRE') {
-                  const qty = Number(r2.headcount ?? r2.qty ?? r2.managersQty ?? 1)
-                  const cashD = Number(typeof r2.cashDelta !== 'undefined' ? r2.cashDelta : -(Number(r2.cost ?? r2.total ?? r2.totalHire ?? 0)))
-                  if (getCurrentCash() >= (cashD < 0 ? -cashD : 0)) {
-                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: cashD, gestoresDelta: qty, manutencaoDelta: Number(r2.expenseDelta ?? r2.totalExpense ?? r2.maintenanceDelta ?? 0) }))
+                  const managerDeltas = buildManagerPurchaseDeltas(r2)
+                  const payAbs = managerDeltas.cashDelta < 0 ? -managerDeltas.cashDelta : 0
+                  if (getCurrentCash() >= payAbs) {
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, managerDeltas))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
