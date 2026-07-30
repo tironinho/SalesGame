@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import {
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
+import HowToPlayModal from '../modals/HowToPlayModal.jsx'
 
 // ajuste os paths dos assets conforme você salvou
 import bgImg from '/dynamic-data-visualization-3d.jpg'
@@ -12,6 +13,7 @@ import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.pn
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
   const [name, setName] = useState("")
+  const [howToPlayOpen, setHowToPlayOpen] = useState(false)
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -44,6 +46,19 @@ export default function StartScreen({ onEnter }) {
       {/* card central com input e botão */}
       <div className="startCenter">
         <div className="startCard">
+          <p className="startHint">
+            Digite seu nome e entre para visualizar as salas disponíveis.
+          </p>
+
+          <div className="startSummary">
+            <p><strong>Duração:</strong> 5 rodadas</p>
+            <p><strong>Objetivo:</strong> administrar a empresa e tomar decisões comerciais</p>
+            <p><strong>Vitória:</strong> vence quem terminar com o maior patrimônio</p>
+            <p className="startSummaryNote">
+              Patrimônio é a soma do caixa com os bens.
+            </p>
+          </div>
+
           <label className="startLabel" htmlFor="playerName">Nome do Jogador</label>
           <input
             id="playerName"
@@ -57,6 +72,13 @@ export default function StartScreen({ onEnter }) {
           />
           <button className="startBtn" onClick={handleEnter} disabled={!canEnter} aria-disabled={!canEnter}>
             Entrar
+          </button>
+          <button
+            type="button"
+            className="startBtnSecondary"
+            onClick={() => setHowToPlayOpen(true)}
+          >
+            Como jogar
           </button>
         </div>
       </div>
@@ -75,6 +97,11 @@ export default function StartScreen({ onEnter }) {
 
       {/* personagem à direita */}
       <img className="startCoach" src={coachPng} alt="" draggable="false" />
+
+      <HowToPlayModal
+        open={howToPlayOpen}
+        onClose={() => setHowToPlayOpen(false)}
+      />
     </div>
   )
 }
