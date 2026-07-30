@@ -568,3 +568,49 @@ html, body {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* ---- Purchase impact preview (piloto clientes) ---- */
+.purchasePreviewHint {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #d7def2;
+  opacity: 0.95;
+}
+.purchasePreview {
+  margin: 0 0 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.22);
+}
+.purchasePreviewTitle {
+  font-weight: 800;
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+.purchasePreviewGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.purchasePreviewRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.purchasePreviewRowStrong {
+  font-weight: 800;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(255,255,255,.16);
+}
+.purchasePreviewRow small {
+  font-weight: 700;
+  opacity: 0.95;
+}
+.purchasePreviewDeltaPositive { color: #7dffa3; }
+.purchasePreviewDeltaNegative { color: #ff9b9b; }
+.purchasePreviewDeltaNeutral { color: #d7def2; }

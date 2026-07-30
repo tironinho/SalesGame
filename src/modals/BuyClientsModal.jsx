@@ -2,6 +2,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
+import { buildClientsPurchaseDeltas } from '../game/clientsPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
 /**
  * Modal para compra de clientes.
@@ -20,12 +23,14 @@ import InsufficientFundsModal from './InsufficientFundsModal'
  *  - unitAcquisition?: number   (preço por cliente)   -> padrão 1000
  *  - unitMaintenance?: number   (despesa por cliente) -> padrão 50
  *  - currentCash?: number       (saldo atual do jogador) -> obrigatório para validar saldo
+ *  - currentPlayer?: object     (snapshot somente leitura para preview)
  */
 export default function BuyClientsModal({
   onResolve,
   unitAcquisition = 1000,
   unitMaintenance = 50,
   currentCash = 0,
+  currentPlayer = null,
   allowBack = false,
 }) {
   const closeRef = useRef(null)
@@ -51,6 +56,22 @@ export default function BuyClientsModal({
   const totalCost        = qtyNum * pricePer
   const maintenanceDelta = qtyNum * mPer
   const canBuy           = qtyNum > 0
+
+  const purchaseImpact = useMemo(() => {
+    const playerSnapshot = currentPlayer || { cash: cashNow }
+    const draftPayload = {
+      totalCost,
+      qty: qtyNum,
+      maintenanceDelta,
+      bensDelta: totalCost,
+    }
+    const deltas = buildClientsPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: totalCost,
+    })
+  }, [currentPlayer, cashNow, totalCost, qtyNum, maintenanceDelta])
 
   const handleClose = (e) => {
     e?.preventDefault?.()
@@ -145,6 +166,11 @@ export default function BuyClientsModal({
           dos clientes excedentes e perderá o(s) cliente(s) que não foram atendidos.
         </p>
 
+        <p className="purchasePreviewHint">
+          Novos clientes podem aumentar seu faturamento, mas exigem capacidade suficiente
+          da sua equipe para serem atendidos.
+        </p>
+
         <div style={styles.inlineInfo}>
           <div>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
           <div>Máximo por saldo: <b>{maxQtyByCash}</b></div>
@@ -186,6 +212,8 @@ export default function BuyClientsModal({
           <div>Manutenção mensal adicionada: <b>$ {Number(maintenanceDelta).toLocaleString()}</b></div>
         </div>
 
+        <PurchaseImpactPreview impact={purchaseImpact} />
+
         <div style={styles.actions}>
           {allowBack && (
             <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
@@ -219,7 +247,9 @@ const styles = {
     width:'min(820px, 92vw)', maxWidth:820, background:'#1b1f2a',
     color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
     boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
-    position:'relative'
+    position:'relative',
+    maxHeight: '92vh',
+    overflowY: 'auto',
   },
   close: {
     position:'absolute', right:10, top:10, width:36, height:36,
