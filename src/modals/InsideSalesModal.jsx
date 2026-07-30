@@ -2,7 +2,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { VENDOR_RULES } from '../game/gameRules'
+import { buildInsideSalesPurchaseDeltas } from '../game/insideSalesPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
 /**
  * onResolve(payload)
@@ -19,8 +22,9 @@ import { VENDOR_RULES } from '../game/gameRules'
  *
  * Props:
  *  - currentCash?: number (saldo atual do jogador)
+ *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
-export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack = false }) {
+export default function InsideSalesModal({ onResolve, currentCash = 0, currentPlayer = null, allowBack = false }) {
   const closeRef = useRef(null)
   const [qty, setQty] = useState('')
   const { pushModal, awaitTop } = useModal()
@@ -29,6 +33,7 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack
   const unitHire = 3000
   const baseExpense = VENDOR_RULES.inside.baseDesp
   const baseRevenue = VENDOR_RULES.inside.baseFat
+  const attendsUpTo = VENDOR_RULES.inside.cap
 
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
   const expenseAt = (certs) => VENDOR_RULES.inside.baseDesp + VENDOR_RULES.inside.incDesp * Math.max(0, certs)
@@ -44,6 +49,27 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack
 
   // Máximo por saldo (apenas ajuda visual/atalhos)
   const maxBySaldo = Math.max(0, Math.floor(Number(currentCash || 0) / unitHire))
+
+  const purchaseImpact = useMemo(() => {
+    const playerSnapshot = currentPlayer || { cash: Number(currentCash || 0) }
+    const draftPayload = {
+      action: 'BUY',
+      qty: qtyNum,
+      headcount: qtyNum,
+      unitHire,
+      total: totalCost,
+      cost: totalCost,
+      totalCost,
+      baseExpense,
+      baseRevenue,
+    }
+    const deltas = buildInsideSalesPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: totalCost,
+    })
+  }, [currentPlayer, currentCash, qtyNum, unitHire, totalCost, baseExpense, baseRevenue])
 
   const handleClose = (e) => {
     e?.preventDefault?.()
@@ -113,6 +139,13 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack
         >✕</button>
 
         <h2 style={S.title}>Você pode escolher quantos <b>Inside Sales</b> quer comprar:</h2>
+
+        <p className="purchasePreviewHint">
+          O Inside Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
+          gera faturamento pelas regras atuais da equipe e adiciona despesas mensais.
+          Treinamentos aumentam seu faturamento e suas despesas. Gestores certificados
+          podem potencializar o faturamento dos vendedores.
+        </p>
 
         {/* Aviso (texto do manual) */}
         <div style={S.note}>
@@ -196,6 +229,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, allowBack
           />
         </div>
 
+        <PurchaseImpactPreview impact={purchaseImpact} />
+
         <div style={S.actions}>
           {allowBack && (
             <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
@@ -239,7 +274,8 @@ const S = {
   card: {
     width:'min(980px, 94vw)', background:'#1b1f2a', color:'#e9ecf1',
     borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
-    border:'1px solid rgba(255,255,255,.12)', position:'relative'
+    border:'1px solid rgba(255,255,255,.12)', position:'relative',
+    maxHeight:'92vh', overflowY:'auto'
   },
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
   title:{ margin:'6px 0 12px', fontWeight:900 },
