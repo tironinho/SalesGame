@@ -48,6 +48,7 @@ import { buildCommonSellersPurchaseDeltas } from './commonSellersPurchase'
 import { buildFieldSalesPurchaseDeltas } from './fieldSalesPurchase'
 import { buildInsideSalesPurchaseDeltas } from './insideSalesPurchase'
 import { buildErpPurchaseDeltas } from './erpPurchase'
+import { buildMixPurchaseDeltas } from './productMixPurchase'
 import { setCashAuditContext } from '../debug/cashAudit'
 import { mkCashMeta } from '../debug/cashMeta'
 
@@ -1497,32 +1498,24 @@ export function useTurnEngine({
           const open = String(currentSelection.open || '').toUpperCase()
 
           if (open === 'MIX') {
-            const currentMixLevel = players[curIdx]?.mixProdutos || null
-            const mixOwned = players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
+            const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId)
+            const currentMixLevel = buyerPlayer?.mixProdutos || players[curIdx]?.mixProdutos || null
+            const mixOwned = buyerPlayer?.mixOwned || buyerPlayer?.mix || players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
             const r2 = await openModalAndWait(<MixProductsModal 
               currentCash={getCash()}
               currentLevel={currentMixLevel}
               mixOwned={mixOwned}
+              currentPlayer={buyerPlayer || null}
               allowBack={true}
             />)
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY') {
-              const price = Number(r2.compra || 0)
-              const level = String(r2.level || 'D')
+              const deltas = buildMixPurchaseDeltas(r2)
+              const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
-              const cost = Math.max(0, -(-price)) // mantém padrão: custo positivo
               setPlayers(ps => {
-                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, {
-                    cashDelta: -price,
-                    // ✅ BUG 2 FIX: compra de MIX vira patrimônio (bens)
-                    bensDelta: cost,
-                    mixProdutosSet: level,
-                    mixBaseSet: {
-                      despesaPorCliente: Number(r2.despesa || 0),
-                      faturamentoPorCliente: Number(r2.faturamento || 0),
-                    }
-                  }))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -1910,32 +1903,24 @@ export function useTurnEngine({
     if (isMixTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const currentMixLevel = players[curIdx]?.mixProdutos || null
-        const mixOwned = players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
+        const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || nextPlayers[curIdx]
+        const currentMixLevel = buyerPlayer?.mixProdutos || players[curIdx]?.mixProdutos || null
+        const mixOwned = buyerPlayer?.mixOwned || buyerPlayer?.mix || players[curIdx]?.mixOwned || players[curIdx]?.mix || {}
         const res = await openModalAndWait(<MixProductsModal 
-          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentCash={buyerPlayer?.cash ?? nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentMixLevel}
           mixOwned={mixOwned}
+          currentPlayer={buyerPlayer || null}
         />)
         if (!res || res.action !== 'BUY') return
-        const price = Number(res.compra || 0)
+        const deltas = buildMixPurchaseDeltas(res)
+        const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
         if (!requireFunds(curIdx, price, 'comprar MIX')) { setTurnLockBroadcast(false); return }
-        const level = String(res.level || 'D')
-        const cost = Math.max(0, price)
         setPlayers(ps => {
           const upd = ps.map((p, i) =>
             i !== curIdx
               ? p
-              : applyDeltas(p, {
-                  cashDelta: -price,
-                  // ✅ BUG 2 FIX: compra de MIX vira patrimônio (bens)
-                  bensDelta: cost,
-                  mixProdutosSet: level,
-                  mixBaseSet: {
-                    despesaPorCliente: Number(res.despesa || 0),
-                    faturamentoPorCliente: Number(res.faturamento || 0),
-                  },
-                })
+              : applyDeltas(p, deltas)
           )
           // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
@@ -2444,22 +2429,20 @@ export function useTurnEngine({
           
           if (ev.type === 'MIX_PURCHASE') {
             openingModalRef.current = true
-            const currentMixLevel = meNow?.mixProdutos || null
-            const mixOwned = meNow?.mixOwned || meNow?.mix || {}
+            const buyerPlayer = getById(localPlayers, ownerId) || meNow
+            const currentMixLevel = buyerPlayer?.mixProdutos || null
+            const mixOwned = buyerPlayer?.mixOwned || buyerPlayer?.mix || {}
             const res = await openModalAndWait(<MixProductsModal 
               currentCash={getCurrentCash()}
               currentLevel={currentMixLevel}
               mixOwned={mixOwned}
+              currentPlayer={buyerPlayer || null}
             />)
             if (res && res.action === 'BUY') {
-              const price = Number(res.compra || 0)
+              const deltas = buildMixPurchaseDeltas(res)
+              const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (getCurrentCash() >= price) {
-                const level = String(res.level || 'D')
-                const cost = Math.max(0, price)
-                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, {
-                  cashDelta: -price, bensDelta: cost, mixProdutosSet: level,
-                  mixBaseSet: { despesaPorCliente: Number(res.despesa || 0), faturamentoPorCliente: Number(res.faturamento || 0) },
-                }))
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                 if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
@@ -2480,13 +2463,15 @@ export function useTurnEngine({
               const meForBuy = getById(localPlayers, ownerId) || meNow
 
               if (open === 'MIX') {
-                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.mixProdutos || null} mixOwned={meForBuy?.mixOwned || meForBuy?.mix || {}} allowBack={true} />)
+                const buyerPlayer = getById(localPlayers, ownerId) || meForBuy
+                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.mixProdutos || null} mixOwned={buyerPlayer?.mixOwned || buyerPlayer?.mix || {}} currentPlayer={buyerPlayer || null} allowBack={true} />)
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
-                  const price = Number(r2.compra || 0)
+                  const deltas = buildMixPurchaseDeltas(r2)
+                  const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
                   if (getCurrentCash() >= price) {
-                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, bensDelta: price, mixProdutosSet: String(r2.level || 'D'), mixBaseSet: { despesaPorCliente: Number(r2.despesa || 0), faturamentoPorCliente: Number(r2.faturamento || 0) } }))
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }

@@ -1,26 +1,42 @@
 // src/modals/MixProductsModal.jsx
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { MIX_RULES } from '../game/gameRules'
+import { capacityAndAttendance } from '../game/gameMath'
+import {
+  buildMixPurchaseDeltas,
+  calculateMixReturn,
+} from '../game/productMixPurchase.js'
+import { previewPurchaseImpact } from '../game/purchasePreview.js'
+
+const LEVEL_RANK = { A: 4, B: 3, C: 2, D: 1 }
 
 /**
  * Modal de escolha do Mix de Produtos (A/B/C/D)
  *
  * onResolve(payload):
- *  • { action:'BUY', level:'A'|'B'|'C'|'D', compra:number, despesa:number, faturamento:number }
+ *  • { action:'BUY', level:'A'|'B'|'C'|'D', compra:number, despesa:number, faturamento:number, ... }
  *  • { action:'SKIP' }
  *
- * Obs.: "despesa" e "faturamento" são valores-base por cliente (multiplicar pelos clientes totais).
- * 
  * Props:
  *  - currentCash?: number (saldo atual do jogador; usado para validar compra)
  *  - currentLevel?: string (nível atual do Mix: 'A', 'B', 'C', 'D' ou null)
  *  - mixOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
+ *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
-export default function MixProductsModal({ onResolve, currentCash, currentLevel = null, mixOwned = null, allowBack = false }) {
+export default function MixProductsModal({
+  onResolve,
+  currentCash,
+  currentLevel = null,
+  mixOwned = null,
+  allowBack = false,
+  currentPlayer = null,
+}) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
+  const [selectedLevel, setSelectedLevel] = useState(null)
 
   // Mantém os mesmos valores do print/implementação anterior
   const LEVELS = {
@@ -32,17 +48,68 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
 
   const normLevel = (v) => { const L = String(v || '').toUpperCase(); return ['A', 'B', 'C', 'D'].includes(L) ? L : '' }
   const current = normLevel(currentLevel) || 'D'
+  const cashNow = Number(currentCash != null ? currentCash : (currentPlayer?.cash ?? 0))
 
-  async function resolveBuy(level) {
+  const draftPayload = useMemo(() => {
+    const desired = normLevel(selectedLevel)
+    if (!desired || desired === current) return null
+    const row = LEVELS[desired]
+    if (!row) return null
+    return { action: 'BUY', level: desired, ...row }
+  }, [selectedLevel, current])
+
+  const purchaseImpact = useMemo(() => {
+    if (!draftPayload) return null
+    const playerSnapshot = {
+      ...(currentPlayer || {}),
+      cash: cashNow,
+      mixProdutos: current,
+    }
+    const deltas = buildMixPurchaseDeltas(draftPayload)
+    return previewPurchaseImpact({
+      player: playerSnapshot,
+      deltas,
+      immediateCost: draftPayload.compra,
+    })
+  }, [draftPayload, currentPlayer, cashNow, current])
+
+  const mixReturn = useMemo(() => {
+    if (!purchaseImpact) return null
+    return calculateMixReturn({ impact: purchaseImpact, horizonRounds: 5 })
+  }, [purchaseImpact])
+
+  const portfolioStats = useMemo(() => {
+    const playerSnapshot = {
+      ...(currentPlayer || {}),
+      cash: cashNow,
+      mixProdutos: current,
+    }
+    const totalClients = Math.max(0, Number(playerSnapshot.clients || 0))
+    const { cap, inAtt } = capacityAndAttendance(playerSnapshot)
+    const capacity = Number(cap || 0)
+    const attended = Number(inAtt || 0)
+    const unattended = Math.max(0, totalClients - attended)
+    return { totalClients, capacity, attended, unattended }
+  }, [currentPlayer, cashNow, current])
+
+  const isDowngrade = useMemo(() => {
+    const desired = normLevel(selectedLevel)
+    if (!desired) return false
+    return (LEVEL_RANK[desired] || 0) < (LEVEL_RANK[current] || 0)
+  }, [selectedLevel, current])
+
+  const handleSelect = (level) => {
     const desired = normLevel(level)
     if (!desired) return
-
-    // ✅ Bloqueia só recompra do nível ATUAL
     if (desired === current) return
+    setSelectedLevel(desired)
+  }
 
-    const row = LEVELS[desired]
-    const need = Number(row?.compra || 0)
-    const cash = Number(currentCash)
+  const handleConfirm = async () => {
+    if (!draftPayload) return
+
+    const need = Number(draftPayload.compra || 0)
+    const cash = Number(cashNow)
 
     if (Number.isFinite(cash) && cash >= 0 && cash < need) {
       pushModal(
@@ -58,7 +125,7 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
       return
     }
 
-    onResolve?.({ action: 'BUY', level: desired, ...row })
+    onResolve?.(draftPayload)
   }
 
   function resolveSkip(){ onResolve?.({ action:'SKIP' }) }
@@ -72,6 +139,26 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
     return () => { document.body.style.overflow = prev }
   }, [])
 
+  const formatMoneySigned = (n) => {
+    const v = Number(n || 0)
+    const abs = Math.abs(v).toLocaleString()
+    if (v > 0) return `+ $ ${abs}`
+    if (v < 0) return `- $ ${abs}`
+    return `$ ${abs}`
+  }
+
+  const paybackLabel = (() => {
+    if (!mixReturn) return null
+    if (mixReturn.status === 'no_financial_return' || mixReturn.paybackRounds == null) {
+      return 'Sem retorno financeiro estimado'
+    }
+    if (mixReturn.paybackRounds === 0) {
+      return 'Retorno estimado: 0 rodadas'
+    }
+    const rounded = Math.ceil(mixReturn.paybackRounds * 10) / 10
+    return `Retorno estimado: ${rounded} rodadas`
+  })()
+
   return (
     <div style={S.wrap} role="dialog" aria-modal="true" aria-label="Mix de Produtos">
       <div style={S.card}>
@@ -81,11 +168,22 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
 
         <div style={S.note}>
           <div style={{fontWeight:900, marginBottom:4}}>MIX DE PRODUTOS</div>
-          <div>Base para cálculo de <b>Despesa</b>/<b>Faturamento</b>: multiplicar pela <b>quantidade total de clientes</b>.</div>
+          <div>Valores de despesa e faturamento nos cards são bases <b>por cliente</b>.</div>
         </div>
 
-        {Number.isFinite(Number(currentCash)) && (
-          <div style={S.saldo}>Saldo disponível: <b>$ {Number(currentCash || 0).toLocaleString()}</b></div>
+        <p className="purchasePreviewHint">
+          O faturamento do Mix de Produtos é calculado sobre os clientes atendidos.
+          As despesas são calculadas sobre todos os clientes da carteira.
+          Se a capacidade for menor que a quantidade de clientes, parte da carteira pode
+          gerar despesas sem gerar faturamento do Mix.
+        </p>
+        <p className="purchasePreviewHint">
+          A compra não aumenta sua capacidade de atendimento. O valor investido sai do caixa
+          e é registrado em bens. A troca de nível cobra o preço cheio, sem desconto pelo nível atual.
+        </p>
+
+        {Number.isFinite(Number(cashNow)) && (
+          <div style={S.saldo}>Saldo disponível: <b>$ {Number(cashNow || 0).toLocaleString()}</b></div>
         )}
 
         {/* Cards (mesmo estilo da modal anterior) */}
@@ -94,11 +192,12 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
             const v = LEVELS[k]
             const isOwned = current === k  // ✅ apenas o atual
             const isDisabled = isOwned
+            const isSelected = selectedLevel === k
 
             return (
               <div key={k} style={{
                 ...S.cardItem, 
-                borderColor: isOwned ? '#16a34a' : 'rgba(255,255,255,.15)',
+                borderColor: isOwned ? '#16a34a' : (isSelected ? '#2442f9' : 'rgba(255,255,255,.15)'),
                 opacity: isDisabled ? 0.6 : 1
               }}>
                 <div style={{
@@ -112,26 +211,90 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
                 <ul style={S.lines}>
                   <li><b>{v.label}</b></li>
                   <li>Compra: <b>$ {v.compra.toLocaleString()}</b></li>
-                  <li>Despesa: <b>$ {v.despesa.toLocaleString()}</b></li>
-                  <li>Faturamento: <b>$ {v.faturamento.toLocaleString()}</b></li>
+                  <li>Despesa: <b>$ {v.despesa.toLocaleString()}</b> / cliente</li>
+                  <li>Faturamento: <b>$ {v.faturamento.toLocaleString()}</b> / cliente atendido</li>
                 </ul>
                 <button
                   type="button"
                   style={{
                     ...S.buyBtn,
-                    background: isDisabled ? '#6b7280' : '#2442f9',
+                    background: isDisabled ? '#6b7280' : (isSelected ? '#1d4ed8' : '#2442f9'),
                     cursor: isDisabled ? 'not-allowed' : 'pointer'
                   }}
-                  onClick={() => resolveBuy(k)}
+                  onClick={() => handleSelect(k)}
                   disabled={isDisabled}
-                  title={isDisabled ? `Mix nível ${k} já adquirido` : `Comprar Mix de Produtos ${k}`}
+                  title={isDisabled ? `Mix nível ${k} já adquirido` : `Selecionar Mix de Produtos ${k}`}
                 >
-                  {isDisabled ? 'Já Adquirido' : `Comprar ${k}`}
+                  {isDisabled ? 'Já Adquirido' : (isSelected ? `Selecionado ${k}` : `Selecionar ${k}`)}
                 </button>
               </div>
             )
           })}
         </div>
+
+        {purchaseImpact && (
+          <>
+            <PurchaseImpactPreview impact={purchaseImpact} />
+
+            <div className="purchasePreviewExtra">
+              <div className="purchasePreviewExtraTitle">Carteira e retorno (Mix)</div>
+
+              <div className="purchasePreviewRow">
+                <span>Total de clientes</span>
+                <span>{portfolioStats.totalClients.toLocaleString()}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Clientes atendidos</span>
+                <span>{portfolioStats.attended.toLocaleString()}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Clientes sem atendimento</span>
+                <span>{portfolioStats.unattended.toLocaleString()}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Capacidade atual</span>
+                <span>{portfolioStats.capacity.toLocaleString()}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>CAPEX → bens</span>
+                <span>$ {Number(draftPayload?.compra || 0).toLocaleString()} saem do caixa e entram em bens</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Impacto líquido incremental por rodada</span>
+                <span>{formatMoneySigned(mixReturn?.incrementalNet)}</span>
+              </div>
+              <div className="purchasePreviewRow purchasePreviewRowStrong">
+                <span>{paybackLabel}</span>
+              </div>
+
+              {portfolioStats.attended === 0 && (
+                <div className="purchasePreviewAlert">
+                  Sem clientes atendidos, o Mix não gera faturamento neste momento.
+                </div>
+              )}
+              {portfolioStats.totalClients > portfolioStats.attended && (
+                <div className="purchasePreviewAlert">
+                  Há clientes sem atendimento. As despesas do Mix consideram toda a carteira, mas o faturamento considera apenas os clientes atendidos.
+                </div>
+              )}
+              {mixReturn && mixReturn.incrementalNet <= 0 && (
+                <div className="purchasePreviewAlert">
+                  A troca selecionada não melhora o resultado líquido mensal no estado atual da empresa.
+                </div>
+              )}
+              {mixReturn && !mixReturn.paysBackWithinHorizon && mixReturn.status !== 'no_cost' && mixReturn.status !== 'no_financial_return' && (
+                <div className="purchasePreviewAlert">
+                  Este investimento não se recupera no horizonte atual de 5 rodadas.
+                </div>
+              )}
+              {isDowngrade && (
+                <div className="purchasePreviewAlert">
+                  Você está selecionando um nível inferior. O jogo ainda cobra o preço cheio por essa troca.
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         <div style={S.actions}>
           {allowBack && (
@@ -142,6 +305,20 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
           <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={resolveSkip}>
             Não comprar
           </button>
+          <button
+            type="button"
+            style={{
+              ...S.bigBtn,
+              background: draftPayload ? '#75e16c' : '#365b31',
+              color: '#0b120a',
+              cursor: draftPayload ? 'pointer' : 'not-allowed',
+            }}
+            onClick={handleConfirm}
+            disabled={!draftPayload}
+            title={!draftPayload ? 'Selecione um nível diferente do atual' : `Confirmar compra do nível ${draftPayload.level}`}
+          >
+            {draftPayload ? `Confirmar compra ${draftPayload.level}` : 'Confirmar compra'}
+          </button>
         </div>
       </div>
     </div>
@@ -151,7 +328,7 @@ export default function MixProductsModal({ onResolve, currentCash, currentLevel 
 const S = {
   wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
   card: {
-    width:'min(980px, 94vw)', background:'#1b1f2a', color:'#e9ecf1',
+    width:'min(980px, 94vw)', maxHeight:'92vh', overflowY:'auto', background:'#1b1f2a', color:'#e9ecf1',
     borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
     border:'1px solid rgba(255,255,255,.12)', position:'relative'
   },
@@ -169,7 +346,7 @@ const S = {
   saldo:{ margin:'0 0 10px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
 
   // --- Cards (igual padrão anterior)
-  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, marginTop:8 },
+  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, marginTop:8, marginBottom:12 },
   cardItem:{ background:'#0f1320', border:'1px solid', borderRadius:14, padding:'12px', display:'flex', flexDirection:'column', gap:8 },
   cardBadge:{ width:'100%', height:6, borderRadius:999, opacity:.9 },
   pill:{ alignSelf:'flex-start', fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999, color:'#111' },
@@ -177,6 +354,6 @@ const S = {
 
   buyBtn:{ marginTop:'auto', padding:'10px 12px', borderRadius:10, border:'none', fontWeight:900, cursor:'pointer', background:'#2442f9', color:'#fff' },
 
-  actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14 },
+  actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14, flexWrap:'wrap' },
   bigBtn: { minWidth:160, padding:'14px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
 }
