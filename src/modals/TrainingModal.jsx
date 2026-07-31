@@ -1,5 +1,8 @@
 // src/modals/TrainingModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
+import { MANAGER_BOOST_BY_CERT } from '../game/gameRules'
+import { previewTrainingPurchaseImpact } from '../game/trainingPurchase.js'
 
 /**
  * TABELA DE TREINAMENTOS
@@ -12,6 +15,7 @@ const PRODUCTS = [
   {
     id: 'personalizado',
     label: 'Treinamento de venda personalizado\nCasagrande Consultores',
+    shortLabel: 'Treinamento de venda personalizado',
     price: 500,
     cert: 'azul',
     colors: { bg: '#0f2848', border: '#3b82f6', pill: '#60a5fa' }, // AZUL
@@ -19,6 +23,7 @@ const PRODUCTS = [
   {
     id: 'fieldsales',
     label: 'Curso Field Sales Collab\nMultiplier Educação e\nCasagrande Consultores',
+    shortLabel: 'Field Sales Collab',
     price: 500,
     cert: 'amarelo',
     colors: { bg: '#3a3202', border: '#facc15', pill: '#fde047' }, // AMARELO
@@ -26,10 +31,18 @@ const PRODUCTS = [
   {
     id: 'imersaomultiplier',
     label: 'Pacote Imersões\nMultiplier Educação',
+    shortLabel: 'Pacote Imersões',
     price: 500,
     cert: 'roxo',
     colors: { bg: '#2b0840', border: '#a855f7', pill: '#c084fc' }, // ROXO
   },
+]
+
+const VENDOR_TYPE_META = [
+  { id: 'comum',  label: 'Vendedor Comum', shortBtn: 'Vend. Comum' },
+  { id: 'field',  label: 'Field Sales', shortBtn: 'Field Sales' },
+  { id: 'inside', label: 'Inside Sales', shortBtn: 'Inside Sales' },
+  { id: 'gestor', label: 'Gestor Comercial', shortBtn: 'Gestor' },
 ]
 
 /**
@@ -44,14 +57,25 @@ const PRODUCTS = [
  *      • { action:'SKIP' }
  * - ownedByType?: { [vendorType]: Set<string> | string[] }
  * - canTrain?: { comum?:boolean|number|string, field?:boolean|number|string, inside?:boolean|number|string, gestor?:boolean|number|string }
+ * - currentCash?: number
+ * - currentPlayer?: object (snapshot somente leitura para preview)
  */
-export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = {}, allowBack = false }) {
+export default function TrainingModal({
+  onResolve,
+  ownedByType = {},
+  canTrain = {},
+  allowBack = false,
+  currentCash = null,
+  currentPlayer = null,
+}) {
   // Normaliza: aceita 0/1, números em string, booleanos
   const toNum = (v) => (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : v)
   const hasRole = (v) => {
     const val = toNum(v)
     return typeof val === 'number' ? val > 0 : !!val
   }
+
+  const cashNow = Number(currentCash != null ? currentCash : (currentPlayer?.cash ?? 0))
 
   // NÃO usar default true; só mostra se tiver pelo menos 1 daquele tipo
   const canMap = useMemo(() => ({
@@ -63,20 +87,16 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
 
   // Tipos disponíveis (precisa ter profissional e ainda ter algo a comprar)
   const ALL_IDS = PRODUCTS.map(p => p.id)
-  const typeList = useMemo(() => ([
-    { id: 'comum',  label: 'Vend. Comum' },
-    { id: 'field',  label: 'Field Sales' },
-    { id: 'inside', label: 'Inside Sales' },
-    { id: 'gestor', label: 'Gestor' },
-  ])
-    .filter(t => canMap[t.id]) // tem profissional do tipo
-    .filter(t => {
-      const owned = ownedByType[t.id] instanceof Set
-        ? ownedByType[t.id]
-        : new Set(ownedByType[t.id] || [])
-      return ALL_IDS.some(id => !owned.has(id)) // ainda há certificado para comprar
-    })
-  , [ownedByType, canMap])
+  const typeList = useMemo(() => (
+    VENDOR_TYPE_META
+      .filter(t => canMap[t.id]) // tem profissional do tipo
+      .filter(t => {
+        const owned = ownedByType[t.id] instanceof Set
+          ? ownedByType[t.id]
+          : new Set(ownedByType[t.id] || [])
+        return ALL_IDS.some(id => !owned.has(id)) // ainda há certificado para comprar
+      })
+  ), [ownedByType, canMap])
 
   // Estado para seleção múltipla de tipos de vendedores e treinamentos únicos
   const [selectedVendorTypes, setSelectedVendorTypes] = useState(() => new Set())
@@ -91,19 +111,31 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
 
   const closeRef = useRef(null)
 
-  // Calcula totais e estatísticas - aplica os mesmos treinamentos a todos os tipos selecionados
+  // Calcula totais: só itens ainda não possuídos por cada tipo selecionado
   const purchases = useMemo(() => {
     const result = []
-    if (selectedTrainings.size > 0) {
-      const items = Array.from(selectedTrainings).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
-      const totalPerType = items.reduce((acc, item) => acc + (item?.price || 0), 0)
-      
-      selectedVendorTypes.forEach(vendorType => {
-        result.push({ vendorType, items, total: totalPerType })
-      })
-    }
+    const selectedItems = Array.from(selectedTrainings)
+      .map(id => PRODUCTS.find(p => p.id === id))
+      .filter(Boolean)
+
+    selectedVendorTypes.forEach((vendorType) => {
+      const owned = ownedByType[vendorType] instanceof Set
+        ? ownedByType[vendorType]
+        : new Set(ownedByType[vendorType] || [])
+
+      const items = selectedItems.filter(item => !owned.has(item.id))
+      if (items.length === 0) return
+
+      const total = items.reduce(
+        (acc, item) => acc + Number(item?.price || 0),
+        0
+      )
+
+      result.push({ vendorType, items, total })
+    })
+
     return result
-  }, [selectedVendorTypes, selectedTrainings])
+  }, [selectedVendorTypes, selectedTrainings, ownedByType])
 
   const grandTotal = useMemo(() => 
     purchases.reduce((acc, p) => acc + p.total, 0), 
@@ -112,25 +144,73 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
 
   const certsCount = useMemo(() => {
     const counts = { azul: 0, amarelo: 0, roxo: 0 }
-    if (selectedTrainings.size > 0) {
-      const items = Array.from(selectedTrainings).map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean)
-      items.forEach(item => {
-        counts[item.cert] = (counts[item.cert] || 0) + selectedVendorTypes.size
+    purchases.forEach((purchase) => {
+      ;(purchase.items || []).forEach((item) => {
+        if (!item?.cert) return
+        counts[item.cert] = (counts[item.cert] || 0) + 1
       })
-    }
+    })
     return counts
-  }, [selectedTrainings, selectedVendorTypes.size])
+  }, [purchases])
 
   const ownedUpdate = useMemo(() => {
     const result = {}
-    if (selectedTrainings.size > 0) {
-      const trainingIds = Array.from(selectedTrainings)
-      selectedVendorTypes.forEach(vendorType => {
-        result[vendorType] = trainingIds
-      })
-    }
+    purchases.forEach((purchase) => {
+      result[purchase.vendorType] = (purchase.items || []).map(item => item.id)
+    })
     return result
-  }, [selectedTrainings, selectedVendorTypes])
+  }, [purchases])
+
+  const draftPayload = useMemo(() => {
+    if (purchases.length === 0) return null
+    return {
+      action: 'BUY',
+      purchases,
+      grandTotal,
+      bensDelta: grandTotal,
+      certsCount,
+      ownedUpdate,
+    }
+  }, [purchases, grandTotal, certsCount, ownedUpdate])
+
+  const purchaseImpact = useMemo(() => {
+    if (!draftPayload) return null
+    const playerSnapshot = {
+      ...(currentPlayer || {}),
+      cash: cashNow,
+    }
+    return previewTrainingPurchaseImpact({
+      player: playerSnapshot,
+      payload: draftPayload,
+    })
+  }, [draftPayload, currentPlayer, cashNow])
+
+  const selectedTypeLabels = useMemo(() => {
+    return Array.from(selectedVendorTypes).map((id) => {
+      const meta = VENDOR_TYPE_META.find(t => t.id === id)
+      return meta?.label || id
+    })
+  }, [selectedVendorTypes])
+
+  const trainsGestor = purchases.some((p) => p.vendorType === 'gestor')
+
+  const gestorBoostHint = useMemo(() => {
+    const maxAvailableCerts = Math.min(
+      PRODUCTS.length,
+      Math.max(0, (MANAGER_BOOST_BY_CERT || []).length - 1)
+    )
+    const ladder = Array.from(
+      { length: maxAvailableCerts },
+      (_, index) => index + 1
+    )
+      .map((certCount) => {
+        const ratio = MANAGER_BOOST_BY_CERT?.[certCount]
+        const pct = Math.round(Number(ratio || 0) * 100)
+        return `${certCount} cert.: ${pct}%`
+      })
+      .join(' · ')
+    return ladder
+  }, [])
 
   const toggleVendorType = (vendorType) => {
     setSelectedVendorTypes(prev => {
@@ -167,16 +247,8 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
   }
 
   const handleBuy = () => {
-    if (purchases.length === 0) return
-
-    onResolve?.({
-      action: 'BUY',
-      purchases,
-      grandTotal,
-      bensDelta: grandTotal,
-      certsCount,
-      ownedUpdate,
-    })
+    if (!draftPayload) return
+    onResolve?.(draftPayload)
   }
 
   const clearAll = () => {
@@ -209,6 +281,18 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
 
         <h2 style={S.title}>Escolha os vendedores e treinamentos que deseja comprar:</h2>
 
+        <p className="purchasePreviewHint">
+          Cada certificação aumenta os resultados conforme o tipo de profissional treinado.
+          As cores também podem ser utilizadas em cartas de Sorte ou Revés.
+          Treinamentos não aumentam a capacidade de atendimento e não contratam novos profissionais.
+        </p>
+        <p className="purchasePreviewHint">
+          As três certificações possuem o mesmo peso financeiro dentro de um mesmo tipo de profissional.
+          A cor diferencia condições e eventos do jogo.
+        </p>
+
+        <div style={S.saldo}>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
+
         {noTypesLeft ? (
           <div style={S.allDoneBox}>
             {noProfessionAvailable
@@ -219,7 +303,8 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
           <>
             <div style={{marginBottom: '16px'}}>
               <p style={{margin: '0 0 8px', opacity: 0.9, fontSize: '14px'}}>
-                Selecione os tipos de vendedores que deseja treinar:
+                Selecione os tipos de profissionais que deseja treinar
+                (Vendedor Comum, Inside Sales, Field Sales ou Gestor Comercial):
               </p>
               <div style={{
                 ...S.vendorRow,
@@ -236,7 +321,7 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
                       borderColor: selectedVendorTypes.has(v.id) ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.15)'
                     }}
                   >
-                    {v.label}
+                    {v.shortBtn}
                   </button>
                 ))}
               </div>
@@ -254,10 +339,7 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
               <div style={{marginBottom: '12px', padding: '8px 12px', background: '#2a2f3b', borderRadius: '8px', border: '1px solid rgba(255,255,255,.15)'}}>
                 <div style={{fontWeight: 'bold', marginBottom: '4px'}}>Tipos selecionados:</div>
                 <div style={{fontSize: '14px', opacity: 0.9}}>
-                  {Array.from(selectedVendorTypes).map(vendorType => {
-                    const typeInfo = typeList.find(t => t.id === vendorType)
-                    return typeInfo?.label
-                  }).join(', ')}
+                  {selectedTypeLabels.join(', ')}
                 </div>
               </div>
               
@@ -270,6 +352,17 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
                       : new Set(ownedByType[vendorType] || [])
                     return owned.has(p.id)
                   })
+                  const receivingLabels = Array.from(selectedVendorTypes)
+                    .filter((vendorType) => {
+                      const owned = ownedByType[vendorType] instanceof Set
+                        ? ownedByType[vendorType]
+                        : new Set(ownedByType[vendorType] || [])
+                      return !owned.has(p.id)
+                    })
+                    .map((id) => VENDOR_TYPE_META.find(t => t.id === id)?.label || id)
+                  const appliedLine = receivingLabels.length > 0
+                    ? `${p.shortLabel} — aplicado em ${receivingLabels.join(', ')}`
+                    : `${p.shortLabel} — já adquirido para os tipos selecionados`
                   
                   return (
                     <button
@@ -290,7 +383,8 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
                       <div style={S.pill(p.colors.pill)}>
                         Certificado {p.cert === 'azul' ? 'Azul' : p.cert === 'amarelo' ? 'Amarelo' : 'Roxo'}
                       </div>
-                      <div style={{whiteSpace:'pre-line', fontWeight:800, marginBottom:10}}>{p.label}</div>
+                      <div style={{whiteSpace:'pre-line', fontWeight:800, marginBottom:8}}>{p.label}</div>
+                      <div className="trainingAppliedLine">{appliedLine}</div>
                       <div style={{fontSize:22, fontWeight:900}}>$ {p.price.toLocaleString()}</div>
                     </button>
                   )
@@ -317,6 +411,26 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
               </div>
             </div>
 
+            {trainsGestor && (
+              <div className="purchasePreviewExtra">
+                <div className="purchasePreviewExtraTitle">Gestor Comercial</div>
+                <p className="purchasePreviewHint" style={{ marginBottom: gestorBoostHint ? 8 : 0 }}>
+                  Gestores sem certificação não aumentam o faturamento dos vendedores.
+                  As certificações liberam e ampliam esse benefício, mas também aumentam as despesas do gestor.
+                </p>
+                {gestorBoostHint ? (
+                  <div className="purchasePreviewRow">
+                    <span>Boost por quantidade de certificações do gestor</span>
+                    <span>{gestorBoostHint}</span>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {purchaseImpact && (
+              <PurchaseImpactPreview impact={purchaseImpact} />
+            )}
+
             <div style={S.btnRow}>
               {allowBack && (
                 <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>Voltar</button>
@@ -340,9 +454,14 @@ export default function TrainingModal({ onResolve, ownedByType = {}, canTrain = 
 
 const S = {
   wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: { width:'min(980px, 94vw)', maxWidth:980, background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative' },
+  card: {
+    width:'min(980px, 94vw)', maxWidth:980, maxHeight:'92vh', overflowY:'auto',
+    background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px',
+    boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative'
+  },
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
   title:{ margin:'6px 0 12px', fontWeight:900 },
+  saldo:{ margin:'0 0 12px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
   allDoneBox: { background:'#0f1320', border:'1px solid rgba(255,255,255,.15)', borderRadius:12, padding:'14px', fontWeight:800, textAlign:'center' },
 
   vendorRow: { display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:10, marginBottom:12 },
@@ -362,6 +481,6 @@ const S = {
 
   actionsRow: { display:'flex', alignItems:'center', gap:12, margin:'6px 0 6px' },
   smallBtn: { padding:'10px 14px', borderRadius:10, border:'none', color:'#fff', fontWeight:800, cursor:'pointer' },
-  btnRow: { display:'flex', gap:12, justifyContent:'flex-end', marginTop:12 },
+  btnRow: { display:'flex', gap:12, justifyContent:'flex-end', marginTop:12, flexWrap:'wrap' },
   bigBtn: { minWidth:160, padding:'14px 18px', borderRadius:12, border:'none', color:'#fff', fontWeight:900, cursor:'pointer' },
 }

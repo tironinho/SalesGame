@@ -638,3 +638,12 @@ html, body {
   line-height: 1.4;
   font-weight: 700;
 }
+
+.trainingAppliedLine {
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+  opacity: 0.95;
+  margin: 0 0 10px;
+  color: #e9ecf1;
+}

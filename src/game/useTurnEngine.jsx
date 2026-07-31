@@ -1456,19 +1456,21 @@ export function useTurnEngine({
     if (isTrainingTile && isMyTurn && pushModal && awaitTop && !shouldProcessPurchaseInQueue) {
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
+        const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || players.find(isMine) || nextPlayers[curIdx]
         const res = await openModalAndWait(<TrainingModal
+          currentCash={Number(buyerPlayer?.cash ?? myCash)}
+          currentPlayer={buyerPlayer || null}
           canTrain={{
-            comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
-            field:  Number(ownerForTraining?.fieldSales) || 0,
-            inside: Number(ownerForTraining?.insideSales) || 0,
-            gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
+            comum:  Number(buyerPlayer?.vendedoresComuns) || 0,
+            field:  Number(buyerPlayer?.fieldSales) || 0,
+            inside: Number(buyerPlayer?.insideSales) || 0,
+            gestor: Number(buyerPlayer?.gestores ?? buyerPlayer?.gestoresComerciais ?? buyerPlayer?.managers) || 0
           }}
           ownedByType={{
-            comum: ownerForTraining?.trainingsByVendor?.comum || [],
-            field: ownerForTraining?.trainingsByVendor?.field || [],
-            inside: ownerForTraining?.trainingsByVendor?.inside || [],
-            gestor: ownerForTraining?.trainingsByVendor?.gestor || []
+            comum: buyerPlayer?.trainingsByVendor?.comum || [],
+            field: buyerPlayer?.trainingsByVendor?.field || [],
+            inside: buyerPlayer?.trainingsByVendor?.inside || [],
+            gestor: buyerPlayer?.trainingsByVendor?.gestor || []
           }}
         />)
         if (!res || res.action !== 'BUY') return
@@ -1685,19 +1687,21 @@ export function useTurnEngine({
           }
 
           if (open === 'TRAINING') {
-            const ownerForTraining = players.find(isMine) || nextPlayers[curIdx]
+            const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || players.find(isMine) || nextPlayers[curIdx]
             const r2 = await openModalAndWait(<TrainingModal
+              currentCash={getCash()}
+              currentPlayer={buyerPlayer || null}
               canTrain={{
-                comum:  Number(ownerForTraining?.vendedoresComuns) || 0,
-                field:  Number(ownerForTraining?.fieldSales) || 0,
-                inside: Number(ownerForTraining?.insideSales) || 0,
-                gestor: Number(ownerForTraining?.gestores ?? ownerForTraining?.gestoresComerciais ?? ownerForTraining?.managers) || 0
+                comum:  Number(buyerPlayer?.vendedoresComuns) || 0,
+                field:  Number(buyerPlayer?.fieldSales) || 0,
+                inside: Number(buyerPlayer?.insideSales) || 0,
+                gestor: Number(buyerPlayer?.gestores ?? buyerPlayer?.gestoresComerciais ?? buyerPlayer?.managers) || 0
               }}
               ownedByType={{
-                comum: ownerForTraining?.trainingsByVendor?.comum || [],
-                field: ownerForTraining?.trainingsByVendor?.field || [],
-                inside: ownerForTraining?.trainingsByVendor?.inside || [],
-                gestor: ownerForTraining?.trainingsByVendor?.gestor || []
+                comum: buyerPlayer?.trainingsByVendor?.comum || [],
+                field: buyerPlayer?.trainingsByVendor?.field || [],
+                inside: buyerPlayer?.trainingsByVendor?.inside || [],
+                gestor: buyerPlayer?.trainingsByVendor?.gestor || []
               }}
               allowBack={true}
             />)
@@ -2287,18 +2291,21 @@ export function useTurnEngine({
           
           if (ev.type === 'TRAINING_PURCHASE') {
             openingModalRef.current = true
+            const buyerPlayer = getById(localPlayers, ownerId) || meNow
             const res = await openModalAndWait(<TrainingModal
+              currentCash={getCurrentCash()}
+              currentPlayer={buyerPlayer || null}
               canTrain={{
-                comum: Number(meNow?.vendedoresComuns) || 0,
-                field: Number(meNow?.fieldSales) || 0,
-                inside: Number(meNow?.insideSales) || 0,
-                gestor: Number(meNow?.gestores ?? meNow?.gestoresComerciais ?? meNow?.managers) || 0
+                comum: Number(buyerPlayer?.vendedoresComuns) || 0,
+                field: Number(buyerPlayer?.fieldSales) || 0,
+                inside: Number(buyerPlayer?.insideSales) || 0,
+                gestor: Number(buyerPlayer?.gestores ?? buyerPlayer?.gestoresComerciais ?? buyerPlayer?.managers) || 0
               }}
               ownedByType={{
-                comum: meNow?.trainingsByVendor?.comum || [],
-                field: meNow?.trainingsByVendor?.field || [],
-                inside: meNow?.trainingsByVendor?.inside || [],
-                gestor: meNow?.trainingsByVendor?.gestor || []
+                comum: buyerPlayer?.trainingsByVendor?.comum || [],
+                field: buyerPlayer?.trainingsByVendor?.field || [],
+                inside: buyerPlayer?.trainingsByVendor?.inside || [],
+                gestor: buyerPlayer?.trainingsByVendor?.gestor || []
               }}
             />)
             if (res && res.action === 'BUY') {
@@ -2604,7 +2611,8 @@ export function useTurnEngine({
                   break
                 }
               } else if (open === 'TRAINING') {
-                const r2 = await openModalAndWait(<TrainingModal canTrain={{ comum: Number(meForBuy?.vendedoresComuns) || 0, field: Number(meForBuy?.fieldSales) || 0, inside: Number(meForBuy?.insideSales) || 0, gestor: Number(meForBuy?.gestores ?? meForBuy?.gestoresComerciais ?? meForBuy?.managers) || 0 }} ownedByType={{ comum: meForBuy?.trainingsByVendor?.comum || [], field: meForBuy?.trainingsByVendor?.field || [], inside: meForBuy?.trainingsByVendor?.inside || [], gestor: meForBuy?.trainingsByVendor?.gestor || [] }} allowBack={true} />)
+                const buyerPlayer = getById(localPlayers, ownerId) || meForBuy
+                const r2 = await openModalAndWait(<TrainingModal currentCash={getCurrentCash()} currentPlayer={buyerPlayer || null} canTrain={{ comum: Number(buyerPlayer?.vendedoresComuns) || 0, field: Number(buyerPlayer?.fieldSales) || 0, inside: Number(buyerPlayer?.insideSales) || 0, gestor: Number(buyerPlayer?.gestores ?? buyerPlayer?.gestoresComerciais ?? buyerPlayer?.managers) || 0 }} ownedByType={{ comum: buyerPlayer?.trainingsByVendor?.comum || [], field: buyerPlayer?.trainingsByVendor?.field || [], inside: buyerPlayer?.trainingsByVendor?.inside || [], gestor: buyerPlayer?.trainingsByVendor?.gestor || [] }} allowBack={true} />)
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
