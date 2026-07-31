@@ -47,6 +47,7 @@ import { buildManagerPurchaseDeltas } from './managersPurchase'
 import { buildCommonSellersPurchaseDeltas } from './commonSellersPurchase'
 import { buildFieldSalesPurchaseDeltas } from './fieldSalesPurchase'
 import { buildInsideSalesPurchaseDeltas } from './insideSalesPurchase'
+import { buildErpPurchaseDeltas } from './erpPurchase'
 import { setCashAuditContext } from '../debug/cashAudit'
 import { mkCashMeta } from '../debug/cashMeta'
 
@@ -1429,18 +1430,21 @@ export function useTurnEngine({
       willOpenModal = true
       openingModalRef.current = true // ✅ CORREÇÃO: Marca ANTES de abrir
       ;(async () => {
-        const currentErpLevel = players[curIdx]?.erpLevel || null
-        const erpOwned = players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
+        const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId) || nextPlayers[curIdx]
+        const currentErpLevel = buyerPlayer?.erpLevel || players[curIdx]?.erpLevel || null
+        const erpOwned = buyerPlayer?.erpOwned || buyerPlayer?.erp || players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
         const res = await openModalAndWait(<ERPSystemsModal 
-          currentCash={nextPlayers[curIdx]?.cash ?? myCash}
+          currentCash={buyerPlayer?.cash ?? nextPlayers[curIdx]?.cash ?? myCash}
           currentLevel={currentErpLevel}
           erpOwned={erpOwned}
+          currentPlayer={buyerPlayer || null}
         />)
         if (!res || res.action !== 'BUY') return
-        const price = Number(res.values?.compra || 0)
+        const deltas = buildErpPurchaseDeltas(res)
+        const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
         if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
         setPlayers(ps => {
-          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level }))
+          const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
           // ✅ CORREÇÃO: Usa turnIdx e round atuais (não nextTurnIdx/nextRound) para compras durante o turno
           broadcastState(upd, turnIdx, currentRoundRef.current)
           return upd
@@ -1621,21 +1625,24 @@ export function useTurnEngine({
           }
 
           if (open === 'ERP') {
-            const currentErpLevel = players[curIdx]?.erpLevel || null
-            const erpOwned = players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
+            const buyerPlayer = nextPlayers.find(p => String(p.id) === ownerId)
+            const currentErpLevel = buyerPlayer?.erpLevel || players[curIdx]?.erpLevel || null
+            const erpOwned = buyerPlayer?.erpOwned || buyerPlayer?.erp || players[curIdx]?.erpOwned || players[curIdx]?.erp || {}
             const r2 = await openModalAndWait(<ERPSystemsModal 
               currentCash={getCash()}
               currentLevel={currentErpLevel}
               erpOwned={erpOwned}
+              currentPlayer={buyerPlayer || null}
               allowBack={true}
             />)
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY') {
-              const price = Number(r2.values?.compra || 0)
+              const deltas = buildErpPurchaseDeltas(r2)
+              const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (!requireFunds(curIdx, price, 'comprar ERP')) { setTurnLockBroadcast(false); return }
               setPlayers(ps => {
-                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
+                const upd = mapById(ps, ownerId, (p) => applyDeltas(p, deltas))
                 // ✅ CORREÇÃO: Usa turnIdx e round atuais para compras durante o turno
                 broadcastState(upd, turnIdx, currentRoundRef.current); return upd
               })
@@ -2254,17 +2261,20 @@ export function useTurnEngine({
           // ✅ CORREÇÃO: Casas de compra processadas após eventos de passagem
           if (ev.type === 'ERP_PURCHASE') {
             openingModalRef.current = true
-            const currentErpLevel = meNow?.erpLevel || null
-            const erpOwned = meNow?.erpOwned || meNow?.erp || {}
+            const buyerPlayer = getById(localPlayers, ownerId) || meNow
+            const currentErpLevel = buyerPlayer?.erpLevel || null
+            const erpOwned = buyerPlayer?.erpOwned || buyerPlayer?.erp || {}
             const res = await openModalAndWait(<ERPSystemsModal 
               currentCash={getCurrentCash()}
               currentLevel={currentErpLevel}
               erpOwned={erpOwned}
+              currentPlayer={buyerPlayer || null}
             />)
             if (res && res.action === 'BUY') {
-              const price = Number(res.values?.compra || 0)
+              const deltas = buildErpPurchaseDeltas(res)
+              const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
               if (getCurrentCash() >= price) {
-                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: res.level }))
+                localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
                 commitLocalPlayers(localPlayers)
                 broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                 if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
@@ -2558,13 +2568,15 @@ export function useTurnEngine({
                   break
                 }
               } else if (open === 'ERP') {
-                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={meForBuy?.erpLevel || null} erpOwned={meForBuy?.erpOwned || meForBuy?.erp || {}} allowBack={true} />)
+                const buyerPlayer = getById(localPlayers, ownerId) || meForBuy
+                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.erpLevel || null} erpOwned={buyerPlayer?.erpOwned || buyerPlayer?.erp || {}} currentPlayer={buyerPlayer || null} allowBack={true} />)
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
-                  const price = Number(r2.values?.compra || 0)
+                  const deltas = buildErpPurchaseDeltas(r2)
+                  const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
                   if (getCurrentCash() >= price) {
-                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, { cashDelta: -price, erpLevelSet: r2.level }))
+                    localPlayers = mapById(localPlayers, ownerId, (p) => applyDeltas(p, deltas))
                     commitLocalPlayers(localPlayers); broadcastState(localPlayers, turnIdxRef.current, currentRoundRef.current)
                     if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
                   }
