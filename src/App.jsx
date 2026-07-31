@@ -49,17 +49,17 @@ import { leaveRoom, startLobbyHeartbeat } from './lib/lobbies'
 
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
+import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './game/roundConfig'
 
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
 // -------------------------------------------------------------
 
-// ✅ CORREÇÃO: Função util para clamp de round (defesa em profundidade)
-const MAX_ROUNDS = 5
-const clampRound = (r) => {
+const clampRound = (r, maxRounds = DEFAULT_MAX_ROUNDS) => {
+  const limit = normalizeMaxRounds(maxRounds)
   const n = Number(r)
   if (!Number.isFinite(n)) return 1
-  return Math.min(MAX_ROUNDS, Math.max(1, n))
+  return Math.min(limit, Math.max(1, n))
 }
 
 // ✅ Defer: deixa o React renderizar antes de I/O (netCommit / BroadcastChannel)
@@ -261,6 +261,9 @@ export default function App() {
     initCashAudit({ enabled })
   }, [])
   const [round, setRound] = useState(1)
+  const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS)
+  const maxRoundsRef = useRef(maxRounds)
+  useEffect(() => { maxRoundsRef.current = maxRounds }, [maxRounds])
   const [turnIdx, setTurnIdx] = useState(0)
   const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
@@ -389,6 +392,11 @@ export default function App() {
           setRound(1)
           setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
+          if (Object.prototype.hasOwnProperty.call(d, 'maxRounds')) {
+            setMaxRounds(normalizeMaxRounds(d.maxRounds))
+          } else {
+            setMaxRounds(DEFAULT_MAX_ROUNDS)
+          }
           setTurnSeq(0)
           setLastRollTurnKey(null)
           setLog(['Jogo iniciado!'])
@@ -477,15 +485,16 @@ export default function App() {
           }
           
           // ✅ CORREÇÃO: Sincroniza round usando Math.max para proteger incrementos locais
-          // ✅ PROTEÇÃO: Clamp para garantir que nunca exiba round > MAX_ROUNDS
+          // ✅ PROTEÇÃO: Clamp para garantir que nunca exiba round > maxRounds da partida
           if (d.round !== round) {
-            const incoming = clampRound(d.round)
+            const limit = maxRoundsRef.current
+            const incoming = clampRound(d.round, limit)
             if (lastLocal && (now - lastLocal.timestamp) < 3000) {
               const localRoundChanged = lastLocal.round !== round
               if (localRoundChanged) {
                 // Se a rodada local mudou recentemente, usa Math.max para proteger o incremento
                 setRound(prevRound => {
-                  const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, incoming))
+                  const finalRound = Math.min(limit, Math.max(prevRound, incoming))
                   if (finalRound > prevRound) {
                     console.log('[App] SYNC round aplicado (clamp): local=', prevRound, 'remote=', incoming, 'final=', finalRound)
                   }
@@ -497,16 +506,20 @@ export default function App() {
             } else {
               // Sempre usa Math.max para proteger contra reversão
               setRound(prevRound => {
-                const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, incoming))
+                const finalRound = Math.min(limit, Math.max(prevRound, incoming))
                 console.log('[App] SYNC round aplicado (clamp): local=', prevRound, 'remote=', incoming, 'final=', finalRound)
                 return finalRound
               })
             }
           }
           
-          // ✅ CORREÇÃO: Se gameOver, força round para MAX_ROUNDS para estabilizar HUD
+          // ✅ Se gameOver, força round para maxRounds da partida para estabilizar HUD
           if (d.gameOver === true || d.winner) {
-            setRound(MAX_ROUNDS)
+            setRound(maxRoundsRef.current)
+          }
+
+          if (Object.prototype.hasOwnProperty.call(d, 'maxRounds')) {
+            setMaxRounds(normalizeMaxRounds(d.maxRounds))
           }
           
           // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
@@ -1012,14 +1025,27 @@ export default function App() {
 
     // --- round ---
     if (nr !== null) {
-      const safeNr = clampRound(nr)
+      const limit = Object.prototype.hasOwnProperty.call(netState, 'maxRounds')
+        ? normalizeMaxRounds(netState.maxRounds)
+        : maxRoundsRef.current
+      const safeNr = clampRound(nr, limit)
       setRound(prev => {
-        const finalRound = (isStartState ? 1 : Math.min(MAX_ROUNDS, Math.max(prev, safeNr)))
+        const finalRound = (isStartState ? 1 : Math.min(limit, Math.max(prev, safeNr)))
         return finalRound
       })
     }
     if (netState.gameOver === true || netState.winner) {
-      setRound(MAX_ROUNDS)
+      const limit = Object.prototype.hasOwnProperty.call(netState, 'maxRounds')
+        ? normalizeMaxRounds(netState.maxRounds)
+        : maxRoundsRef.current
+      setRound(limit)
+    }
+
+    if (Object.prototype.hasOwnProperty.call(netState, 'maxRounds')) {
+      setMaxRounds(normalizeMaxRounds(netState.maxRounds))
+    } else if (isStartState) {
+      // Partida antiga completa sem o campo: fallback 5
+      setMaxRounds(DEFAULT_MAX_ROUNDS)
     }
 
     // --- roundFlags ---
@@ -1259,7 +1285,11 @@ export default function App() {
           Number(patchedRound || 1),
           Number(round || 1),
           Number(lastLocalStateRef.current?.round || 1)
-        ))
+        ), maxRoundsRef.current)
+
+    const safeMaxRounds = Object.prototype.hasOwnProperty.call(patch, 'maxRounds')
+      ? normalizeMaxRounds(patch.maxRounds)
+      : normalizeMaxRounds(maxRoundsRef.current)
     
     // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
     // Se não houver baseline, usa o estado atual como fallback
@@ -1366,6 +1396,7 @@ export default function App() {
         players: normalizedPlayers,
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
+        maxRounds: safeMaxRounds,
         roundFlags: nextRoundFlags,
         turnSeq: 0,
         lastRollTurnKey: null,
@@ -1435,6 +1466,7 @@ export default function App() {
           ? {
               turnPlayerId: nextTurnPlayerId,
               round: safeRound,
+              maxRounds: safeMaxRounds,
               roundFlags: nextRoundFlags,
               // ✅ TURN não inclui gameOver/winner (só ENDGAME)
             }
@@ -1444,6 +1476,7 @@ export default function App() {
               gameOver: true,
               winner: finalWinner,
               round: safeRound,
+              maxRounds: safeMaxRounds,
             }
           : {}),
         ...(patchKind === 'LOCK'
@@ -1478,6 +1511,7 @@ export default function App() {
           version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
           players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
           round: safeRound,
+          maxRounds: safeMaxRounds,
           roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
           // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
           turnLock: nextTurnLock,
@@ -1491,8 +1525,9 @@ export default function App() {
     })
   }
 
-  function broadcastStart(nextPlayers) {
+  function broadcastStart(nextPlayers, configuredMaxRounds = maxRoundsRef.current) {
     let normalized = normalizePlayers(nextPlayers)
+    const startMaxRounds = normalizeMaxRounds(configuredMaxRounds)
 
     // HOST (quem clicou iniciar) joga primeiro:
     const hostIdx = normalized.findIndex(p => String(p?.id) === String(myUid))
@@ -1507,11 +1542,14 @@ export default function App() {
     playersBeforeRef.current = null
     setTurnSeq(0)
     setLastRollTurnKey(null)
+    setMaxRounds(startMaxRounds)
+    maxRoundsRef.current = startMaxRounds
 
     // rede
     broadcastState(normalized, 0, 1, false, null, {
       turnPlayerId: firstPlayerId,
       round: 1,
+      maxRounds: startMaxRounds,
       gameOver: false,
       winner: null,
       roundFlags: Array(normalized.length).fill(false),
@@ -1525,6 +1563,7 @@ export default function App() {
         bcRef.current?.postMessage?.({
           type: 'START',
           players: normalized,
+          maxRounds: startMaxRounds,
           source: meId,
         })
       } catch (e) { console.warn('[App] broadcastStart failed:', e) }
@@ -1689,6 +1728,7 @@ export default function App() {
     setLastRollTurnKey,
     turnSeq,
     setTurnSeq,
+    maxRounds,
   })
 
   // ====== Jogo (derivações + logs) ======
@@ -1696,7 +1736,7 @@ export default function App() {
   // Mantemos estas derivações sempre declaradas para evitar React error #310.
   const currentPlayer = players[turnIdx]
   const isCurrentPlayerBankrupt = currentPlayer?.bankrupt === true
-  const isWaitingRevenue = round === 5 && players[turnIdx]?.waitingAtRevenue
+  const isWaitingRevenue = round === maxRounds && players[turnIdx]?.waitingAtRevenue
   const isMyTurnExact = (turnPlayerId != null && myUid != null) && (String(turnPlayerId) === String(myUid))
   const lockOwnerOk = turnLock ? (lockOwner != null && String(lockOwner) === String(myUid)) : true
   // ✅ Chave do turno por turnSeq (monotônico; funciona com 1–4 jogadores)
@@ -1812,6 +1852,7 @@ export default function App() {
             payload?.lobbyName ||
             payload?.lobby?.name ||
             payload?.name ||
+            payload?.lobbyId ||
             currentLobbyId ||
             'sala-demo'
           try {
@@ -1820,6 +1861,27 @@ export default function App() {
             url.searchParams.set('room', String(roomName))
             history.replaceState(null, '', url.toString())
           } catch {}
+
+          // Garante room code / lobby id para o GameNetProvider continuar inscrito em rooms.state
+          if (payload?.lobbyId) {
+            setCurrentLobbyId(String(payload.lobbyId))
+            window.__setRoomCode?.(String(payload.lobbyId))
+          }
+
+          const resumeExistingMatch =
+            !Array.isArray(payload) &&
+            payload?.resumeExistingMatch === true
+
+          if (resumeExistingMatch) {
+            // Retomada: NÃO aplicar starter kit / NÃO broadcastStart.
+            // Aguarda snapshot autoritativo de rooms.state.
+            lastLocalStateRef.current = null
+            playersBeforeRef.current = null
+            try { setMyUid(String(meId)) } catch {}
+            setPlayers([], { source: 'RESUME_EXISTING_WAIT' })
+            setPhase('game')
+            return
+          }
 
           // normaliza jogadores vindos do lobby
           const raw = Array.isArray(payload) ? payload : (payload?.players ?? payload?.lobbyPlayers ?? [])
@@ -1869,10 +1931,18 @@ export default function App() {
           setPlayers(normalized, { source: 'START_GAME' })
           setTurnIdx(0)
           setRound(1)
+          if (Object.prototype.hasOwnProperty.call(payload || {}, 'maxRounds')) {
+            const nextMax = normalizeMaxRounds(payload.maxRounds)
+            setMaxRounds(nextMax)
+            maxRoundsRef.current = nextMax
+          } else {
+            setMaxRounds(DEFAULT_MAX_ROUNDS)
+            maxRoundsRef.current = DEFAULT_MAX_ROUNDS
+          }
           setRoundFlags(new Array(normalized.length).fill(false))
           setGameOver(false); setWinner(null)
           
-          console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null')
+          console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null, maxRounds=', maxRoundsRef.current)
           setMeHud(h => {
             const mine = normalized.find(isMine)
             return {
@@ -1884,7 +1954,7 @@ export default function App() {
             }
           })
           setLog(['Jogo iniciado!'])
-          broadcastStart(normalized)
+          broadcastStart(normalized, maxRoundsRef.current)
           setPhase('game')
         }}
         />
@@ -1937,7 +2007,7 @@ export default function App() {
         </div>
 
         <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <span>Rodada: {round}</span>
+          <span>Rodada: {round}/{maxRounds}</span>
           <span className="money">💵 $ {Number(myCash).toLocaleString()}</span>
         </div>
       </header>
@@ -1995,6 +2065,8 @@ export default function App() {
           {gameOver && (
             <FinalWinners
               players={players}
+              maxRounds={maxRounds}
+              endedRound={round}
               onExit={async () => {
                 // Remove o jogador da sala antes de sair
                 if (currentLobbyId && myUid) {
@@ -2038,7 +2110,7 @@ export default function App() {
                 setTurnLockBroadcast(false)
 
                 // ✅ reinicia sincronizando para todos (resolve desync / estado preso)
-                broadcastStart(freshPlayers)
+                broadcastStart(freshPlayers, maxRoundsRef.current)
 
                 setLog(['Novo jogo iniciado!'])
               }}

@@ -10,6 +10,7 @@ import {
   countErpCollaborators,
 } from '../game/erpPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from '../game/roundConfig'
 
 const LEVELS = {
   A: { compra: 10000, despesa: ERP_RULES.A.desp, faturamento: ERP_RULES.A.fat, color:'#1d4ed8', pill:'NÍVEL A' },
@@ -29,7 +30,7 @@ const LEVELS = {
  *  - erpOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
  *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
-export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null, erpOwned = null, allowBack = false, currentPlayer = null }) {
+export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null, erpOwned = null, allowBack = false, currentPlayer = null, horizonRounds = DEFAULT_MAX_ROUNDS }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
   const [selectedLevel, setSelectedLevel] = useState(null)
@@ -62,10 +63,12 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
     })
   }, [draftPayload, currentPlayer, cashNow, current])
 
+  const safeHorizon = normalizeMaxRounds(horizonRounds, DEFAULT_MAX_ROUNDS)
+
   const erpReturn = useMemo(() => {
     if (!purchaseImpact) return null
-    return calculateErpReturn({ impact: purchaseImpact, horizonRounds: 5 })
-  }, [purchaseImpact])
+    return calculateErpReturn({ impact: purchaseImpact, horizonRounds: safeHorizon })
+  }, [purchaseImpact, safeHorizon])
 
   const handleClose = (e) => {
     e?.preventDefault?.()
@@ -238,7 +241,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
               )}
               {erpReturn && !erpReturn.paysBackWithinHorizon && erpReturn.status !== 'no_cost' && (
                 <div className="purchasePreviewAlert">
-                  Este investimento não se recupera no horizonte atual de 5 rodadas.
+                  Este investimento não se recupera no horizonte atual de {safeHorizon} rodada(s).
                 </div>
               )}
             </div>

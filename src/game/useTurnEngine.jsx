@@ -4,8 +4,7 @@ import React from 'react'
 // Pista
 import { TRACK_LEN } from '../data/track'
 
-// ✅ CORREÇÃO: Constante para máximo de rodadas
-const MAX_ROUNDS = 5
+import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './roundConfig'
 
 // Modal system
 import { useModal } from '../modals/ModalContext'
@@ -150,8 +149,10 @@ export function useTurnEngine({
   setLastRollTurnKey,
   turnSeq = 0,
   setTurnSeq,
+  maxRounds: maxRoundsProp,
 }) {
   const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
+  const MAX_ROUNDS = normalizeMaxRounds(maxRoundsProp, DEFAULT_MAX_ROUNDS)
   // ===== Modais =====
   // ✅ Hooks devem ser chamados sempre (evita React #310).
   // O app é envolvido por <ModalProvider>, então useModal() deve existir.
@@ -585,11 +586,23 @@ export function useTurnEngine({
 
   // ========= fim de jogo =========
   // ✅ CORREÇÃO: Retorna objeto com { finished, winner, finalRound } em vez de apenas boolean
-  const maybeFinishGame = React.useCallback((finalPlayers, nextRound, finalTurnIdx) => {
-    // ✅ CORREÇÃO: Usa MAX_ROUNDS em vez de hardcode 5
-    // Se nextRound > MAX_ROUNDS, significa que a última rodada (MAX_ROUNDS) terminou agora
-    if (nextRound <= MAX_ROUNDS) {
-      return { finished: false, winner: null, finalRound: nextRound }
+  const maybeFinishGame = React.useCallback((
+    finalPlayers,
+    nextRound,
+    { forceFinish = false } = {}
+  ) => {
+    // forceFinish: endGame na rodada final (nextRound === MAX_ROUNDS)
+    // OU nextRound > MAX_ROUNDS (última rodada já ultrapassada)
+    const shouldFinish =
+      forceFinish === true ||
+      Number(nextRound) > MAX_ROUNDS
+
+    if (!shouldFinish) {
+      return {
+        finished: false,
+        winner: null,
+        finalRound: nextRound,
+      }
     }
 
     const alivePlayers = (finalPlayers || []).filter(p => !p?.bankrupt)
@@ -618,7 +631,7 @@ export function useTurnEngine({
     console.log("[ENDGAME] finalizando: vencedor=", champ?.name || "N/A", ", round=", MAX_ROUNDS)
 
     return { finished: true, winner: champ, finalRound: MAX_ROUNDS }
-  }, [])
+  }, [MAX_ROUNDS])
 
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
@@ -1179,7 +1192,7 @@ export function useTurnEngine({
       if (crossedStart1ForRound) {
         newLastRevenueRound = Math.max(prevLastRevenueRound, roundNow)
 
-        // ✅ rodada 5 trava SEMPRE na casa 0
+        // ✅ rodada final trava SEMPRE na casa 0
         if (roundNow === MAX_ROUNDS && aliveCount > 1) {
           waitingAtRevenue = true
           finalPos = 0
@@ -1277,7 +1290,7 @@ export function useTurnEngine({
           nextRound = roundNow + 1
           shouldIncrementRound = true
         } else {
-          // ✅ ROUND 5 + TODOS CHEGARAM → ENCERRA O JOGO
+          // ✅ RODADA FINAL + TODOS CHEGARAM → ENCERRA O JOGO
           shouldEndGameAfterTick = true
         }
         
@@ -1296,7 +1309,7 @@ export function useTurnEngine({
           console.log('[DEBUG] 🔄 Flags resetadas:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
           appendLog(`🔄 Rodada ${nextRound} iniciada! Todos os jogadores vivos passaram pela casa de faturamento.`)
         } else if (shouldEndGameAfterTick) {
-          console.log('[DEBUG] 🏁 FIM DE JOGO - Rodada 5 completa, todos os jogadores vivos chegaram!')
+          console.log('[DEBUG] 🏁 FIM DE JOGO - Rodada final completa, todos os jogadores vivos chegaram!')
         }
       } else {
         const missingPlayers = alive.filter(p => (Number(p.lastRevenueRound) || 0) < roundNow).map(p => p.name)
@@ -1309,11 +1322,11 @@ export function useTurnEngine({
     console.log('[DEBUG] roundFlags updated / round closed:', nextFlags.map((f, i) => `${nextPlayers[i]?.name}:${f}`).join(', '))
     
     // >>> pular jogadores falidos ao decidir o próximo turno
-    // ✅ Na rodada 5, pula também quem está waitingAtRevenue
+    // ✅ Na rodada final, pula também quem está waitingAtRevenue
     let nextTurnIdx = findNextAliveIdx(nextPlayers, curIdx)
     
-    // Pula waiting na rodada 5
-    if (currentRoundRef.current === 5) {
+    // Pula waiting na última rodada
+    if (currentRoundRef.current === MAX_ROUNDS) {
       let guard = 0
       while (guard < nextPlayers.length) {
         const p = nextPlayers[nextTurnIdx]
@@ -1439,7 +1452,7 @@ export function useTurnEngine({
           currentLevel={currentErpLevel}
           erpOwned={erpOwned}
           currentPlayer={buyerPlayer || null}
-        />)
+         horizonRounds={MAX_ROUNDS}/>)
         if (!res || res.action !== 'BUY') return
         const deltas = buildErpPurchaseDeltas(res)
         const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
@@ -1507,7 +1520,7 @@ export function useTurnEngine({
               mixOwned={mixOwned}
               currentPlayer={buyerPlayer || null}
               allowBack={true}
-            />)
+             horizonRounds={MAX_ROUNDS}/>)
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY') {
@@ -1629,7 +1642,7 @@ export function useTurnEngine({
               erpOwned={erpOwned}
               currentPlayer={buyerPlayer || null}
               allowBack={true}
-            />)
+             horizonRounds={MAX_ROUNDS}/>)
             if (!r2 || r2.action === 'SKIP') return
             if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCash()} />); if (!currentSelection) return; continue }
             if (r2.action === 'BUY') {
@@ -1911,7 +1924,7 @@ export function useTurnEngine({
           currentLevel={currentMixLevel}
           mixOwned={mixOwned}
           currentPlayer={buyerPlayer || null}
-        />)
+         horizonRounds={MAX_ROUNDS}/>)
         if (!res || res.action !== 'BUY') return
         const deltas = buildMixPurchaseDeltas(res)
         const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
@@ -2258,7 +2271,7 @@ export function useTurnEngine({
               currentLevel={currentErpLevel}
               erpOwned={erpOwned}
               currentPlayer={buyerPlayer || null}
-            />)
+             horizonRounds={MAX_ROUNDS}/>)
             if (res && res.action === 'BUY') {
               const deltas = buildErpPurchaseDeltas(res)
               const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
@@ -2437,7 +2450,7 @@ export function useTurnEngine({
               currentLevel={currentMixLevel}
               mixOwned={mixOwned}
               currentPlayer={buyerPlayer || null}
-            />)
+             horizonRounds={MAX_ROUNDS}/>)
             if (res && res.action === 'BUY') {
               const deltas = buildMixPurchaseDeltas(res)
               const price = deltas.cashDelta < 0 ? -deltas.cashDelta : 0
@@ -2464,7 +2477,7 @@ export function useTurnEngine({
 
               if (open === 'MIX') {
                 const buyerPlayer = getById(localPlayers, ownerId) || meForBuy
-                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.mixProdutos || null} mixOwned={buyerPlayer?.mixOwned || buyerPlayer?.mix || {}} currentPlayer={buyerPlayer || null} allowBack={true} />)
+                const r2 = await openModalAndWait(<MixProductsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.mixProdutos || null} mixOwned={buyerPlayer?.mixOwned || buyerPlayer?.mix || {}} currentPlayer={buyerPlayer || null} allowBack={true}  horizonRounds={MAX_ROUNDS}/>)
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
@@ -2561,7 +2574,7 @@ export function useTurnEngine({
                 }
               } else if (open === 'ERP') {
                 const buyerPlayer = getById(localPlayers, ownerId) || meForBuy
-                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.erpLevel || null} erpOwned={buyerPlayer?.erpOwned || buyerPlayer?.erp || {}} currentPlayer={buyerPlayer || null} allowBack={true} />)
+                const r2 = await openModalAndWait(<ERPSystemsModal currentCash={getCurrentCash()} currentLevel={buyerPlayer?.erpLevel || null} erpOwned={buyerPlayer?.erpOwned || buyerPlayer?.erp || {}} currentPlayer={buyerPlayer || null} allowBack={true}  horizonRounds={MAX_ROUNDS}/>)
                 if (!r2 || r2.action === 'SKIP') break
                 if (r2.action === 'BACK') { currentSelection = await openModalAndWait(<DirectBuyModal currentCash={getCurrentCash()} />); if (!currentSelection) break; continue }
                 if (r2.action === 'BUY') {
@@ -2704,14 +2717,14 @@ export function useTurnEngine({
             champ = ranked[0]?.p || null
           }
 
-          console.log('[ENDGAME] finalizando: vencedor=%s, round=5', champ?.name || '—')
+          console.log('[ENDGAME] finalizando: vencedor=%s, round=%s', champ?.name || '—', MAX_ROUNDS)
 
           // estado final local (obrigatório)
           setPlayers(finalPlayers || [])
           setGameOver(true)
           setWinner(champ)
-          setRound(5)
-          currentRoundRef.current = 5
+          setRound(MAX_ROUNDS)
+          currentRoundRef.current = MAX_ROUNDS
 
           // limpa pendências / destrava / não avança turno
           pendingTurnDataRef.current = null
@@ -2720,10 +2733,11 @@ export function useTurnEngine({
           setTurnLockBroadcast(false)
 
           // propaga para todos (obrigatório)
-          broadcastState(finalPlayers || [], turnIdxRef.current, 5, true, champ, {
+          broadcastState(finalPlayers || [], turnIdxRef.current, MAX_ROUNDS, true, champ, {
             kind: 'ENDGAME',
             lastAction: 'ENDGAME',
-            round: 5,
+            round: MAX_ROUNDS,
+            maxRounds: MAX_ROUNDS,
             gameOver: true,
             winner: champ,
           })
@@ -2764,16 +2778,24 @@ export function useTurnEngine({
                 console.log('[DEBUG] ✅ Mudando turno - de:', turnIdx, 'para:', turnData.nextTurnIdx, 'finalModalLocks:', finalModalLocks, 'finalOpening:', finalOpening, 'timeSinceLastModalClosed:', finalTimeSinceLastModalClosed)
               
               // ✅ CORREÇÃO C: Detecta finalização por rodada ANTES de mudar turno
-              // Condição autoritativa: currentRoundRef.current === 5 E shouldIncrementRound === true
-              // OU endGame === true (todos chegaram na rodada 5)
+              // Condição autoritativa: currentRoundRef.current === MAX_ROUNDS E shouldIncrementRound === true
+              // OU endGame === true (todos chegaram na rodada final)
               // (não usa pos/TRACK_LEN - apenas round-based)
-              const isEndgameCondition = currentRoundRef.current === 5 && turnData.shouldIncrementRound
+              const isEndgameCondition = currentRoundRef.current === MAX_ROUNDS && turnData.shouldIncrementRound
               const isEndgameByFlag = turnData.endGame === true
               if (isEndgameCondition || isEndgameByFlag || (turnData.shouldIncrementRound && turnData.nextRound > MAX_ROUNDS)) {
-                console.log('[ENDGAME] detectado: fim da 5ª - currentRound:', currentRoundRef.current, 'shouldIncrementRound:', turnData.shouldIncrementRound, 'nextRound:', turnData.nextRound)
+                console.log('[ENDGAME] detectado: fim da partida - currentRound:', currentRoundRef.current, 'shouldIncrementRound:', turnData.shouldIncrementRound, 'nextRound:', turnData.nextRound)
                 
+                const forceFinish =
+                  isEndgameCondition ||
+                  isEndgameByFlag
+
                 // Chama maybeFinishGame para calcular vencedor
-                const finishResult = maybeFinishGame(latestPlayers, turnData.nextRound, turnIdx)
+                const finishResult = maybeFinishGame(
+                  latestPlayers,
+                  turnData.nextRound,
+                  { forceFinish }
+                )
                 
                 if (finishResult.finished) {
                   console.log('[DEBUG] 🏁 FIM DE JOGO finalizando - Rodada:', finishResult.finalRound, 'Vencedor:', finishResult.winner?.name || null)
@@ -2784,12 +2806,13 @@ export function useTurnEngine({
                   setGameOver(true)
                   setRound(finishResult.finalRound)
                   currentRoundRef.current = finishResult.finalRound
-                  appendLog(`Fim de jogo! ${MAX_ROUNDS} rodadas completas. Vencedor: ${finishResult.winner?.name || '—'}`)
+                  appendLog(`Fim de jogo! ${MAX_ROUNDS} rodada(s) configurada(s). Vencedor: ${finishResult.winner?.name || '—'}`)
                   
                   // Prepara patch para broadcast
                   const patch = {
                     kind: 'ENDGAME',  // ✅ CORREÇÃO: Marca explicitamente como ENDGAME
                     round: finishResult.finalRound,
+                    maxRounds: MAX_ROUNDS,
                     gameOver: true,
                     winner: finishResult.winner
                   }

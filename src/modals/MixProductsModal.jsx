@@ -10,6 +10,7 @@ import {
   calculateMixReturn,
 } from '../game/productMixPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from '../game/roundConfig'
 
 const LEVEL_RANK = { A: 4, B: 3, C: 2, D: 1 }
 
@@ -33,6 +34,7 @@ export default function MixProductsModal({
   mixOwned = null,
   allowBack = false,
   currentPlayer = null,
+  horizonRounds = DEFAULT_MAX_ROUNDS,
 }) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
@@ -73,10 +75,12 @@ export default function MixProductsModal({
     })
   }, [draftPayload, currentPlayer, cashNow, current])
 
+  const safeHorizon = normalizeMaxRounds(horizonRounds, DEFAULT_MAX_ROUNDS)
+
   const mixReturn = useMemo(() => {
     if (!purchaseImpact) return null
-    return calculateMixReturn({ impact: purchaseImpact, horizonRounds: 5 })
-  }, [purchaseImpact])
+    return calculateMixReturn({ impact: purchaseImpact, horizonRounds: safeHorizon })
+  }, [purchaseImpact, safeHorizon])
 
   const portfolioStats = useMemo(() => {
     const playerSnapshot = {
@@ -284,7 +288,7 @@ export default function MixProductsModal({
               )}
               {mixReturn && !mixReturn.paysBackWithinHorizon && mixReturn.status !== 'no_cost' && mixReturn.status !== 'no_financial_return' && (
                 <div className="purchasePreviewAlert">
-                  Este investimento não se recupera no horizonte atual de 5 rodadas.
+                  Este investimento não se recupera no horizonte atual de {safeHorizon} rodada(s).
                 </div>
               )}
               {isDowngrade && (

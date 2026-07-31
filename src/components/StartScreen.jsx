@@ -51,7 +51,7 @@ export default function StartScreen({ onEnter }) {
           </p>
 
           <div className="startSummary">
-            <p><strong>Duração:</strong> 5 rodadas</p>
+            <p><strong>Duração:</strong> escolhida pelo host entre 1 e 5 rodadas (padrão: 5)</p>
             <p><strong>Objetivo:</strong> administrar a empresa e tomar decisões comerciais</p>
             <p><strong>Vitória:</strong> vence quem terminar com o maior patrimônio</p>
             <p className="startSummaryNote">

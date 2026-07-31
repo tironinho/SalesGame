@@ -9,7 +9,7 @@ import ModalBase from "../modals/ModalBase";
  * - Se aberta via ModalProvider.pushModal, use `onResolve({action:'EXIT'})`.
  *   Se usada “solta”, aceita `onExit`.
  */
-export default function FinalWinners({ players = [], onExit, onResolve }) {
+export default function FinalWinners({ players = [], maxRounds, endedRound, onExit, onResolve }) {
   const rankedPlayers = useMemo(() => {
     const ranked = [...players]
       .map((player) => {
@@ -74,9 +74,15 @@ export default function FinalWinners({ players = [], onExit, onResolve }) {
     // onClose vazio => clicar no overlay NÃO fecha (travada)
     <ModalBase zIndex={2147483647} onClose={() => {}}>
       <div style={S.wrap}>
-        <h1 style={S.title}>🏁 Fim da 5ª Rodada</h1>
+        <h1 style={S.title}>🏁 Fim da partida</h1>
         <p style={S.subtitle}>
-          Vence quem tiver <b>Saldo + Bens</b>. Eis o pódio:
+          {Number.isFinite(Number(maxRounds))
+            ? <>Duração configurada: <b>{Number(maxRounds)}</b> rodada(s).</>
+            : null}
+          {Number.isFinite(Number(endedRound)) && Number(endedRound) > 0
+            ? <> Encerrada na rodada <b>{Number(endedRound)}</b>.</>
+            : null}
+          {' '}Vence quem tiver <b>Saldo + Bens</b>. Eis o pódio:
         </p>
 
         <div style={S.podium}>

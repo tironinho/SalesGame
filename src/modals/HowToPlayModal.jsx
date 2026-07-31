@@ -4,7 +4,7 @@ import ModalBase from './ModalBase'
 const SECTIONS = [
   {
     title: 'Objetivo',
-    body: 'Administre sua empresa durante 5 rodadas e termine com o maior patrimônio.',
+    body: 'A duração é escolhida pelo host entre 1 e 5 rodadas. O padrão é 5. Termine com o maior patrimônio.',
   },
   {
     title: 'Caixa',

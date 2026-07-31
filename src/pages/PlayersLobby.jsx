@@ -16,6 +16,12 @@ import {
 import {
   getOrCreateTabPlayerId,   // id por ABA
 } from '../auth'
+import {
+  DEFAULT_MAX_ROUNDS,
+  MAX_ROUNDS_LIMIT,
+  MIN_ROUNDS,
+  normalizeMaxRounds,
+} from '../game/roundConfig'
 
 export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame }) {
   const meId = getOrCreateTabPlayerId()
@@ -25,6 +31,7 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
   const [players, setPlayers] = useState([])
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
+  const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS)
 
   const triedEnsure   = useRef(false)
   const firstLoad     = useRef(true)
@@ -83,7 +90,8 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
         lobbyId,
         matchId: match?.id,
         players: normalized,
-        me: { id: meId, name: meName }
+        me: { id: meId, name: meName },
+        resumeExistingMatch: true,
       })
     }
   }
@@ -225,7 +233,9 @@ useEffect(() => {
         lobbyId,
         matchId: match?.id,
         players: normalized,
-        me: { id: meId, name: meName }
+        me: { id: meId, name: meName },
+        maxRounds: normalizeMaxRounds(maxRounds),
+        resumeExistingMatch: false,
       })
     } catch (e) {
       console.error('startMatch failed', e)
@@ -288,6 +298,37 @@ useEffect(() => {
         )}
         </div>
 
+        {amHost && (
+          <div style={s.durationBox}>
+            <div style={s.durationTitle}>Duração da partida</div>
+            <div style={s.durationHint}>O host escolhe entre {MIN_ROUNDS} e {MAX_ROUNDS_LIMIT} rodadas. Padrão: {DEFAULT_MAX_ROUNDS}.</div>
+            <div style={s.durationOptions}>
+              {Array.from({ length: MAX_ROUNDS_LIMIT }, (_, i) => i + MIN_ROUNDS).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  style={{
+                    ...s.durationBtn,
+                    ...(maxRounds === n ? s.durationBtnActive : null),
+                  }}
+                  onClick={() => setMaxRounds(normalizeMaxRounds(n))}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div style={s.durationSelected}>
+              Selecionado: <b>{normalizeMaxRounds(maxRounds)}</b> rodada(s)
+            </div>
+          </div>
+        )}
+
+        {!amHost && (
+          <div style={s.durationBoxGuest}>
+            A duração da partida é definida pelo host (padrão: {DEFAULT_MAX_ROUNDS} rodadas).
+          </div>
+        )}
+
         <div style={s.footer}>
           <div style={s.statusWrap}>
             <span style={{ ...s.dot, background: lobby?.status === 'open' ? '#22c55e' : '#f59e0b' }} />
@@ -340,4 +381,34 @@ const s = {
   btnDark:{ background:'#20222a', color:'#fff', border:'1px solid #2b2e38' },
   btnGhost:{ background:'transparent', color:'#e9ecf1', border:'1px solid rgba(255,255,255,.15)' },
   disabled:{ opacity:.5, cursor:'not-allowed', filter:'grayscale(.25)' },
+  durationBox: {
+    marginTop: 16,
+    padding: '14px 16px',
+    borderRadius: 14,
+    border: '1px solid rgba(255,255,255,.10)',
+    background: 'rgba(255,255,255,.03)',
+  },
+  durationBoxGuest: {
+    marginTop: 16,
+    color: '#c7cfdb',
+    fontSize: 14,
+  },
+  durationTitle: { fontWeight: 800, marginBottom: 6 },
+  durationHint: { color: '#c7cfdb', fontSize: 13, marginBottom: 10 },
+  durationOptions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  durationBtn: {
+    minWidth: 44,
+    padding: '10px 12px',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,.15)',
+    background: '#20222a',
+    color: '#fff',
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
+  durationBtnActive: {
+    background: '#4f46e5',
+    borderColor: 'rgba(255,255,255,.35)',
+  },
+  durationSelected: { marginTop: 10, color: '#e9ecf1', fontSize: 14 },
 }
