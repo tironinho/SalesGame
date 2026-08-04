@@ -10,6 +10,7 @@ import Board from './components/board/Board.jsx'
 import HUD from './components/panel/HUD.jsx'
 import Controls from './components/panel/Controls.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
+import TutorialModal from './components/TutorialModal.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
 import DebugPanel from './components/DebugPanel.jsx'
 import { ModalProvider } from './modals/ModalContext.jsx'
@@ -1686,6 +1687,9 @@ export default function App() {
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
+  // ====== tutorial "Como jogar" (reabertura manual em jogo; sem auto-open aqui)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
   // ✅ CORREÇÃO DESSYNC: Deriva turnOrder dos players (ordem determinística)
   const turnOrder = useMemo(() => {
     if (!players || players.length === 0) return []
@@ -2059,6 +2063,15 @@ export default function App() {
                 Sair para Lobbies
               </button>
             </div>
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn dark"
+                onClick={() => setTutorialOpen(true)}
+              >
+                Como jogar
+              </button>
+            </div>
           </div>
 
           {/* Tela final (pódio Top 3) */}
@@ -2131,6 +2144,12 @@ export default function App() {
           autoCloseMs={1500}
         />
       )}
+
+      {/* Tutorial "Como jogar" (reabertura manual; não interfere no turno) */}
+      <TutorialModal
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+      />
     </div>
     </ModalProvider>
   )

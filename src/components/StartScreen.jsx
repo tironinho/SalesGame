@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import {
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
-import HowToPlayModal from '../modals/HowToPlayModal.jsx'
+import TutorialModal, { hasSeenTutorial } from './TutorialModal.jsx'
 
 // ajuste os paths dos assets conforme você salvou
 import bgImg from '/dynamic-data-visualization-3d.jpg'
@@ -13,7 +13,7 @@ import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.pn
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
   const [name, setName] = useState("")
-  const [howToPlayOpen, setHowToPlayOpen] = useState(false)
+  const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial())
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function StartScreen({ onEnter }) {
           <button
             type="button"
             className="startBtnSecondary"
-            onClick={() => setHowToPlayOpen(true)}
+            onClick={() => setTutorialOpen(true)}
           >
             Como jogar
           </button>
@@ -98,9 +98,9 @@ export default function StartScreen({ onEnter }) {
       {/* personagem à direita */}
       <img className="startCoach" src={coachPng} alt="" draggable="false" />
 
-      <HowToPlayModal
-        open={howToPlayOpen}
-        onClose={() => setHowToPlayOpen(false)}
+      <TutorialModal
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
       />
     </div>
   )
