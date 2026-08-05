@@ -33,6 +33,8 @@ export default function ModalBase({ children, onClose, zIndex = 3000 }) {
           borderRadius: 14,
           width: "min(780px, 92vw)",
           maxWidth: "92vw",
+          maxHeight: "90vh",
+          overflowY: "auto",
           color: "#fff",
           boxShadow: "0 20px 60px rgba(0,0,0,.45)",
         }}

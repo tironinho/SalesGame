@@ -128,8 +128,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
   }, [])
 
   return (
-    <div style={S.wrap} role="dialog" aria-modal="true" aria-label="Inside Sales">
-      <div style={S.card}>
+    <div className="isWrap" role="dialog" aria-modal="true" aria-label="Inside Sales">
+      <div className="isCard">
         <button
           ref={closeRef}
           type="button"
@@ -138,7 +138,7 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
           aria-label="Fechar"
         >✕</button>
 
-        <h2 style={S.title}>Você pode escolher quantos <b>Inside Sales</b> quer comprar:</h2>
+        <h2 className="isTitle">Você pode escolher quantos <b>Inside Sales</b> quer comprar:</h2>
 
         <p className="purchasePreviewHint">
           O Inside Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
@@ -155,13 +155,13 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
         </div>
 
         {/* Linha de saldo e máximo por saldo */}
-        <div style={S.saldoRow}>
+        <div className="isSaldoRow" style={S.saldoRow}>
           <div>Saldo disponível: <b>$ {Number(currentCash || 0).toLocaleString()}</b></div>
           <div>Máximo por saldo: <b>{maxBySaldo}</b></div>
         </div>
 
         {/* Input + atalhos rápidos */}
-        <div style={S.inputRow}>
+        <div className="isInputRow">
           <input
             type="number"
             inputMode="numeric"
@@ -169,21 +169,22 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
             placeholder="Digite o número de Inside Sales"
             value={qty}
             onChange={(e) => setQty(e.target.value)}
+            className="isInput"
             style={S.input}
           />
-          <div style={S.quickBtns}>
-            <button type="button" style={S.quickBtn} onClick={() => bump(1)}>+1</button>
-            <button type="button" style={S.quickBtn} onClick={() => bump(5)}>+5</button>
-            <button type="button" style={S.quickBtn} onClick={() => bump(10)}>+10</button>
-            <button type="button" style={{...S.quickBtn, fontWeight:900}} onClick={setMax}>Máx</button>
+          <div className="isQuickBtns">
+            <button type="button" className="isQuickBtn" style={S.quickBtn} onClick={() => bump(1)}>+1</button>
+            <button type="button" className="isQuickBtn" style={S.quickBtn} onClick={() => bump(5)}>+5</button>
+            <button type="button" className="isQuickBtn" style={S.quickBtn} onClick={() => bump(10)}>+10</button>
+            <button type="button" className="isQuickBtn" style={{...S.quickBtn, fontWeight:900}} onClick={setMax}>Máx</button>
           </div>
-          <div style={S.totalBox}>
+          <div className="isTotalBox" style={S.totalBox}>
             Total contratar: <b>$ {Number(totalCost).toLocaleString()}</b>
           </div>
         </div>
 
         {/* Cards coloridos ilustrativos (certificações) */}
-        <div style={S.cards}>
+        <div className="isCards">
           <Card
             title="Sem certificado"
             bg="#2a2f3b"
@@ -231,17 +232,18 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
 
         <PurchaseImpactPreview impact={purchaseImpact} />
 
-        <div style={S.actions}>
+        <div className="isActions" style={S.actions}>
           {allowBack && (
-            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+            <button type="button" className="isBigBtn" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
               Voltar
             </button>
           )}
-          <button type="button" style={{ ...S.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
+          <button type="button" className="isBigBtn" style={{ ...S.bigBtn, background:'#666', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>
           <button
             type="button"
+            className="isBigBtn"
             style={{ ...S.bigBtn, background: canBuy ? '#3fbf49' : '#2f5d33', color:'#09110f' }}
             onClick={handleBuy}
             disabled={!canBuy}
@@ -258,8 +260,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
 function Card({ title, pill, lines, bg, dark=false }) {
   return (
     <div style={{...S.cardItem, background:bg, color: dark ? '#111' : '#fff', borderColor: 'rgba(255,255,255,.15)'}}>
-      <div style={S.cardHeader}>
-        <span style={{...S.pill, background: dark ? '#111' : '#fff', color: dark ? '#fff' : '#111'}}>{pill}</span>
+      <div className="isCardHead" style={S.cardHeader}>
+        <span className="isPill" style={{...S.pill, background: dark ? '#111' : '#fff', color: dark ? '#fff' : '#111'}}>{pill}</span>
         <div style={{fontWeight:900}}>{title}</div>
       </div>
       <ul style={S.lines}>
@@ -270,15 +272,10 @@ function Card({ title, pill, lines, bg, dark=false }) {
 }
 
 const S = {
-  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: {
-    width:'min(980px, 94vw)', background:'#1b1f2a', color:'#e9ecf1',
-    borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
-    border:'1px solid rgba(255,255,255,.12)', position:'relative',
-    maxHeight:'92vh', overflowY:'auto'
-  },
+  /* wrap, card, title, inputRow (grid), quickBtns (layout) e cards migraram
+     para classes CSS responsivas (.isWrap, .isCard, .isTitle, .isInputRow,
+     .isQuickBtns, .isCards em styles.css) */
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
-  title:{ margin:'6px 0 12px', fontWeight:900 },
 
   note: {
     background:'#2a2f3b',
@@ -293,27 +290,26 @@ const S = {
     padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10, marginBottom:8
   },
 
-  inputRow:{ display:'grid', gridTemplateColumns:'1fr auto auto', alignItems:'center', gap:10, marginBottom:12 },
   input: {
     height:42, borderRadius:10, padding:'0 12px',
     border:'1px solid rgba(255,255,255,.18)', background:'#0f1320', color:'#fff',
     outline:'none'
   },
 
-  quickBtns:{ display:'flex', gap:6 },
+  /* min-width migrou para .isQuickBtn (zera no mobile) */
   quickBtn:{
-    minWidth:44, height:42, borderRadius:10, border:'1px solid rgba(255,255,255,.18)',
+    height:42, borderRadius:10, border:'1px solid rgba(255,255,255,.18)',
     background:'#2a2f3b', color:'#fff', fontWeight:800, cursor:'pointer', padding:'0 10px'
   },
 
   totalBox:{ padding:'8px 12px', borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#0f1320', fontWeight:900 },
 
-  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, margin:'8px 0 14px' },
   cardItem:{ border:'1px solid', borderRadius:14, padding:'14px' },
   cardHeader:{ display:'flex', alignItems:'center', gap:8, marginBottom:8 },
   pill:{ fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999 },
   lines:{ margin:0, padding:'0 0 0 16px', lineHeight:1.35 },
 
   actions: { display:'flex', gap:12, justifyContent:'center', marginTop:8 },
-  bigBtn: { minWidth:180, padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
+  /* min-width migrou para .isBigBtn (largura total no mobile) */
+  bigBtn: { padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
 }

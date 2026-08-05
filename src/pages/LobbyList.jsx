@@ -79,10 +79,10 @@ export default function LobbyList({ onEnterRoom, playerName }) {
   // ---------- UI ----------
   const styles = {
     page: { minHeight: '100vh', background: '#0f0f12', color: '#e9ecf1', padding: '32px 16px', display: 'flex', justifyContent: 'center' },
-    container: { width: '100%', maxWidth: 980 },
+    // coluna flexível: a área de scroll ocupa o restante sem depender de altura fixa do cabeçalho
+    container: { width: '100%', maxWidth: 980, display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 64px)', minHeight: 0 },
     headerRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' },
-    title: { fontSize: 28, fontWeight: 800, color: '#fff' },
-    actions: { display: 'flex', gap: 10 },
+    actions: { display: 'flex', gap: 10, flexWrap: 'wrap' },
     btn: { padding: '12px 16px', border: 0, borderRadius: 12, fontWeight: 800, cursor: 'pointer' },
     btnPrimary: { background: '#4f46e5', color: '#fff', boxShadow: '0 8px 24px rgba(79,70,229,.25)' },
     btnSecondary: { background: '#20222a', color: '#fff', border: '1px solid #2b2e38' },
@@ -93,11 +93,11 @@ export default function LobbyList({ onEnterRoom, playerName }) {
       flex: '1 1 auto',
       minHeight: 0,
       overflowY: 'scroll',
-      maxHeight: 'calc(100vh - 180px)',
       paddingRight: 10,
       scrollbarGutter: 'stable',
     },
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 },
+    // min(280px, 100%) impede que o track mínimo exceda a largura da viewport
+    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 14 },
     card: { background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.00) 100%)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 10px 20px rgba(0,0,0,.25)' },
     cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
     lobbyName: { fontSize: 18, fontWeight: 800, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 },
@@ -111,7 +111,7 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     <div style={styles.page}>
       <div style={styles.container}>
         <div style={styles.headerRow}>
-          <h2 style={styles.title}>SalesGame — Lobbies</h2>
+          <h2 className="lobbyListTitle">SalesGame — Lobbies</h2>
           <div style={styles.actions}>
             <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleCreate}>Criar Lobby</button>
             <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={refresh} disabled={loading}>

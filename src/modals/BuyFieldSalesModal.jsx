@@ -165,12 +165,12 @@ export default function BuyFieldSalesModal({
 
   return (
     <div
-      style={styles.wrap}
+      className="fsWrap"
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => { if (e.target === e.currentTarget) e.stopPropagation() }}
     >
-      <div style={styles.card} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="fsCard" onMouseDown={(e) => e.stopPropagation()}>
         <button
           ref={closeRef}
           type="button"
@@ -179,7 +179,7 @@ export default function BuyFieldSalesModal({
           aria-label="Fechar"
         >✕</button>
 
-        <h2 style={styles.title}>
+        <h2 className="fsTitle">
           Você pode escolher quantos <b>Field Sales</b> quer comprar,
           <br/>Digite o número de vendedores:
         </h2>
@@ -222,20 +222,20 @@ export default function BuyFieldSalesModal({
           </div>
         </div>
 
-        <div style={styles.infoBox}>
-          <div style={{fontWeight:800, marginBottom:6}}>FIELD SALES (REPRESENTANTES COMERCIAIS)</div>
+        <div className="fsInfoBox" style={styles.infoBox}>
+          <div className="fsInfoTitle">FIELD SALES (REPRESENTANTES COMERCIAIS)</div>
           <div style={{opacity:.9, marginBottom:8}}>
             Base para cálculo de despesa: <b>x quantidade de Field Sales</b>.<br/>
             Base para cálculo de faturamento: <b>x quantidade máxima de clientes que cada vendedor pode atender</b>.<br/>
             Cada vendedor atende até <b>{attendsUpTo}</b> clientes.
           </div>
 
-          <div style={styles.table}>
-            <div style={styles.trHead}>
-              <div style={styles.th}>Certificação</div>
-              <div style={styles.th}>Contratação</div>
-              <div style={styles.th}>Despesa</div>
-              <div style={styles.th}>Faturamento</div>
+          <div className="fsTable">
+            <div className="fsTrHead">
+              <div className="fsTh">Certificação</div>
+              <div className="fsTh">Contratação</div>
+              <div className="fsTh">Despesa</div>
+              <div className="fsTh">Faturamento</div>
             </div>
             <Row label="S/ Certificado"     hire={money(unitHire)} expense={money(expenseAt(0))} revenue={money(revenueAt(0))} />
             <Row label="Com 1 certificado"  hire="-"               expense={money(expenseAt(1))} revenue={money(revenueAt(1))} />
@@ -258,12 +258,13 @@ export default function BuyFieldSalesModal({
 
         <div style={styles.actions}>
           {allowBack && (
-            <button type="button" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+            <button type="button" className="fsBigBtn" style={{ ...styles.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
               Voltar
             </button>
           )}
           <button
             type="button"
+            className="fsBigBtn"
             style={{ ...styles.bigBtn, background:'#666', color:'#fff' }}
             onClick={handleClose}
           >
@@ -271,6 +272,7 @@ export default function BuyFieldSalesModal({
           </button>
           <button
             type="button"
+            className="fsBigBtn"
             style={{ ...styles.bigBtn, background: canBuy ? '#75e16c' : '#365b31', color:'#0b120a' }}
             onClick={handleBuy}
             disabled={!canBuy}
@@ -286,33 +288,29 @@ export default function BuyFieldSalesModal({
 
 function Row({ label, hire, expense, revenue }) {
   return (
-    <div style={styles.tr}>
-      <div style={styles.td}>{label}</div>
-      <div style={styles.td}>{hire}</div>
-      <div style={styles.td}>{expense}</div>
-      <div style={styles.td}>{revenue}</div>
+    <div className="fsTr">
+      <div className="fsTd fsTdName" data-label="Certificação">{label}</div>
+      <div className="fsTd" data-label="Contratação">{hire}</div>
+      <div className="fsTd" data-label="Despesa">{expense}</div>
+      <div className="fsTd" data-label="Faturamento">{revenue}</div>
     </div>
   )
 }
 
 const styles = {
-  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: { width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a', color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px', boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)', position:'relative', maxHeight:'92vh', overflowY:'auto' },
+  /* wrap, card, title, título da seção e tabela de certificações migraram
+     para classes CSS responsivas (.fsWrap, .fsCard, .fsTitle, .fsInfoTitle,
+     .fsTable/.fsTr/.fsTd em styles.css) */
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
-  title: { margin:'6px 0 12px', fontWeight:800, lineHeight:1.3 },
   inlineInfo: { display:'flex', justifyContent:'space-between', gap:10, margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap' },
   qtyRow: { display:'flex', gap:8, alignItems:'center', marginBottom:12, flexWrap:'wrap' },
   input: { flex:'1 1 260px', height:42, borderRadius:10, padding:'0 12px', border:'1px solid rgba(255,255,255,.18)', background:'#0f1320', color:'#fff', outline:'none' },
   quickBtns: { display:'flex', gap:6, flexWrap:'wrap' },
   qbtn: { height:42, padding:'0 12px', borderRadius:10, border:'1px solid rgba(255,255,255,.18)', background:'#2a2f3b', color:'#fff', cursor:'pointer', fontWeight:800 },
   infoBox: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, padding:'12px', background:'#101522', marginBottom:12 },
-  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:10, overflow:'hidden' },
-  trHead: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#121621' },
-  th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
-  tr: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#0f1320' },
-  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
   summary: { display:'flex', justifyContent:'space-between', border:'1px dashed rgba(255,255,255,.2)', borderRadius:10, padding:'8px 12px', marginTop:10, flexWrap:'wrap', gap:10 },
   summaryStrong: { display:'flex', justifyContent:'space-between', border:'1px solid rgba(255,255,255,.25)', borderRadius:10, padding:'10px 12px', marginTop:8, fontWeight:800, flexWrap:'wrap', gap:10 },
   actions: { display:'flex', gap:12, justifyContent:'center', marginTop:12, flexWrap:'wrap' },
-  bigBtn: { minWidth:180, padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
+  /* min-width migrou para .fsBigBtn (largura total no mobile) */
+  bigBtn: { padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
 }

@@ -521,8 +521,10 @@ html, body {
 }
 @media (max-width: 560px){
   .startCoach{ display:none; }
-  .startLinks{ font-size:14px; }
-  .startBrandLogo{ height:88px; }
+  .startLinks{ font-size:14px; word-break:break-word; min-width:0; }
+  /* rodapé: permite quebra de linha para logo e URL não disputarem a mesma linha */
+  .startFooter{ flex-wrap:wrap; align-items:center; row-gap:8px; }
+  .startBrandLogo{ height:56px; }
   .startCenter{ align-items:flex-start; overflow-y:auto; }
   .howToPlay{ padding:16px; max-height:min(86vh, 720px); }
   .tutorialModal{ padding:16px; max-height:min(86vh, 720px); }
@@ -755,6 +757,818 @@ html, body {
   color: #e9ecf1;
 }
 
+/* ====== Modal de treinamentos: grades responsivas ====== */
+
+/* auto-fit reproduz repeat(n, 1fr) no desktop (1–4 tipos) e quebra no mobile */
+.trainingVendorRow{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* mesmos valores do layout inline anterior no desktop */
+.trainingProducts{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+  margin: 4px 0 10px;
+}
+
+.trainingActionsRow{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 6px;
+}
+
+@media (max-width: 760px){
+  /* duas colunas quando ainda há espaço (561–760px) */
+  .trainingProducts{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 560px){
+  /* uma coluna: cards em largura total, texto quebra normalmente */
+  .trainingProducts{ grid-template-columns: 1fr; }
+  .trainingActionsRow{ flex-wrap: wrap; row-gap: 8px; }
+}
+
+/* ====== Modal "Direto de Compra": overlay, card e grade responsivos ====== */
+
+/* overlay: centraliza e garante respiro de 12px em volta do card */
+.directBuyWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* box-sizing: border-box garante que padding + borda fiquem DENTRO
+   da largura calculada (sem ele, o card estourava a viewport) */
+.directBuyCard{
+  box-sizing: border-box;
+  width: min(1000px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.directBuyTitle{
+  margin: 6px 0 16px;
+  font-weight: 800;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.directBuyGrid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.directBuyGrid > *{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+}
+
+.directBuyBtn{
+  box-sizing: border-box;
+  margin-top: auto;
+  align-self: center;
+  min-width: 140px;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@media (max-width: 760px){
+  /* colunas explícitas: minmax(0,1fr) impede que conteúdo force overflow */
+  .directBuyGrid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px){
+  .directBuyCard{ padding: 14px; }
+  .directBuyGrid{ grid-template-columns: minmax(0, 1fr); }
+  /* botões em largura total, sem min-width fixa, altura de toque preservada */
+  .directBuyBtn{ min-width: 0; width: 100%; }
+  /* título não passa por baixo do botão ✕ (36px + folga) */
+  .directBuyTitle{ padding-right: 40px; }
+}
+
+/* ====== Modal "ERP / Sistemas": overlay, tabela e cards responsivos ====== */
+
+.erpWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* border-box: padding + borda contam DENTRO da largura calculada */
+.erpCard{
+  box-sizing: border-box;
+  width: min(980px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.erpTitle{
+  margin: 6px 0 12px;
+  font-weight: 900;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* wrapper com rolagem horizontal PRÓPRIA: a tabela nunca é espremida
+   nem força scroll no modal/página; borda e raio ficam no wrapper para
+   o sticky da 1ª coluna funcionar (overflow:hidden na tabela anularia) */
+.erpTableScroll{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+/* largura mínima legível para A, B, C e D (rolagem interna quando faltar espaço) */
+.erpTable{
+  min-width: 520px;
+  box-sizing: border-box;
+}
+/* 1ª coluna (COMPRA/DESPESA/FATURAMENTO) fixa durante a rolagem horizontal;
+   fundos idênticos aos das linhas, sem mudança visual no desktop */
+.erpStickyCell{
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #0f1320;
+}
+.erpStickyHead{
+  background: #121621;
+}
+
+.erpCards{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.erpCards > *{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+}
+/* pill "ADQUIRIDO"/nível: nunca ultrapassa o próprio card */
+.erpPill{
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.erpBuyBtn{
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.erpBigBtn{
+  min-width: 160px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 760px){
+  .erpCards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px){
+  .erpCard{ padding: 14px; }
+  .erpTitle{ padding-right: 40px; } /* não passa sob o botão ✕ */
+  .erpCards{ grid-template-columns: minmax(0, 1fr); }
+  .erpBuyBtn{ width: 100%; }
+  .erpBigBtn{ min-width: 0; width: 100%; }
+}
+
+/* ====== Modal "Inside Sales": overlay, quantidade e cards responsivos ====== */
+
+.isWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* border-box: padding + borda contam DENTRO da largura calculada */
+.isCard{
+  box-sizing: border-box;
+  width: min(980px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.isTitle{
+  margin: 6px 0 12px;
+  font-weight: 900;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.isSaldoRow{
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* input | atalhos | total na mesma linha (desktop, como antes) */
+.isInputRow{
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.isInputRow > *{
+  min-width: 0;
+  box-sizing: border-box;
+}
+.isInput{
+  max-width: 100%;
+}
+.isQuickBtns{
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.isQuickBtn{
+  min-width: 44px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.isTotalBox{
+  max-width: 100%;
+}
+
+.isCards{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.isCards > *{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+}
+/* badge BASE/NÍVEL: nunca comprime nem sai do card */
+.isCardHead{
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.isCardHead > *{
+  min-width: 0;
+}
+.isPill{
+  flex: 0 0 auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.isActions{
+  flex-wrap: wrap;
+}
+.isBigBtn{
+  min-width: 180px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 760px){
+  .isCards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px){
+  .isCard{ padding: 14px; }
+  .isTitle{ padding-right: 40px; } /* não passa sob o botão ✕ */
+  .isSaldoRow{ flex-wrap: wrap; }
+  /* empilha: input em largura total, atalhos abaixo, total abaixo */
+  .isInputRow{ grid-template-columns: minmax(0, 1fr); }
+  .isInput{ width: 100%; }
+  .isQuickBtns{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  .isQuickBtn{ min-width: 0; width: 100%; }
+  .isTotalBox{ width: 100%; }
+  .isCards{ grid-template-columns: minmax(0, 1fr); }
+  .isBigBtn{ min-width: 0; width: 100%; }
+}
+
+/* ====== Modal "Vendedores Comuns": card e tabela de certificações ====== */
+
+.vcWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* border-box: padding + borda contam DENTRO da largura calculada */
+.vcCard{
+  box-sizing: border-box;
+  width: min(880px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.vcTitle{
+  margin: 6px 0 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.vcInfoBox{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* desktop: mesma aparência da tabela inline anterior (2fr 1fr 1fr 1fr) */
+.vcTable{
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.vcTrHead{
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  background: #121621;
+}
+.vcTh{
+  padding: 10px 12px;
+  font-weight: 800;
+  border-left: 1px solid rgba(255,255,255,.06);
+}
+.vcTr{
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  background: #0f1320;
+}
+.vcTd{
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  border-left: 1px solid rgba(255,255,255,.06);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px){
+  .vcCard{ padding: 14px; }
+  .vcTitle{ padding-right: 40px; } /* não passa sob o botão ✕ */
+
+  /* cabeçalho some visualmente mas continua disponível para leitores de tela */
+  .vcTrHead{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* cada linha da tabela vira um card vertical */
+  .vcTable{
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    display: grid;
+    gap: 8px;
+  }
+  .vcTr{
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  /* célula: rótulo (via data-label) à esquerda, valor à direita */
+  .vcTd{
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    padding: 3px 0;
+    border: none;
+    overflow-wrap: break-word;
+  }
+  .vcTd::before{
+    content: attr(data-label);
+    font-weight: 700;
+    opacity: .85;
+  }
+  /* 1ª célula (Certificação) vira o título do card, em largura total */
+  .vcTd.vcTdName{
+    display: block;
+    font-weight: 800;
+    padding: 0 0 6px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .vcTd.vcTdName::before{
+    content: none;
+  }
+}
+
+/* ====== Modal "Field Sales": card centralizado e tabela de certificações ====== */
+
+.fsWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* border-box: padding + borda contam DENTRO da largura calculada */
+.fsCard{
+  box-sizing: border-box;
+  width: min(880px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.fsTitle{
+  margin: 6px 0 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.fsInfoBox{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.fsInfoTitle{
+  font-weight: 800;
+  margin-bottom: 6px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* desktop: mesma aparência da tabela inline anterior (2fr 1fr 1fr 1fr) */
+.fsTable{
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.fsTrHead{
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  background: #121621;
+}
+.fsTh{
+  padding: 10px 12px;
+  font-weight: 800;
+  border-left: 1px solid rgba(255,255,255,.06);
+}
+.fsTr{
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  background: #0f1320;
+}
+.fsTd{
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  border-left: 1px solid rgba(255,255,255,.06);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.fsBigBtn{
+  min-width: 180px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px){
+  .fsCard{ padding: 14px; }
+
+  /* título centralizado, com folga simétrica que evita o botão ✕ */
+  .fsTitle{
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    padding-inline: 40px;
+  }
+  .fsInfoTitle{
+    width: 100%;
+    text-align: center;
+    margin-bottom: 8px;
+  }
+
+  /* cabeçalho some visualmente mas continua disponível para leitores de tela */
+  .fsTrHead{
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* cada linha da tabela vira um card vertical */
+  .fsTable{
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    display: grid;
+    gap: 8px;
+  }
+  .fsTr{
+    grid-template-columns: minmax(0, 1fr);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  /* célula: rótulo (via data-label) à esquerda, valor à direita */
+  .fsTd{
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    padding: 3px 0;
+    border: none;
+    text-align: right;
+    overflow-wrap: break-word;
+  }
+  .fsTd::before{
+    content: attr(data-label);
+    font-weight: 700;
+    opacity: .85;
+    text-align: left;
+  }
+  /* 1ª célula (Certificação) vira o título do card, em largura total */
+  .fsTd.fsTdName{
+    display: block;
+    font-weight: 800;
+    text-align: left;
+    padding: 0 0 6px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .fsTd.fsTdName::before{
+    content: none;
+  }
+
+  .fsBigBtn{ min-width: 0; width: 100%; }
+}
+
+/* ====== Modal "Mix de Produtos": overlay, grade e cards responsivos ====== */
+
+.mixWrap{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* border-box: padding + borda contam DENTRO da largura calculada */
+.mixCard{
+  box-sizing: border-box;
+  width: min(980px, calc(100vw - 24px));
+  max-width: 100%;
+  min-width: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #1b1f2a;
+  color: #e9ecf1;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.12);
+  position: relative;
+}
+
+.mixTitle{
+  margin: 6px 0 12px;
+  font-weight: 900;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.mixCards{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 12px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.mixCards > *{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+}
+/* badge NÍVEL / estado ADQUIRIDO: sempre contidos no próprio card */
+.mixPill{
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.mixBuyBtn{
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.mixBigBtn{
+  min-width: 160px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 760px){
+  .mixCards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px){
+  .mixCard{ padding: 14px; }
+  .mixTitle{ padding-right: 40px; } /* não passa sob o botão ✕ */
+  .mixCards{ grid-template-columns: minmax(0, 1fr); }
+  /* estado "Adquirido" vira faixa em largura total, centralizada no card */
+  .mixPillOwned{
+    width: 100%;
+    text-align: center;
+  }
+  /* lista vira linhas de leitura direta (semântica de <ul>/<li> preservada) */
+  .mixLines{
+    list-style: none;
+    padding-left: 0;
+    display: grid;
+    gap: 4px;
+  }
+  .mixLines > li{
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+  .mixBuyBtn{ width: 100%; }
+  .mixBigBtn{ min-width: 0; width: 100%; }
+}
+
 /* ====== Dicas contextuais (somente exibição) ====== */
 
 /* orientação na lista de salas */
@@ -798,4 +1612,125 @@ html, body {
 /* rótulos financeiros com explicação nativa (title) */
 .hudHelp {
   cursor: help;
+}
+
+/* ====== Responsividade: telas pré-partida ====== */
+
+/* Lista de salas */
+.lobbyListTitle{
+  font-size: 28px;
+  font-weight: 800;
+  color: #fff;
+}
+
+/* Lobby de jogadores (mesmos valores do layout inline anterior no desktop) */
+.plHead{
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: #c7cfdb;
+}
+.plRow{
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.plColReady{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.plReadyBtns{
+  display: flex;
+  gap: 8px;
+}
+.plFooter{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.plFooterBtns{
+  display: flex;
+  gap: 12px;
+}
+
+@media (max-width: 560px){
+  /* Lista de salas: título menor em telas pequenas */
+  .lobbyListTitle{ font-size: 22px; }
+
+  /* Lobby: cada jogador vira um card vertical */
+  .plHead{ grid-template-columns: 1fr; }
+  .plHead .plColReady{ display: none; }
+  .plRow{ grid-template-columns: 1fr; gap: 10px; }
+  .plColReady{ justify-content: flex-start; }
+  .plReadyBtns{ flex-wrap: wrap; width: 100%; }
+  .plReadyBtns button{ flex: 1 1 auto; }
+
+  /* Rodapé do lobby empilha: status, dica, botões */
+  .plFooter{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .plFooterBtns{ flex-direction: column; }
+  .plFooterBtns button{ width: 100%; }
+}
+
+/* ====== Responsividade: tela da partida (mobile) ======
+   Bloco no FINAL do arquivo para vencer, pela cascata, as regras
+   duplicadas de .content/.side/.boardWrap definidas acima. */
+@media (max-width: 760px){
+  /* a página vira o container de scroll vertical (html/body seguem intactos) */
+  .page{
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* topbar aceita quebra de linha sem sobrepor o tabuleiro */
+  .topbar{
+    height: auto;
+    min-height: var(--topbar-h);
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* empilha: tabuleiro (primeiro no DOM) e sidebar abaixo */
+  .content{
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+
+  /* tabuleiro em largura total, proporção original preservada */
+  .boardWrap{
+    width: 100%;
+    height: auto;
+    flex: 0 0 auto;
+  }
+  .board{
+    width: 100%;
+    height: auto;
+    aspect-ratio: 800 / 700;
+  }
+
+  /* sidebar em largura total, sem altura/rolagem próprias */
+  .side{
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* tokens menores no mobile: `scale` (propriedade individual) compõe com o
+     translate(-50%,-50%) inline sem sobrescrevê-lo; com transform-origin 0 0,
+     o centro do peão permanece exatamente na coordenada calculada da casa. */
+  .token{
+    transform-origin: 0 0;
+    scale: 0.65;
+  }
 }

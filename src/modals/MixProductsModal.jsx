@@ -164,11 +164,11 @@ export default function MixProductsModal({
   })()
 
   return (
-    <div style={S.wrap} role="dialog" aria-modal="true" aria-label="Mix de Produtos">
-      <div style={S.card}>
+    <div className="mixWrap" role="dialog" aria-modal="true" aria-label="Mix de Produtos">
+      <div className="mixCard">
         <button ref={closeRef} type="button" style={S.close} onClick={resolveSkip} aria-label="Fechar">✕</button>
 
-        <h2 style={S.title}>Escolha um <b>mix de produtos</b>:</h2>
+        <h2 className="mixTitle">Escolha um <b>mix de produtos</b>:</h2>
 
         <div style={S.note}>
           <div style={{fontWeight:900, marginBottom:4}}>MIX DE PRODUTOS</div>
@@ -191,7 +191,7 @@ export default function MixProductsModal({
         )}
 
         {/* Cards (mesmo estilo da modal anterior) */}
-        <div style={S.cards}>
+        <div className="mixCards">
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
             const isOwned = current === k  // ✅ apenas o atual
@@ -204,7 +204,7 @@ export default function MixProductsModal({
                 borderColor: isOwned ? '#16a34a' : (isSelected ? '#2442f9' : 'rgba(255,255,255,.15)'),
                 opacity: isDisabled ? 0.6 : 1
               }}>
-                <div style={{
+                <div className={isOwned ? 'mixPill mixPillOwned' : 'mixPill'} style={{
                   ...S.pill, 
                   background: isOwned ? '#16a34a' : '#fff', 
                   color: isOwned ? '#fff' : '#111'
@@ -212,7 +212,7 @@ export default function MixProductsModal({
                   {isOwned ? '✓ ADQUIRIDO' : v.pill}
                 </div>
                 <div style={{...S.cardBadge, background:v.color}} />
-                <ul style={S.lines}>
+                <ul className="mixLines" style={S.lines}>
                   <li><b>{v.label}</b></li>
                   <li>Compra: <b>$ {v.compra.toLocaleString()}</b></li>
                   <li>Despesa: <b>$ {v.despesa.toLocaleString()}</b> / cliente</li>
@@ -220,6 +220,7 @@ export default function MixProductsModal({
                 </ul>
                 <button
                   type="button"
+                  className="mixBuyBtn"
                   style={{
                     ...S.buyBtn,
                     background: isDisabled ? '#6b7280' : (isSelected ? '#1d4ed8' : '#2442f9'),
@@ -302,15 +303,16 @@ export default function MixProductsModal({
 
         <div style={S.actions}>
           {allowBack && (
-            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+            <button type="button" className="mixBigBtn" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
               Voltar
             </button>
           )}
-          <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={resolveSkip}>
+          <button type="button" className="mixBigBtn" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={resolveSkip}>
             Não comprar
           </button>
           <button
             type="button"
+            className="mixBigBtn"
             style={{
               ...S.bigBtn,
               background: draftPayload ? '#75e16c' : '#365b31',
@@ -330,14 +332,9 @@ export default function MixProductsModal({
 }
 
 const S = {
-  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: {
-    width:'min(980px, 94vw)', maxHeight:'92vh', overflowY:'auto', background:'#1b1f2a', color:'#e9ecf1',
-    borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
-    border:'1px solid rgba(255,255,255,.12)', position:'relative'
-  },
+  /* wrap, card, title e cards migraram para classes CSS responsivas
+     (.mixWrap, .mixCard, .mixTitle, .mixCards em styles.css) */
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
-  title:{ margin:'6px 0 12px', fontWeight:900 },
 
   note: {
     background:'#2a2f3b',
@@ -349,8 +346,7 @@ const S = {
 
   saldo:{ margin:'0 0 10px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
 
-  // --- Cards (igual padrão anterior)
-  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, marginTop:8, marginBottom:12 },
+  // --- Cards (igual padrão anterior; a grade migrou para .mixCards)
   cardItem:{ background:'#0f1320', border:'1px solid', borderRadius:14, padding:'12px', display:'flex', flexDirection:'column', gap:8 },
   cardBadge:{ width:'100%', height:6, borderRadius:999, opacity:.9 },
   pill:{ alignSelf:'flex-start', fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999, color:'#111' },
@@ -359,5 +355,6 @@ const S = {
   buyBtn:{ marginTop:'auto', padding:'10px 12px', borderRadius:10, border:'none', fontWeight:900, cursor:'pointer', background:'#2442f9', color:'#fff' },
 
   actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14, flexWrap:'wrap' },
-  bigBtn: { minWidth:160, padding:'14px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
+  /* min-width migrou para .mixBigBtn (largura total no mobile) */
+  bigBtn: { padding:'14px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer' },
 }
