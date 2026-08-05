@@ -335,6 +335,15 @@ useEffect(() => {
             <span>status: {lobby?.status || '...'}</span>
             <span style={{ marginLeft: 12 }}>Prontos: {readyCount}/{players.length}</span>
           </div>
+          <p className="lobbyReadyHint">
+            {amHost
+              ? (canStart
+                  ? 'Todos prontos — você pode iniciar a partida.'
+                  : `Aguardando todos ficarem prontos (${readyCount}/${players.length}).`)
+              : (me?.ready
+                  ? 'Tudo certo — aguarde o host iniciar a partida.'
+                  : 'Marque “Ficar pronto” para o host poder iniciar.')}
+          </p>
           {hasDuplicateNames && (
             <div style={{ marginTop: 8, color: '#ffd54f', fontWeight: 800 }}>
               ⚠️ Aviso: existe nome duplicado na sala. (A identidade é pelo ID; renomear evita confusão.)

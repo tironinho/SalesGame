@@ -754,3 +754,48 @@ html, body {
   margin: 0 0 10px;
   color: #e9ecf1;
 }
+
+/* ====== Dicas contextuais (somente exibição) ====== */
+
+/* orientação na lista de salas */
+.lobbyListHint {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #c7cfdb;
+  opacity: .95;
+}
+
+/* orientação no lobby de jogadores (perto de "Prontos: x/y") */
+.lobbyReadyHint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #c7cfdb;
+  opacity: .95;
+}
+
+/* faixa de próximo passo na partida (sidebar, acima dos controles) */
+.nextStepHint {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.05);
+  color: #d7def2;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.nextStepHintMyTurn {
+  border-color: rgba(79,70,229,.55);
+  background: rgba(79,70,229,.14);
+  color: #dce4ff;
+  font-weight: 700;
+}
+
+/* rótulos financeiros com explicação nativa (title) */
+.hudHelp {
+  cursor: help;
+}
