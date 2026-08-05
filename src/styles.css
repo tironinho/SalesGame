@@ -89,12 +89,60 @@ html, body {
   margin:0;
 }
 
-/* Peões */
+/* Peões
+   Posição, tamanho, cor (--token-color) e largura do anel vêm inline do
+   Board.jsx; aqui fica só o acabamento visual. O translate(-50%,-50%) inline
+   mantém o centro exato na coordenada da casa. */
 .token{
-  position:absolute; width:18px; height:18px; border-radius:50%;
-  border:2px solid #111; display:flex; align-items:center; justify-content:center;
-  color:#111; font-size:12px; font-weight:800; box-shadow:0 2px 8px rgba(0,0,0,.6);
+  position:absolute;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  /* brilho no topo + cor do jogador = leve volume 3D */
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255,255,255,.4), rgba(255,255,255,0) 55%),
+    var(--token-color, #6c5ce7);
+  border:3px solid rgba(255,255,255,.95); /* largura real vem do inline */
+  box-shadow: 0 3px 10px rgba(0,0,0,.55), 0 8px 18px rgba(0,0,0,.35);
+  color:#fff;
+  font-weight:900;
+  user-select:none;
+  pointer-events:none; /* apenas visual; movimento é por botão */
   transform:translate(-50%,-50%);
+  transition: width .25s ease, height .25s ease, box-shadow .25s ease;
+}
+.tokenInitial{
+  line-height:1;
+  text-shadow: 0 1px 2px rgba(0,0,0,.75), 0 0 3px rgba(0,0,0,.45);
+}
+/* jogador da vez: halo na cor do jogador + pulse sutil (sem piscar) */
+.token--active{
+  animation: sgTokenPulse 1.8s ease-in-out infinite;
+}
+.tokenTurnBadge{
+  position:absolute;
+  top:0;
+  right:0;
+  transform: translate(35%, -35%);
+  font-size:.55em;
+  line-height:1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+}
+@keyframes sgTokenPulse{
+  0%, 100%{
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.55),
+      0 0 0 4px var(--token-color, #6c5ce7),
+      0 0 12px 3px var(--token-color, #6c5ce7),
+      0 6px 16px rgba(0,0,0,.45);
+  }
+  50%{
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.55),
+      0 0 0 4px var(--token-color, #6c5ce7),
+      0 0 20px 7px var(--token-color, #6c5ce7),
+      0 6px 16px rgba(0,0,0,.45);
+  }
 }
 
 /* ===== Coluna da direita (HUD + botões) — SEM rolagem ===== */
@@ -1705,7 +1753,9 @@ html, body {
     overflow: visible;
   }
 
-  /* tabuleiro em largura total, proporção original preservada */
+  /* tabuleiro inteiro na largura disponível, proporção original preservada
+     (sem rolagem horizontal; o modo "Ampliado" com scroll virá numa etapa
+     futura como opção). */
   .boardWrap{
     width: 100%;
     height: auto;
@@ -1713,6 +1763,7 @@ html, body {
   }
   .board{
     width: 100%;
+    min-width: 0;
     height: auto;
     aspect-ratio: 800 / 700;
   }
@@ -1726,11 +1777,51 @@ html, body {
     overflow: visible;
   }
 
-  /* tokens menores no mobile: `scale` (propriedade individual) compõe com o
+  /* tokens no mobile: `scale` (propriedade individual) compõe com o
      translate(-50%,-50%) inline sem sobrescrevê-lo; com transform-origin 0 0,
-     o centro do peão permanece exatamente na coordenada calculada da casa. */
+     o centro do peão permanece exatamente na coordenada calculada da casa.
+     scale 0.90: em board de ~320px o token fica com ~14px (ativo ~17px),
+     ainda menor que uma casa. */
   .token{
     transform-origin: 0 0;
-    scale: 0.65;
+    scale: 0.90;
+    /* contorno escuro externo (outline não entra na animação de box-shadow
+       do ativo nem afeta layout) + sombra curta e forte p/ áreas claras */
+    outline: 1px solid rgba(0,0,0,.6);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,.35),
+      0 2px 5px rgba(0,0,0,.65),
+      0 6px 12px rgba(0,0,0,.3);
+  }
+  /* peça ativa: compensa o TOKEN_ACTIVE_SCALE (1.15) inline do Board.jsx.
+     0.78 × 1.15 ≈ 0.90 → mesmo tamanho físico da peça normal; a identificação
+     da vez fica por conta do halo e da estrela. */
+  .token.token--active{
+    scale: 0.78;
+    /* halo mais contido no mobile (mesma animação, spread menor) */
+    animation-name: sgTokenPulseMobile;
+  }
+  /* estrela da vez mais legível: disco escuro atrás, presa ao próprio token */
+  .tokenTurnBadge{
+    font-size: .48em;
+    background: rgba(15,19,32,.85);
+    border-radius: 999px;
+    padding: .08em;
+  }
+  @keyframes sgTokenPulseMobile{
+    0%, 100%{
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,.55),
+        0 0 0 2px var(--token-color, #6c5ce7),
+        0 0 6px 2px var(--token-color, #6c5ce7),
+        0 4px 10px rgba(0,0,0,.45);
+    }
+    50%{
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,.55),
+        0 0 0 2px var(--token-color, #6c5ce7),
+        0 0 10px 3px var(--token-color, #6c5ce7),
+        0 4px 10px rgba(0,0,0,.45);
+    }
   }
 }

@@ -16,7 +16,6 @@ import { getOrCreateTabPlayerId } from '../auth'
 const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
 const TOKEN_ACTIVE_SCALE = 1.15; // multiplicador para o peão do jogador da vez
 const TOKEN_RING_PX = 3;      // largura do anel branco
-const TOKEN_SHADOW = '0 8px 18px rgba(0,0,0,.35)';
 
 const DEFAULT_STATS = {
   cash: 18000,
@@ -146,39 +145,34 @@ export default function Board({
             const sizePx = base * (isTurn ? TOKEN_ACTIVE_SCALE : 1)
             const ring = Math.max(2, TOKEN_RING_PX * s)
 
-            // Emojis de pessoinhas para cada jogador
-            const personEmojis = ['👤', '👥', '👨', '👩', '🧑', '👦', '👧', '👶']
-            const personEmoji = personEmojis[idx % personEmojis.length]
-            
+            // Inicial do nome (fallback "?"); identidade visível em qualquer cor
+            const rawInitial = String(p?.name || '').trim().charAt(0)
+            const initial = rawInitial ? rawInitial.toUpperCase() : '?'
+
             return (
               <div
                 key={p.id}
-                className="token"
+                className={`token${isTurn ? ' token--active' : ''}`}
                 style={{
+                  // dinâmicos: posição, tamanho, cor do jogador (via CSS var) e
+                  // largura do anel; o visual estático mora em styles.css
                   position: 'absolute',
                   left: xy.x + off,
                   top:  xy.y - off,
                   transform: 'translate(-50%, -50%)',   // centraliza no ponto da casa
                   width:  sizePx,
                   height: sizePx,
-                  borderRadius: '50%',
-                  background: p.color,
-                  border: `${ring}px solid rgba(255,255,255,.95)`,
-                  boxShadow: TOKEN_SHADOW,
-                  pointerEvents: 'none',                // apenas visual; movimento é por botão
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: '#000',
-                  fontWeight: 900,
-                  userSelect: 'none',
+                  '--token-color': p.color,
+                  borderWidth: ring,
                   zIndex: isTurn ? 4 : 3,
-                  fontSize: `${Math.max(16, sizePx * 0.6)}px`, // Tamanho proporcional do emoji
+                  fontSize: `${Math.max(16, sizePx * 0.6)}px`, // inicial proporcional
                 }}
                 title={`${p.name} • Casa ${i + 1}`}
                 aria-label={`${p.name} está na casa ${i + 1}`}
               >
-                {/* Pessoinha + estrela se for a vez */}
-                {isTurn ? '⭐' : personEmoji}
+                <span className="tokenInitial">{initial}</span>
+                {/* Indicador da vez: estrela pequena no canto, sem cobrir a inicial */}
+                {isTurn && <span className="tokenTurnBadge" aria-hidden="true">⭐</span>}
               </div>
             )
           })}
