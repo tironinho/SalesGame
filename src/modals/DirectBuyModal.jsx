@@ -93,11 +93,11 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
 
   return (
     <div
-      style={styles.wrap}
+      className="directBuyWrap"
       role="dialog"
       aria-modal="true"
     >
-      <div style={styles.card}>
+      <div className="directBuyCard">
         <button
           ref={closeRef}
           type="button"
@@ -108,20 +108,20 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
           ✕
         </button>
 
-        <h2 style={styles.title}>Direto de Compra — escolha uma casa para adquirir:</h2>
+        <h2 className="directBuyTitle">Direto de Compra — escolha uma casa para adquirir:</h2>
 
         <div style={{ marginBottom: 8, opacity: .8, fontSize: 13 }}>
           Saldo atual: <b>${Number(currentCash).toLocaleString()}</b>
         </div>
 
-        <div style={styles.grid}>
+        <div className="directBuyGrid">
           {CARDS.map((c) => (
             <div key={c.key} style={styles.cell}>
               <div style={styles.cellTitle}>{c.title}</div>
               <ul style={styles.lines}>
                 {c.lines.map((ln, i) => <li key={i}>{ln}</li>)}
               </ul>
-              <button type="button" style={styles.buyBtn} onClick={c.onBuy}>
+              <button type="button" className="directBuyBtn" style={{ background:'#3fbf49', color:'#09110f' }} onClick={c.onBuy}>
                 Comprar
               </button>
             </div>
@@ -129,7 +129,7 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
         </div>
 
         <div style={{ display:'flex', justifyContent:'center', marginTop:16 }}>
-          <button type="button" style={{ ...styles.buyBtn, background:'#666' }} onClick={handleClose}>
+          <button type="button" className="directBuyBtn" style={{ background:'#666', color:'#09110f' }} onClick={handleClose}>
             Não Comprar
           </button>
         </div>
@@ -139,25 +139,13 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
 }
 
 const styles = {
-  wrap: {
-    position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
-    display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000
-  },
-  card: {
-    width:'min(1000px, 94vw)', background:'#1b1f2a', color:'#e9ecf1',
-    borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
-    border:'1px solid rgba(255,255,255,.12)', position:'relative'
-  },
+  /* wrap, card, grid, título e botões migraram para classes CSS responsivas
+     (.directBuyWrap, .directBuyCard, .directBuyGrid, .directBuyTitle,
+      .directBuyBtn em styles.css) */
   close: {
     position:'absolute', right:10, top:10, width:36, height:36,
     borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b',
-    color:'#fff', cursor:'pointer'
-  },
-  title: { margin:'6px 0 16px', fontWeight:800 },
-  grid: {
-    display:'grid',
-    gridTemplateColumns:'repeat(4, minmax(180px, 1fr))',
-    gap:12
+    color:'#fff', cursor:'pointer', flex:'0 0 auto'
   },
   cell: {
     background:'#0f1320', border:'1px solid rgba(255,255,255,.08)', borderRadius:12,
@@ -165,9 +153,4 @@ const styles = {
   },
   cellTitle: { fontWeight:800, marginBottom:4 },
   lines: { margin:0, padding:'0 0 0 16px', opacity:.85, lineHeight:1.3 },
-  buyBtn: {
-    marginTop:'auto', alignSelf:'center',
-    minWidth:140, padding:'10px 14px', borderRadius:10, border:'none',
-    background:'#3fbf49', color:'#09110f', fontWeight:900, cursor:'pointer'
-  }
 }

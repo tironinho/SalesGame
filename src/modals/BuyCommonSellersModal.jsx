@@ -199,13 +199,13 @@ export default function BuyCommonSellersModal({
 
   return (
     <div
-      style={styles.wrap}
+      className="vcWrap"
       role="dialog"
       aria-modal="true"
       aria-label="Comprar Vendedores Comuns"
       onMouseDown={(e) => { if (e.target === e.currentTarget) e.stopPropagation() }}
     >
-      <div style={styles.card} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="vcCard" onMouseDown={(e) => e.stopPropagation()}>
         <button
           ref={closeRef}
           type="button"
@@ -214,7 +214,7 @@ export default function BuyCommonSellersModal({
           aria-label="Fechar"
         >✕</button>
 
-        <h2 style={styles.title}>
+        <h2 className="vcTitle">
           Você pode escolher quantos <b>Vendedores Comuns</b> quer comprar,
           <br/>Digite o número de vendedores:
         </h2>
@@ -257,7 +257,7 @@ export default function BuyCommonSellersModal({
           </div>
         </div>
 
-        <div style={styles.infoBox}>
+        <div className="vcInfoBox" style={styles.infoBox}>
           <div style={{fontWeight:800, marginBottom:6}}>VENDEDOR COMUM (FAZ TUDO)</div>
           <div style={{opacity:.9, marginBottom:8}}>
             Base para cálculo despesa: <b>x quantidade vendedor comum</b>.<br/>
@@ -265,12 +265,12 @@ export default function BuyCommonSellersModal({
             <b>Atende até {attendsUpTo} clientes</b>.
           </div>
 
-          <div style={styles.table}>
-            <div style={styles.trHead}>
-              <div style={styles.th}>Certificação</div>
-              <div style={styles.th}>Contratação</div>
-              <div style={styles.th}>Despesa</div>
-              <div style={styles.th}>Faturamento</div>
+          <div className="vcTable">
+            <div className="vcTrHead">
+              <div className="vcTh">Certificação</div>
+              <div className="vcTh">Contratação</div>
+              <div className="vcTh">Despesa</div>
+              <div className="vcTh">Faturamento</div>
             </div>
             <Row label="S/ Certificado"     hire={money(unitHire)} expense={money(expenseAt(0))} revenue={money(revenueAt(0))} />
             <Row label="Com 1 certificado"  hire="-"               expense={money(expenseAt(1))} revenue={money(revenueAt(1))} />
@@ -327,34 +327,24 @@ export default function BuyCommonSellersModal({
 
 function Row({ label, hire, expense, revenue }) {
   return (
-    <div style={styles.tr}>
-      <div style={styles.td}>{label}</div>
-      <div style={styles.td}>{hire}</div>
-      <div style={styles.td}>{expense}</div>
-      <div style={styles.td}>{revenue}</div>
+    <div className="vcTr">
+      <div className="vcTd vcTdName" data-label="Certificação">{label}</div>
+      <div className="vcTd" data-label="Contratação">{hire}</div>
+      <div className="vcTd" data-label="Despesa">{expense}</div>
+      <div className="vcTd" data-label="Faturamento">{revenue}</div>
     </div>
   )
 }
 
 const styles = {
-  wrap: {
-    position:'fixed', inset:0, background:'rgba(0,0,0,.55)',
-    display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000
-  },
-  card: {
-    width:'min(880px, 92vw)', maxWidth:880, background:'#1b1f2a',
-    color:'#e9ecf1', borderRadius:16, padding:'20px 20px 16px',
-    boxShadow:'0 10px 40px rgba(0,0,0,.4)', border:'1px solid rgba(255,255,255,.12)',
-    position:'relative',
-    maxHeight: '92vh',
-    overflowY: 'auto',
-  },
+  /* wrap, card, title e a tabela de certificações migraram para classes CSS
+     responsivas (.vcWrap, .vcCard, .vcTitle, .vcTable/.vcTr/.vcTd
+     em styles.css) */
   close: {
     position:'absolute', right:10, top:10, width:36, height:36,
     borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b',
     color:'#fff', cursor:'pointer'
   },
-  title: { margin:'6px 0 12px', fontWeight:800, lineHeight:1.3 },
   inlineInfo: {
     display:'flex', justifyContent:'space-between', gap:10,
     margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap'
@@ -374,12 +364,6 @@ const styles = {
     background:'#161a28', border:'1px solid rgba(255,255,255,.12)',
     borderRadius:14, padding:14, marginTop:6
   },
-  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, overflow:'hidden', marginTop:8 },
-  trHead: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#121621' },
-  th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
-  tr: { display:'grid', gridTemplateColumns:'2fr 1fr 1fr 1fr', background:'#0f1320' },
-  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
-
   summary: {
     display:'flex', justifyContent:'space-between',
     border:'1px dashed rgba(255,255,255,.2)', borderRadius:10, padding:'8px 12px',

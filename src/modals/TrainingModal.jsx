@@ -306,10 +306,7 @@ export default function TrainingModal({
                 Selecione os tipos de profissionais que deseja treinar
                 (Vendedor Comum, Inside Sales, Field Sales ou Gestor Comercial):
               </p>
-              <div style={{
-                ...S.vendorRow,
-                gridTemplateColumns: `repeat(${typeList.length}, minmax(0,1fr))`
-              }}>
+              <div className="trainingVendorRow">
                 {typeList.map(v => (
                   <button
                     key={v.id}
@@ -343,7 +340,7 @@ export default function TrainingModal({
                 </div>
               </div>
               
-              <div style={S.products}>
+              <div className="trainingProducts">
                 {PRODUCTS.map(p => {
                   const active = selectedTrainings.has(p.id)
                   const isOwnedByAnySelected = Array.from(selectedVendorTypes).some(vendorType => {
@@ -392,7 +389,7 @@ export default function TrainingModal({
               </div>
             </div>
 
-            <div style={S.actionsRow}>
+            <div className="trainingActionsRow">
               <button
                 type="button"
                 style={{...S.smallBtn, background:'#3a4152'}}
@@ -464,10 +461,10 @@ const S = {
   saldo:{ margin:'0 0 12px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
   allDoneBox: { background:'#0f1320', border:'1px solid rgba(255,255,255,.15)', borderRadius:12, padding:'14px', fontWeight:800, textAlign:'center' },
 
-  vendorRow: { display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:10, marginBottom:12 },
+  /* vendorRow, products e actionsRow migraram para classes CSS responsivas
+     (.trainingVendorRow, .trainingProducts, .trainingActionsRow em styles.css) */
   vendorBtn: { padding:'10px 12px', borderRadius:10, border:'1px solid', color:'#fff', fontWeight:800, cursor:'pointer' },
 
-  products: { display:'grid', gridTemplateColumns:'repeat(3, minmax(0,1fr))', gap:12, margin:'4px 0 10px' },
   productCard: { textAlign:'center', padding:'16px 14px', borderRadius:14, border:'2px solid', color:'#fff' },
   pill: (bg) => ({
     display:'inline-block',
@@ -479,7 +476,6 @@ const S = {
     marginBottom:8
   }),
 
-  actionsRow: { display:'flex', alignItems:'center', gap:12, margin:'6px 0 6px' },
   smallBtn: { padding:'10px 14px', borderRadius:10, border:'none', color:'#fff', fontWeight:800, cursor:'pointer' },
   btnRow: { display:'flex', gap:12, justifyContent:'flex-end', marginTop:12, flexWrap:'wrap' },
   bigBtn: { minWidth:160, padding:'14px 18px', borderRadius:12, border:'none', color:'#fff', fontWeight:900, cursor:'pointer' },

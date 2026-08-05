@@ -137,11 +137,11 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
   })()
 
   return (
-    <div style={S.wrap} role="dialog" aria-modal="true" aria-label="ERP/Sistemas">
-      <div style={S.card}>
+    <div className="erpWrap" role="dialog" aria-modal="true" aria-label="ERP/Sistemas">
+      <div className="erpCard">
         <button ref={closeRef} type="button" style={S.close} onClick={handleClose} aria-label="Fechar">✕</button>
 
-        <h2 style={S.title}>Escolha o nível de <b>ERP / Sistemas</b>:</h2>
+        <h2 className="erpTitle">Escolha o nível de <b>ERP / Sistemas</b>:</h2>
 
         {/* Nota explicativa */}
         <div style={S.note}>
@@ -161,23 +161,25 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
         {/* Saldo disponível (ajuda visual) */}
         <div style={S.saldo}>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
 
-        {/* Tabela comparativa */}
-        <div style={S.table}>
-          <div style={S.trHead}>
-            <div style={S.th}></div>
-            <div style={{...S.th, background:'#10214d'}}>Nível A</div>
-            <div style={{...S.th, background:'#0f3a1c'}}>Nível B</div>
-            <div style={{...S.th, background:'#4a3705'}}>Nível C</div>
-            <div style={{...S.th, background:'#2a2f3b'}}>Nível D</div>
+        {/* Tabela comparativa (rolagem horizontal própria no mobile) */}
+        <div className="erpTableScroll">
+          <div className="erpTable">
+            <div style={S.trHead}>
+              <div className="erpStickyCell erpStickyHead" style={S.th}></div>
+              <div style={{...S.th, background:'#10214d'}}>Nível A</div>
+              <div style={{...S.th, background:'#0f3a1c'}}>Nível B</div>
+              <div style={{...S.th, background:'#4a3705'}}>Nível C</div>
+              <div style={{...S.th, background:'#2a2f3b'}}>Nível D</div>
+            </div>
+            <Row label="COMPRA"      fmt vA={LEVELS.A.compra} vB={LEVELS.B.compra} vC={LEVELS.C.compra} vD={LEVELS.D.compra} />
+            <Row label="DESPESA"     fmt vA={LEVELS.A.despesa} vB={LEVELS.B.despesa} vC={LEVELS.C.despesa} vD={LEVELS.D.despesa} />
+            <Row label="FATURAMENTO" fmt vA={LEVELS.A.faturamento} vB={LEVELS.B.faturamento} vC={LEVELS.C.faturamento} vD={LEVELS.D.faturamento} />
           </div>
-          <Row label="COMPRA"      fmt vA={LEVELS.A.compra} vB={LEVELS.B.compra} vC={LEVELS.C.compra} vD={LEVELS.D.compra} />
-          <Row label="DESPESA"     fmt vA={LEVELS.A.despesa} vB={LEVELS.B.despesa} vC={LEVELS.C.despesa} vD={LEVELS.D.despesa} />
-          <Row label="FATURAMENTO" fmt vA={LEVELS.A.faturamento} vB={LEVELS.B.faturamento} vC={LEVELS.C.faturamento} vD={LEVELS.D.faturamento} />
         </div>
         <div style={S.perStaffNote}>Valores de despesa e faturamento na tabela são <b>por colaborador</b>.</div>
 
         {/* Cards + botões */}
-        <div style={S.cards}>
+        <div className="erpCards">
           {(['A','B','C','D']).map((k) => {
             const v = LEVELS[k]
             const isOwned = current === k  // ✅ apenas o atual
@@ -190,7 +192,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
                 borderColor: isOwned ? '#16a34a' : (isSelected ? '#2442f9' : 'rgba(255,255,255,.15)'),
                 opacity: isDisabled ? 0.6 : 1
               }}>
-                <div style={{
+                <div className="erpPill" style={{
                   ...S.pill, 
                   background: isOwned ? '#16a34a' : '#fff', 
                   color: isOwned ? '#fff' : '#111'
@@ -205,6 +207,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
                 </ul>
                 <button
                   type="button"
+                  className="erpBuyBtn"
                   style={{
                     ...S.buyBtn,
                     background: isDisabled ? '#6b7280' : (isSelected ? '#1d4ed8' : '#2442f9'),
@@ -250,15 +253,16 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
 
         <div style={S.actions}>
           {allowBack && (
-            <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+            <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
               Voltar
             </button>
           )}
-          <button type="button" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={handleClose}>
+          <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={handleClose}>
             Não comprar
           </button>
           <button
             type="button"
+            className="erpBigBtn"
             style={{
               ...S.bigBtn,
               background: draftPayload ? '#75e16c' : '#365b31',
@@ -281,7 +285,7 @@ function Row({ label, vA, vB, vC, vD, fmt }) {
   const f = (n) => fmt ? `$ ${Number(n).toLocaleString()}` : n
   return (
     <div style={S.tr}>
-      <div style={{...S.td, fontWeight:700}}>{label}</div>
+      <div className="erpStickyCell" style={{...S.td, fontWeight:700}}>{label}</div>
       <div style={S.td}>{f(vA)}</div>
       <div style={S.td}>{f(vB)}</div>
       <div style={S.td}>{f(vC)}</div>
@@ -291,14 +295,10 @@ function Row({ label, vA, vB, vC, vD, fmt }) {
 }
 
 const S = {
-  wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
-  card: {
-    width:'min(980px, 94vw)', maxHeight:'92vh', overflowY:'auto', background:'#1b1f2a', color:'#e9ecf1',
-    borderRadius:16, padding:'20px', boxShadow:'0 10px 40px rgba(0,0,0,.4)',
-    border:'1px solid rgba(255,255,255,.12)', position:'relative'
-  },
+  /* wrap, card, title, table (wrapper) e cards migraram para classes CSS
+     responsivas (.erpWrap, .erpCard, .erpTitle, .erpTableScroll/.erpTable,
+     .erpCards em styles.css) */
   close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
-  title:{ margin:'6px 0 12px', fontWeight:900 },
 
   note: {
     background:'#2a2f3b',
@@ -311,13 +311,14 @@ const S = {
   saldo:{ margin:'0 0 10px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
   perStaffNote: { margin:'0 0 10px', fontSize:13, opacity:0.9 },
 
-  table: { border:'1px solid rgba(255,255,255,.12)', borderRadius:12, overflow:'hidden', marginBottom:8 },
-  trHead: { display:'grid', gridTemplateColumns:'1fr repeat(4, 1fr)', background:'#121621' },
+  /* minmax(140px,1fr) na coluna de rótulos + minmax(0,1fr) nas de valores:
+     mantém as colunas alinhadas entre as linhas mesmo na largura mínima
+     (1fr puro tem mínimo implícito = min-content, que variava por linha) */
+  trHead: { display:'grid', gridTemplateColumns:'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background:'#121621' },
   th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
-  tr: { display:'grid', gridTemplateColumns:'1fr repeat(4, 1fr)', background:'#0f1320' },
+  tr: { display:'grid', gridTemplateColumns:'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background:'#0f1320' },
   td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
 
-  cards:{ display:'grid', gridTemplateColumns:'repeat(4, minmax(0,1fr))', gap:12, marginTop:8, marginBottom:12 },
   cardItem:{ background:'#0f1320', border:'1px solid', borderRadius:14, padding:'12px', display:'flex', flexDirection:'column', gap:8 },
   cardBadge:{ width:'100%', height:6, borderRadius:999, opacity:.9 },
   pill:{ alignSelf:'flex-start', fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999, color:'#111' },
@@ -326,5 +327,6 @@ const S = {
   buyBtn:{ marginTop:'auto', padding:'10px 12px', borderRadius:10, border:'none', fontWeight:900, cursor:'pointer', background:'#2442f9', color:'#fff' },
 
   actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14, flexWrap:'wrap' },
-  bigBtn: { minWidth:160, padding:'14px 18px', borderRadius:12, border:'none', color:'#fff', fontWeight:900, cursor:'pointer' },
+  /* min-width migrou para .erpBigBtn (zera no mobile) */
+  bigBtn: { padding:'14px 18px', borderRadius:12, border:'none', color:'#fff', fontWeight:900, cursor:'pointer' },
 }

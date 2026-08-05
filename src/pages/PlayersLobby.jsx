@@ -252,16 +252,16 @@ useEffect(() => {
         </div>
 
         <div style={s.table}>
-          <div style={s.thead}>
+          <div className="plHead">
             <div style={s.colPlayer}>Jogador</div>
-            <div style={s.colReady}>Pronto?</div>
+            <div className="plColReady">Pronto?</div>
           </div>
 
         {loading ? (
           <div style={s.loading}>Carregando...</div>
         ) : (
           players.map((p) => (
-            <div key={p.player_id} style={s.row}>
+            <div key={p.player_id} className="plRow">
               <div style={s.colPlayer}>
                 <span style={s.avatar}>{(p.player_name || '?').slice(0,2).toLowerCase()}</span>
                 <span>{p.player_name || 'Anônimo'}</span>
@@ -269,9 +269,9 @@ useEffect(() => {
                 {p.player_id === meId && <span style={s.badgeYou}>Você</span>}
               </div>
 
-              <div style={s.colReady}>
+              <div className="plColReady">
                 {p.player_id === meId ? (
-                  <div style={{ display:'flex', gap:8 }}>
+                  <div className="plReadyBtns">
                     <button
                       style={{ ...s.btn, ...(!me?.ready ? s.btnDark : s.btnGhost) }}
                       onClick={() => setReadyUI(false)}
@@ -329,7 +329,7 @@ useEffect(() => {
           </div>
         )}
 
-        <div style={s.footer}>
+        <div className="plFooter">
           <div style={s.statusWrap}>
             <span style={{ ...s.dot, background: lobby?.status === 'open' ? '#22c55e' : '#f59e0b' }} />
             <span>status: {lobby?.status || '...'}</span>
@@ -350,7 +350,7 @@ useEffect(() => {
             </div>
           )}
 
-          <div style={{ display:'flex', gap:12 }}>
+          <div className="plFooterBtns">
             <button style={{ ...s.btn, ...(canStart ? s.btnPrimary : s.disabled) }} onClick={handleStart} disabled={!canStart}>
               Iniciar partida
             </button>
