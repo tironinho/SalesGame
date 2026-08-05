@@ -1764,6 +1764,22 @@ export default function App() {
     !isCurrentPlayerBankrupt &&
     !isWaitingRevenue
 
+  // ====== Faixa de próximo passo (somente exibição; não altera turno/ações)
+  const nextStepHint = gameOver
+    ? 'Partida encerrada — veja o resultado.'
+    : me?.bankrupt
+    ? 'Você declarou falência — acompanhe o restante da partida.'
+    : Number(modalLocks || 0) > 0
+    ? 'Resolva a decisão aberta para concluir o turno.'
+    : (isMyTurn && isWaitingRevenue)
+    ? 'Aguarde na casa de faturamento para concluir esta etapa.'
+    : (isMyTurn && controlsCanRoll)
+    ? 'Sua vez: role o dado.'
+    : current?.name
+    ? `Aguarde a jogada de ${current.name}.`
+    : 'Aguarde o próximo jogador.'
+  const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll
+
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
     if (!DEBUG_LOGS) return
@@ -2030,6 +2046,13 @@ export default function App() {
 
           {/* CONTROLES FIXOS NO RODAPÉ DA SIDEBAR */}
           <div className="controlsSticky">
+            <div
+              className={`nextStepHint${nextStepIsMyTurn ? ' nextStepHintMyTurn' : ''}`}
+              role="status"
+              aria-live="polite"
+            >
+              {nextStepHint}
+            </div>
             <Controls
               onAction={(act) => {
                 // Encaminha para o motor de turnos

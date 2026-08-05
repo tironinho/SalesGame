@@ -120,6 +120,10 @@ export default function LobbyList({ onEnterRoom, playerName }) {
           </div>
         </div>
 
+        <p className="lobbyListHint">
+          Crie uma sala ou entre em uma sala existente para começar.
+        </p>
+
         {rows.length === 0 && !loading ? (
           <div style={styles.empty}>Nenhuma sala criada ainda. Clique em <b>Criar Lobby</b> para começar.</div>
         ) : (
