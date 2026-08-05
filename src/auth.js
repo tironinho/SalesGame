@@ -6,17 +6,20 @@
 // Re-exporta o client unificado para compatibilidade com código legado
 export { supabase } from './lib/supabaseClient.js'
 
+import { createUuidV4, isValidUuid } from './lib/uuid.js'
+
+// Mantida por compatibilidade com imports existentes; sempre UUID válido.
 export function makeId() {
-  return (typeof crypto !== 'undefined' && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  return createUuidV4();
 }
 
 /* ====== IDENTIDADE POR ABA (recomendado) ====== */
 export function getOrCreateTabPlayerId() {
   const K = 'sg_tab_player_id';
   let id = sessionStorage.getItem(K);
-  if (!id) {
+  // Substitui IDs antigos inválidos (ex.: "1785934638134-yuhltw", gerados
+  // pelo fallback anterior quando crypto.randomUUID não existia em HTTP).
+  if (!isValidUuid(id)) {
     id = makeId();
     sessionStorage.setItem(K, id);
   }
@@ -70,7 +73,8 @@ export function setTabPlayerName(name) {
 export function getOrCreateLocalPlayerId() {
   const K = 'sg_player_id';
   let id = localStorage.getItem(K);
-  if (!id) {
+  // Mesma validação: mantém UUID válido, troca valor ausente/inválido.
+  if (!isValidUuid(id)) {
     id = makeId();
     localStorage.setItem(K, id);
   }

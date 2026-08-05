@@ -1,6 +1,7 @@
 // src/lib/lobbies.js
 // ✅ CORREÇÃO: Usa o client Supabase unificado
 import { supabase } from './supabaseClient.js'
+import { createUuidV4 } from './uuid.js'
 
 /* ==============================
    LISTAGEM DE LOBBIES
@@ -48,10 +49,9 @@ export function onLobbiesRealtime(cb) {
 export async function createLobby({ name, hostId, max = 4 }) {
   if (!hostId) throw new Error('hostId obrigatório em createLobby')
 
-  const id =
-    (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  // Sempre UUID válido (lobbies.id é coluna uuid; o fallback antigo
+  // "timestamp-texto" quebrava a criação de sala em HTTP na rede local)
+  const id = createUuidV4()
 
   const row = {
     id,
