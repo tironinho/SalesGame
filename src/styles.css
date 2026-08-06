@@ -70,6 +70,12 @@ html, body {
   display:flex; align-items:center; justify-content:center;
 }
 
+/* Botão de modo do tabuleiro: recurso exclusivamente mobile.
+   Fica no DOM, mas só aparece dentro do media query ≤760px. */
+.boardModeBtn{
+  display: none;
+}
+
 /* Tabuleiro preenche 100% da área disponível */
 .board{
   position: relative;
@@ -1753,19 +1759,73 @@ html, body {
     overflow: visible;
   }
 
-  /* tabuleiro inteiro na largura disponível, proporção original preservada
-     (sem rolagem horizontal; o modo "Ampliado" com scroll virá numa etapa
-     futura como opção). */
+  /* ===== Modo "Tabuleiro inteiro" (fit — padrão) =====
+     Tabuleiro completo na largura disponível, proporção original,
+     sem nenhuma rolagem horizontal. */
   .boardWrap{
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     height: auto;
     flex: 0 0 auto;
+    overflow-x: hidden;
   }
   .board{
     width: 100%;
     min-width: 0;
+    max-width: 100%;
     height: auto;
     aspect-ratio: 800 / 700;
+  }
+
+  /* ===== Modo foco (follow — edge-to-edge) =====
+     Tabuleiro inteiro na largura FÍSICA do celular: só o .boardWrap rompe
+     as margens laterais do .content (truque margin-left: 50% - 50vw);
+     botão e sidebar continuam dentro das margens normais. Sem scroll
+     horizontal e sem distorção (aspect-ratio preservado). */
+  .content--boardFocus .boardWrap{
+    box-sizing: border-box;
+    width: 100vw;
+    width: 100dvw;
+    max-width: 100vw;
+    max-width: 100dvw;
+    min-width: 0;
+    margin-left: calc(50% - 50vw);
+    margin-left: calc(50% - 50dvw);
+    overflow: hidden;
+    justify-content: center;
+  }
+  .content--boardFocus .board{
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 800 / 700;
+    flex: 0 0 auto;
+  }
+
+  /* botão de alternância dos modos (só mobile) */
+  .boardModeBtn{
+    display: block;
+    width: 100%;
+    min-height: 40px;
+    padding: 10px 14px;
+    margin: 0 0 8px;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 10px;
+    background: #20222a;
+    color: #fff;
+    font-weight: 800;
+    font-size: 14px;
+    text-align: center;
+    cursor: pointer;
+    grid-column: 1 / -1;
+    box-sizing: border-box;
+  }
+  .boardModeBtn:focus-visible{
+    outline: 3px solid rgba(255,255,255,.85);
+    outline-offset: 2px;
   }
 
   /* sidebar em largura total, sem altura/rolagem próprias */

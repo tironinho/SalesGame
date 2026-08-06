@@ -290,6 +290,11 @@ export default function App() {
   const [log, setLog] = useState(['Bem-vindo ao Sales Game!'])
   const appendLog = (msg) => setLog(l => [msg, ...l].slice(0, 12))
 
+  // ====== modo de visualização do tabuleiro (mobile) — estado EXCLUSIVAMENTE
+  // visual/local: não entra em rooms.state, não é sincronizado nem persistido.
+  // 'fit' = modo normal | 'follow' = modo foco (edge-to-edge, sem scroll)
+  const [boardView, setBoardView] = useState('fit')
+
   // ====== bloqueio de turno (cadeado entre abas)
   const [turnLock, setTurnLock] = useState(false)
   const [lockOwner, setLockOwner] = useState(null)
@@ -2032,8 +2037,21 @@ export default function App() {
         </div>
       </header>
 
-      <main className="content">
-        <div className="boardWrap">
+      <main className={`content${boardView === 'follow' ? ' content--boardFocus' : ''}`}>
+        {/* alternância mobile de visualização do tabuleiro (só exibição;
+            escondido no desktop via CSS) */}
+        <button
+          type="button"
+          className="boardModeBtn"
+          aria-label="Modo ampliado do tabuleiro"
+          aria-pressed={boardView === 'follow'}
+          onClick={() => setBoardView(v => (v === 'follow' ? 'fit' : 'follow'))}
+        >
+          {boardView === 'follow'
+            ? 'Voltar ao modo normal'
+            : 'Expandir tabuleiro'}
+        </button>
+        <div className={`boardWrap${boardView === 'follow' ? ' boardWrap--follow' : ''}`}>
           <Board
             players={players}
             turnIdx={turnIdx}
