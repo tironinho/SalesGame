@@ -23,6 +23,110 @@ import {
   normalizeMaxRounds,
 } from '../game/roundConfig'
 
+/* ---------- Ícones SVG inline (decorativos; sem dependência externa) ---------- */
+const svgProps = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': 'true',
+  focusable: 'false',
+}
+
+function IconBack(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M19 12H5" />
+      <path d="M12 19l-7-7 7-7" />
+    </svg>
+  )
+}
+
+function IconGamepad(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M6 8h12a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1.5l-2-2h-5l-2 2H6a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4z" />
+      <path d="M8 11v4M6 13h4" />
+      <circle cx="15.5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="14" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function IconUsers(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M21 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
+}
+
+function IconCheck(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function IconBolt(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+    </svg>
+  )
+}
+
+function IconUndo(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M3 7v6h6" />
+      <path d="M21 17a9 9 0 0 0-15-6.7L3 13" />
+    </svg>
+  )
+}
+
+function IconFlag(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <path d="M4 22v-7" />
+    </svg>
+  )
+}
+
+function IconPlay(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M5 3l14 9-14 9V3z" />
+    </svg>
+  )
+}
+
+function IconExit(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  )
+}
+
+// Rótulo/tema amigáveis por status — puramente visual; nenhuma condição
+// de habilitação usa este mapa.
+const STATUS_UI = {
+  open:    { label: 'Aberta',    key: 'open' },
+  locked:  { label: 'Bloqueada', key: 'locked' },
+  playing: { label: 'Em jogo',   key: 'playing' },
+  in_game: { label: 'Em jogo',   key: 'playing' },
+}
+
 export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame }) {
   const meId = getOrCreateTabPlayerId()
   const meName = String(playerName || '').trim()
@@ -243,181 +347,197 @@ useEffect(() => {
     }
   }
 
+  // ---------- valores derivados SÓ para apresentação (nenhuma regra nova) ----------
+  const rawStatus = lobby?.status || ''
+  const statusUi = STATUS_UI[rawStatus] || { label: rawStatus || '…', key: 'other' }
+  const totalPlayers = players.length
+  const readyPct = totalPlayers > 0
+    ? Math.max(0, Math.min(100, Math.round((readyCount / totalPlayers) * 100)))
+    : 0
+  const maxPlayers = Number(lobby?.max_players) || null
+  const roundsValue = normalizeMaxRounds(maxRounds)
+  const roomName = String(lobby?.name || '').trim() || '…'
+
   return (
-    <div style={s.page}>
-      <div style={s.container}>
-        <div style={s.top}>
-          <button style={s.backBtn} onClick={handleLeave}>← Voltar</button>
-          <h2 style={s.title}>SalesGame — {lobby?.name || '...'}</h2>
-        </div>
+    <div className="playerLobbyPage">
+      <div className="playerLobbyContainer">
+        {/* ===== Cabeçalho da sala ===== */}
+        <header className="playerLobbyHero">
+          <button type="button" className="playerLobbyBackBtn" onClick={handleLeave}>
+            <IconBack />
+            Voltar
+          </button>
+          <span className="playerLobbyHeroIcon" aria-hidden="true"><IconGamepad /></span>
+          <div className="playerLobbyHeroContent">
+            <h2 className="playerLobbyTitle" title={roomName}>{roomName}</h2>
+            <p className="playerLobbySubtitle">Sala de espera da partida</p>
+            <div className="playerLobbyMeta">
+              <span className={`playerLobbyStatusBadge playerLobbyStatusBadge--${statusUi.key}`}>
+                {statusUi.label}
+              </span>
+              <span className="playerLobbyMetaItem">
+                <IconUsers />
+                {totalPlayers}{maxPlayers ? ` de ${maxPlayers}` : ''} {(maxPlayers ?? totalPlayers) === 1 ? 'jogador' : 'jogadores'}
+              </span>
+              <span className="playerLobbyMetaItem">
+                <IconCheck />
+                {readyCount} {readyCount === 1 ? 'pronto' : 'prontos'}
+              </span>
+            </div>
+          </div>
+        </header>
 
-        <div style={s.table}>
-          <div className="plHead">
-            <div style={s.colPlayer}>Jogador</div>
-            <div className="plColReady">Pronto?</div>
+        {/* ===== Painel de jogadores ===== */}
+        <section className="playerLobbyPanel">
+          <div className="playerLobbyPanelHeader">
+            <h3 className="playerLobbyPanelTitle"><IconUsers /> Jogadores da sala</h3>
+            <p className="playerLobbyPanelHint">
+              Todos precisam estar prontos para iniciar a partida.
+            </p>
           </div>
 
-        {loading ? (
-          <div style={s.loading}>Carregando...</div>
-        ) : (
-          players.map((p) => (
-            <div key={p.player_id} className="plRow">
-              <div style={s.colPlayer}>
-                <span style={s.avatar}>{(p.player_name || '?').slice(0,2).toLowerCase()}</span>
-                <span>{p.player_name || 'Anônimo'}</span>
-                {lobby?.host_id === p.player_id && <span style={s.badgeHost}>Host</span>}
-                {p.player_id === meId && <span style={s.badgeYou}>Você</span>}
-              </div>
+          <div className="playerLobbyProgress">
+            <div className="playerLobbyProgressHeader">
+              <span>Jogadores prontos</span>
+              <b>{readyCount}/{totalPlayers}</b>
+            </div>
+            <div className="playerLobbyProgressTrack" aria-hidden="true">
+              <div className="playerLobbyProgressFill" style={{ width: `${readyPct}%` }} />
+            </div>
+          </div>
 
-              <div className="plColReady">
-                {p.player_id === meId ? (
-                  <div className="plReadyBtns">
-                    <button
-                      style={{ ...s.btn, ...(!me?.ready ? s.btnDark : s.btnGhost) }}
-                      onClick={() => setReadyUI(false)}
-                      disabled={toggling || !me?.ready}
-                    >
-                      Não pronto
-                    </button>
-                    <button
-                      style={{ ...s.btn, ...(me?.ready ? s.btnPrimary : s.btnPurple) }}
-                      onClick={() => setReadyUI(true)}
-                      disabled={toggling || !!me?.ready}
-                    >
-                      ⚡ {me?.ready ? 'Pronto' : 'Ficar pronto'}
-                    </button>
+          {loading ? (
+            <div className="playerLobbyLoading">Carregando…</div>
+          ) : (
+            <div className="playerLobbyPlayers">
+              {players.map((p) => {
+                const isHost = lobby?.host_id === p.player_id
+                const isMe = p.player_id === meId
+                const pName = String(p.player_name || '').trim() || 'Anônimo'
+                const initial = pName.charAt(0).toUpperCase() || '?'
+                return (
+                  <div key={p.player_id} className="playerLobbyPlayerCard">
+                    <span className="playerLobbyAvatar" aria-hidden="true">{initial}</span>
+                    <div className="playerLobbyPlayerInfo">
+                      <div className="playerLobbyPlayerName" title={pName}>{pName}</div>
+                      <div className="playerLobbyBadges">
+                        {isHost && <span className="playerLobbyBadge playerLobbyBadge--host">Host</span>}
+                        {isMe && <span className="playerLobbyBadge playerLobbyBadge--me">Você</span>}
+                        {p.ready ? (
+                          <span className="playerLobbyBadge playerLobbyBadge--ready">
+                            <IconCheck /> Pronto
+                          </span>
+                        ) : (
+                          <span className="playerLobbyBadge playerLobbyBadge--waiting">
+                            Não pronto
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isMe && (
+                      <button
+                        type="button"
+                        className={`playerLobbyReadyBtn${me?.ready ? ' playerLobbyReadyBtn--undo' : ''}`}
+                        onClick={() => setReadyUI(!me?.ready)}
+                        disabled={toggling}
+                      >
+                        {me?.ready ? <IconUndo /> : <IconBolt />}
+                        {me?.ready ? 'Marcar como não pronto' : 'Ficar pronto'}
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <span style={p.ready ? s.pillReady : s.pillWait}>
-                    {p.ready ? 'Pronto' : 'Aguardando'}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-        </div>
-
-        {amHost && (
-          <div style={s.durationBox}>
-            <div style={s.durationTitle}>Duração da partida</div>
-            <div style={s.durationHint}>O host escolhe entre {MIN_ROUNDS} e {MAX_ROUNDS_LIMIT} rodadas. Padrão: {DEFAULT_MAX_ROUNDS}.</div>
-            <div style={s.durationOptions}>
-              {Array.from({ length: MAX_ROUNDS_LIMIT }, (_, i) => i + MIN_ROUNDS).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  style={{
-                    ...s.durationBtn,
-                    ...(maxRounds === n ? s.durationBtnActive : null),
-                  }}
-                  onClick={() => setMaxRounds(normalizeMaxRounds(n))}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <div style={s.durationSelected}>
-              Selecionado: <b>{normalizeMaxRounds(maxRounds)}</b> rodada(s)
-            </div>
-          </div>
-        )}
-
-        {!amHost && (
-          <div style={s.durationBoxGuest}>
-            A duração da partida é definida pelo host (padrão: {DEFAULT_MAX_ROUNDS} rodadas).
-          </div>
-        )}
-
-        <div className="plFooter">
-          <div style={s.statusWrap}>
-            <span style={{ ...s.dot, background: lobby?.status === 'open' ? '#22c55e' : '#f59e0b' }} />
-            <span>status: {lobby?.status || '...'}</span>
-            <span style={{ marginLeft: 12 }}>Prontos: {readyCount}/{players.length}</span>
-          </div>
-          <p className="lobbyReadyHint">
-            {amHost
-              ? (canStart
-                  ? 'Todos prontos — você pode iniciar a partida.'
-                  : `Aguardando todos ficarem prontos (${readyCount}/${players.length}).`)
-              : (me?.ready
-                  ? 'Tudo certo — aguarde o host iniciar a partida.'
-                  : 'Marque “Ficar pronto” para o host poder iniciar.')}
-          </p>
-          {hasDuplicateNames && (
-            <div style={{ marginTop: 8, color: '#ffd54f', fontWeight: 800 }}>
-              ⚠️ Aviso: existe nome duplicado na sala. (A identidade é pelo ID; renomear evita confusão.)
+                )
+              })}
             </div>
           )}
+        </section>
 
-          <div className="plFooterBtns">
-            <button style={{ ...s.btn, ...(canStart ? s.btnPrimary : s.disabled) }} onClick={handleStart} disabled={!canStart}>
+        {/* ===== Painel de duração da partida ===== */}
+        <section className="playerLobbyPanel">
+          <div className="playerLobbyPanelHeader">
+            <h3 className="playerLobbyPanelTitle"><IconFlag /> Duração da partida</h3>
+            <p className="playerLobbyPanelHint">
+              O host escolhe quantas rodadas serão jogadas ({MIN_ROUNDS} a {MAX_ROUNDS_LIMIT}; padrão {DEFAULT_MAX_ROUNDS}).
+            </p>
+          </div>
+
+          {amHost ? (
+            <>
+              <div className="playerLobbyRounds" role="group" aria-label="Número de rodadas">
+                {Array.from({ length: MAX_ROUNDS_LIMIT }, (_, i) => i + MIN_ROUNDS).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`playerLobbyRoundBtn${maxRounds === n ? ' playerLobbyRoundBtn--active' : ''}`}
+                    aria-pressed={maxRounds === n}
+                    onClick={() => setMaxRounds(normalizeMaxRounds(n))}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="playerLobbyRoundSelection">
+                <b>{roundsValue}</b> {roundsValue === 1 ? 'rodada selecionada' : 'rodadas selecionadas'}
+              </p>
+            </>
+          ) : (
+            <p className="playerLobbyRoundSelection">
+              A duração da partida é definida pelo host (padrão: {DEFAULT_MAX_ROUNDS} rodadas).
+            </p>
+          )}
+          <p className="playerLobbyRoundNote">Somente o host pode alterar esta configuração.</p>
+        </section>
+
+        {/* ===== Painel inferior: status + mensagem + ações ===== */}
+        <footer className="playerLobbyFooter">
+          <div className="playerLobbyStatusGroup">
+            <div className="playerLobbyStatusItem">
+              <span className="playerLobbyStatusLabel">Status da sala</span>
+              <span className="playerLobbyStatusValue">
+                <span className={`playerLobbyDot playerLobbyDot--${statusUi.key}`} aria-hidden="true" />
+                {statusUi.label}
+              </span>
+            </div>
+            <div className="playerLobbyStatusItem">
+              <span className="playerLobbyStatusLabel">Prontos</span>
+              <span className="playerLobbyStatusValue">{readyCount} de {totalPlayers}</span>
+            </div>
+          </div>
+
+          <div className="playerLobbyMessageArea">
+            <p className="playerLobbyMessage">
+              {amHost
+                ? (canStart
+                    ? 'Todos prontos — você pode iniciar a partida.'
+                    : `Aguardando todos ficarem prontos (${readyCount}/${players.length}).`)
+                : (me?.ready
+                    ? 'Tudo certo — aguarde o host iniciar a partida.'
+                    : 'Marque “Ficar pronto” para o host poder iniciar.')}
+            </p>
+            {hasDuplicateNames && (
+              <p className="playerLobbyWarning">
+                Aviso: existe nome duplicado na sala. (A identidade é pelo ID; renomear evita confusão.)
+              </p>
+            )}
+          </div>
+
+          <div className="playerLobbyActions">
+            <button
+              type="button"
+              className="playerLobbyStartBtn"
+              onClick={handleStart}
+              disabled={!canStart}
+            >
+              <IconPlay />
               Iniciar partida
             </button>
-            <button style={{ ...s.btn, ...s.btnDark }} onClick={handleLeave}>
+            <button type="button" className="playerLobbyLeaveBtn" onClick={handleLeave}>
+              <IconExit />
               Sair da sala
             </button>
           </div>
-        </div>
+        </footer>
       </div>
     </div>
   )
-}
-
-const s = {
-  page: { minHeight:'100vh', background:'#0f0f12', color:'#e9ecf1', padding:'24px 16px', display:'flex', justifyContent:'center' },
-  container: { width:'100%', maxWidth: 980 },
-  top: { display:'flex', alignItems:'center', gap:12, marginBottom:16 },
-  backBtn: { padding:'10px 14px', background:'#20222a', border:'1px solid #2b2e38', borderRadius:12, color:'#fff', cursor:'pointer' },
-  title: { margin:0, fontSize:28, fontWeight:800 },
-  table: { background:'rgba(255,255,255,.02)', border:'1px solid rgba(255,255,255,.08)', borderRadius:16, overflow:'hidden' },
-  thead: { display:'grid', gridTemplateColumns:'1fr 220px', padding:'12px 16px', borderBottom:'1px solid rgba(255,255,255,.08)', color:'#c7cfdb' },
-  row: { display:'grid', gridTemplateColumns:'1fr 220px', padding:'12px 16px', borderBottom:'1px solid rgba(255,255,255,.06)' },
-  colPlayer: { display:'flex', alignItems:'center', gap:10, minWidth:0 },
-  colReady: { display:'flex', alignItems:'center', justifyContent:'flex-end' },
-  avatar: { width:28, height:28, borderRadius:999, background:'#1f2430', display:'grid', placeItems:'center', color:'#c7cfdb', fontSize:12, textTransform:'lowercase' },
-  badgeHost:{ marginLeft:8, fontSize:12, background:'#fde68a', color:'#111827', padding:'2px 8px', borderRadius:999, fontWeight:800 },
-  badgeYou:{ marginLeft:8, fontSize:12, background:'#bfdbfe', color:'#111827', padding:'2px 8px', borderRadius:999, fontWeight:800 },
-  loading:{ padding:16, color:'#c7cfdb' },
-  pillReady:{ background:'rgba(34,197,94,.15)', color:'#22c55e', padding:'6px 10px', borderRadius:999, fontWeight:700 },
-  pillWait:{ background:'rgba(245,158,11,.14)', color:'#f59e0b', padding:'6px 10px', borderRadius:999, fontWeight:700 },
-  footer:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:16 },
-  statusWrap:{ display:'flex', alignItems:'center', gap:6, color:'#c7cfdb' },
-  dot:{ width:8, height:8, borderRadius:'50%' },
-  btn:{ padding:'12px 16px', border:0, borderRadius:12, fontWeight:800, cursor:'pointer' },
-  btnPrimary:{ background:'#4f46e5', color:'#fff', boxShadow:'0 8px 24px rgba(79,70,229,.25)' },
-  btnPurple:{ background:'#7c3aed', color:'#fff' },
-  btnDark:{ background:'#20222a', color:'#fff', border:'1px solid #2b2e38' },
-  btnGhost:{ background:'transparent', color:'#e9ecf1', border:'1px solid rgba(255,255,255,.15)' },
-  disabled:{ opacity:.5, cursor:'not-allowed', filter:'grayscale(.25)' },
-  durationBox: {
-    marginTop: 16,
-    padding: '14px 16px',
-    borderRadius: 14,
-    border: '1px solid rgba(255,255,255,.10)',
-    background: 'rgba(255,255,255,.03)',
-  },
-  durationBoxGuest: {
-    marginTop: 16,
-    color: '#c7cfdb',
-    fontSize: 14,
-  },
-  durationTitle: { fontWeight: 800, marginBottom: 6 },
-  durationHint: { color: '#c7cfdb', fontSize: 13, marginBottom: 10 },
-  durationOptions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  durationBtn: {
-    minWidth: 44,
-    padding: '10px 12px',
-    borderRadius: 10,
-    border: '1px solid rgba(255,255,255,.15)',
-    background: '#20222a',
-    color: '#fff',
-    fontWeight: 800,
-    cursor: 'pointer',
-  },
-  durationBtnActive: {
-    background: '#4f46e5',
-    borderColor: 'rgba(255,255,255,.35)',
-  },
-  durationSelected: { marginTop: 10, color: '#e9ecf1', fontSize: 14 },
 }

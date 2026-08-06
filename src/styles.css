@@ -12,7 +12,9 @@ html, body {
 ========================================================= */
 
 .lobbyScroll {
-  overflow-y: scroll;
+  /* auto: a barra só aparece quando o conteúdo ultrapassa a altura;
+     scrollbar-gutter: stable evita "pulo" de layout quando ela surge */
+  overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin; /* Firefox */
 }
@@ -1625,22 +1627,12 @@ html, body {
 
 /* ====== Dicas contextuais (somente exibição) ====== */
 
-/* orientação na lista de salas */
+/* orientação na lista de salas (subtítulo do cabeçalho) */
 .lobbyListHint {
-  margin: 0 0 14px;
+  margin: 6px 0 0;
   font-size: 14px;
-  line-height: 1.4;
-  color: #c7cfdb;
-  opacity: .95;
-}
-
-/* orientação no lobby de jogadores (perto de "Prontos: x/y") */
-.lobbyReadyHint {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #c7cfdb;
-  opacity: .95;
+  line-height: 1.45;
+  color: #aab3c5;
 }
 
 /* faixa de próximo passo na partida (sidebar, acima dos controles) */
@@ -1670,67 +1662,1138 @@ html, body {
 
 /* ====== Responsividade: telas pré-partida ====== */
 
-/* Lista de salas */
+/* ====== Tela de Lobbies (lista de salas) — somente visual ====== */
+
+.lobbyPage{
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: 32px 16px;
+  display: flex;
+  justify-content: center;
+  color: #e9ecf1;
+  /* fundo escuro com um único detalhe bem discreto no topo */
+  background:
+    radial-gradient(1000px 560px at 50% -25%, rgba(99,102,241,.10), transparent 60%),
+    #0e0f15;
+}
+.lobbyContainer{
+  width: 100%;
+  max-width: 1080px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+  max-height: calc(100dvh - 64px);
+  min-height: 0;
+}
+
+/* painel do cabeçalho: ícone + textos + contagens à esquerda, ações à direita */
+.lobbyPanel{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: rgba(255,255,255,.03);
+  box-shadow: 0 8px 20px rgba(0,0,0,.22);
+}
+.lobbyPanelMain{
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+.lobbyPanelIcon{
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #a5b4fc;
+  background: rgba(99,102,241,.14);
+  border: 1px solid rgba(99,102,241,.30);
+}
+.lobbyPanelIcon svg{ width: 22px; height: 22px; }
+.lobbyHeaderText{ min-width: 0; }
 .lobbyListTitle{
-  font-size: 28px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  color: #fff;
+}
+.lobbyCounts{
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #98a2b5;
+}
+.lobbyCounts b{
+  color: #e9ecf1;
+  font-weight: 800;
+}
+.lobbyActions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* botões da tela de lobbies */
+.lobbyBtn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  transition: box-shadow .15s ease, background .15s ease, border-color .15s ease;
+}
+.lobbyBtn svg{ width: 16px; height: 16px; flex: none; }
+.lobbyBtn:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.lobbyBtn:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+}
+.lobbyBtn--primary{
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(79,70,229,.30);
+}
+.lobbyBtn--primary:hover:not(:disabled){
+  box-shadow: 0 10px 24px rgba(79,70,229,.40);
+}
+.lobbyBtn--ghost{
+  background: #1b1e29;
+  color: #e9ecf1;
+  border: 1px solid rgba(255,255,255,.14);
+}
+.lobbyBtn--ghost:hover:not(:disabled){
+  background: #232735;
+  border-color: rgba(255,255,255,.24);
+}
+
+/* ícone do Atualizar girando durante o loading (apenas visual) */
+.lobbyRefreshIcon--spinning{
+  animation: lobbySpin .9s linear infinite;
+}
+@keyframes lobbySpin{
+  to{ transform: rotate(360deg); }
+}
+
+/* área rolável (o body tem overflow hidden; o scroll é interno e a barra
+   só aparece quando as salas ultrapassam a altura disponível) */
+.lobbyScrollArea{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 10px;
+  scrollbar-gutter: stable;
+}
+
+/* grid de salas */
+.lobbyGrid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+/* card de sala — fundo sólido, detalhe lateral na cor do status */
+.lobbyCard{
+  --lobby-status: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-left: 3px solid var(--lobby-status);
+  background: #151824;
+  box-shadow: 0 6px 16px rgba(0,0,0,.22);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+@media (hover: hover){
+  .lobbyCard:hover{
+    border-color: rgba(255,255,255,.18);
+    border-left-color: var(--lobby-status);
+    box-shadow: 0 10px 24px rgba(0,0,0,.30);
+  }
+}
+/* cor do detalhe conforme status (somente visual) */
+.lobbyCard--open{    --lobby-status: #22c55e; }
+.lobbyCard--locked{  --lobby-status: #f59e0b; }
+.lobbyCard--playing{ --lobby-status: #8b5cf6; }
+.lobbyCard--other{   --lobby-status: #94a3b8; }
+
+.lobbyCardTop{
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.lobbyCardAvatar{
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+}
+.lobbyCardInfo{ min-width: 0; flex: 1; align-self: center; }
+.lobbyCardName{
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* bloco central: rótulo, contagem, vagas e barra */
+.lobbyCardBody{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lobbyCardPlayersRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lobbyCardPlayersLabel{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #98a2b5;
+}
+.lobbyCardPlayersLabel svg{ width: 14px; height: 14px; }
+.lobbyCardPlayersCount{
+  font-size: 14px;
   font-weight: 800;
   color: #fff;
 }
 
-/* Lobby de jogadores (mesmos valores do layout inline anterior no desktop) */
-.plHead{
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,.08);
-  color: #c7cfdb;
-}
-.plRow{
-  display: grid;
-  grid-template-columns: 1fr 220px;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-}
-.plColReady{
+/* círculos de vagas (decorativos; o número já informa a ocupação) */
+.lobbySeats{
   display: flex;
+  gap: 6px;
+}
+.lobbySeat{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255,255,255,.28);
+  background: transparent;
+  box-sizing: border-box;
+}
+.lobbySeat--filled{
+  border-color: transparent;
+  background: #c7d2fe;
+}
+
+/* barra de ocupação (decorativa; largura vem inline do JSX) */
+.lobbyOcc{
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+}
+.lobbyOccFill{
+  height: 100%;
+  border-radius: 999px;
+  background: rgba(165,180,252,.7);
+  transition: width .25s ease;
+}
+
+/* badge de status */
+.lobbyBadge{
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.lobbyBadge--open{
+  color: #4ade80;
+  background: rgba(34,197,94,.14);
+  border-color: rgba(34,197,94,.35);
+}
+.lobbyBadge--locked{
+  color: #fbbf24;
+  background: rgba(245,158,11,.14);
+  border-color: rgba(245,158,11,.35);
+}
+.lobbyBadge--playing{
+  color: #c4b5fd;
+  background: rgba(124,58,237,.16);
+  border-color: rgba(124,58,237,.40);
+}
+.lobbyBadge--other{
+  color: #cbd5e1;
+  background: rgba(148,163,184,.14);
+  border-color: rgba(148,163,184,.30);
+}
+
+/* botão principal do card (largura total) */
+.lobbyJoinBtn{
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  box-shadow: 0 6px 16px rgba(79,70,229,.28);
+  transition: box-shadow .15s ease, opacity .15s ease;
 }
-.plReadyBtns{
+.lobbyJoinBtn svg{ width: 16px; height: 16px; flex: none; }
+.lobbyJoinBtn:hover:not(:disabled){
+  box-shadow: 0 10px 22px rgba(79,70,229,.40);
+}
+.lobbyJoinBtn:focus-visible{
+  outline: 3px solid rgba(216,180,254,.85);
+  outline-offset: 2px;
+}
+.lobbyJoinBtn:disabled{
+  background: rgba(255,255,255,.06);
+  color: #8b93a7;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* skeleton de carregamento (visual puro; respeita reduced-motion) */
+.lobbySkelCard{ pointer-events: none; }
+.lobbySkel{
+  display: block;
+  border-radius: 8px;
+  background: rgba(255,255,255,.07);
+  animation: lobbySkelPulse 1.4s ease-in-out infinite;
+}
+.lobbySkelAvatar{
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+.lobbySkelLine{ height: 12px; }
+.lobbySkelLine--lg{ width: 70%; margin-bottom: 8px; }
+.lobbySkelLine--sm{ width: 45%; }
+.lobbySkelBadge{
+  width: 64px;
+  height: 24px;
+  border-radius: 999px;
+  margin-left: auto;
+}
+.lobbySkelBar{ height: 4px; border-radius: 999px; }
+.lobbySkelBtn{ height: 42px; border-radius: 10px; }
+@keyframes lobbySkelPulse{
+  0%, 100%{ opacity: 1; }
+  50%{ opacity: .45; }
+}
+
+/* estado vazio */
+.lobbyEmpty{
+  margin-top: 16px;
+  padding: 40px 20px;
+  border-radius: 16px;
+  border: 1px dashed rgba(255,255,255,.15);
+  background: rgba(255,255,255,.02);
+  text-align: center;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
-.plFooter{
+.lobbyEmptyIcon{
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: #8b93a7;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.10);
+  margin-bottom: 4px;
+}
+.lobbyEmptyIcon svg{ width: 32px; height: 32px; }
+.lobbyEmptyTitle{
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+}
+.lobbyEmptyText{
+  margin: 0 0 10px;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #aab3c5;
+}
+
+/* ====== Modal "Criar sala" (interface local; substitui o prompt nativo) ====== */
+
+/* backdrop escuro com leve blur; rola verticalmente se a tela for baixa */
+.lobbyModalBackdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: rgba(8,9,14,.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  overflow-y: auto;
+}
+.lobbyModal{
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 24px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  margin: auto; /* centraliza e mantém acessível quando o backdrop rola */
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-top: 2px solid rgba(124,58,237,.55); /* detalhe roxo discreto */
+  background: #151824;
+  box-shadow: 0 24px 60px rgba(0,0,0,.50);
+  animation: lobbyModalIn .16s ease-out;
+}
+@keyframes lobbyModalIn{
+  from{ opacity: 0; transform: translateY(8px) scale(.98); }
+  to{ opacity: 1; transform: none; }
+}
+
+.lobbyModalHeader{
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.lobbyModalIcon{
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #a5b4fc;
+  background: rgba(99,102,241,.14);
+  border: 1px solid rgba(99,102,241,.30);
+}
+.lobbyModalIcon svg{ width: 20px; height: 20px; }
+.lobbyModalHeading{ min-width: 0; flex: 1; }
+.lobbyModalTitle{
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+}
+.lobbyModalSubtitle{
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #98a2b5;
+}
+.lobbyModalClose{
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  background: transparent;
+  color: #98a2b5;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.lobbyModalClose:hover:not(:disabled){ background: rgba(255,255,255,.06); color: #fff; }
+.lobbyModalClose:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.lobbyModalClose:disabled{
+  opacity: .45;
+  cursor: not-allowed;
+}
+.lobbyModalClose svg{ width: 16px; height: 16px; }
+
+.lobbyModalBody{
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 18px;
+}
+.lobbyModalField{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lobbyModalLabel{
+  font-size: 13px;
+  font-weight: 700;
+  color: #cbd3e1;
+}
+.lobbyModalInput{
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: #0f1119;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.lobbyModalInput:focus-visible{
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.28);
+}
+.lobbyModalInput--error{ border-color: #ef4444; }
+.lobbyModalInput--error:focus-visible{
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,.25);
+}
+.lobbyModalHelp{
+  margin: 0;
+  font-size: 12px;
+  color: #8b93a7;
+}
+.lobbyModalError{
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f87171;
+}
+/* erro geral do modal (falha ao criar/entrar na sala) */
+.lobbyModalSubmitError{
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(239,68,68,.35);
+  background: rgba(239,68,68,.12);
+  font-size: 13px;
+  line-height: 1.45;
+  color: #fca5a5;
+}
+.lobbyModalFooter{
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* animações reduzidas para quem prefere menos movimento */
+@media (prefers-reduced-motion: reduce){
+  .lobbyRefreshIcon--spinning{ animation: none; }
+  .lobbySkel{ animation: none; }
+  .lobbyModal{ animation: none; }
+  .lobbyCard,
+  .lobbyBtn,
+  .lobbyJoinBtn,
+  .lobbyModalClose,
+  .lobbyModalInput,
+  .lobbyOccFill{ transition: none; }
+}
+
+/* ====== Sala de jogadores (pré-partida) — somente visual ====== */
+
+.playerLobbyPage{
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* a própria página rola verticalmente (o body global usa overflow hidden) */
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding: 32px 16px;
+  display: flex;
+  justify-content: center;
+  color: #f8fafc;
+  /* fundo escuro com um único brilho bem discreto */
+  background:
+    radial-gradient(1000px 560px at 50% -25%, rgba(109,93,252,.10), transparent 60%),
+    #0e0f15;
+}
+.playerLobbyContainer{
+  width: 100%;
+  max-width: 1100px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- cabeçalho da sala --- */
+.playerLobbyHero{
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: #151824;
+  box-shadow: 0 8px 20px rgba(0,0,0,.22);
+}
+.playerLobbyBackBtn{
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: #1b1e29;
+  color: #f8fafc;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.playerLobbyBackBtn svg{ width: 16px; height: 16px; flex: none; }
+@media (hover: hover){
+  .playerLobbyBackBtn:hover{ background: #232735; border-color: rgba(255,255,255,.24); }
+}
+.playerLobbyBackBtn:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.playerLobbyHeroIcon{
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: #a5b4fc;
+  background: rgba(109,93,252,.14);
+  border: 1px solid rgba(109,93,252,.32);
+}
+.playerLobbyHeroIcon svg{ width: 24px; height: 24px; }
+.playerLobbyHeroContent{ min-width: 0; flex: 1; }
+.playerLobbyTitle{
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playerLobbySubtitle{
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #aab3c5;
+}
+.playerLobbyMeta{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.playerLobbyMetaItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #aab3c5;
+}
+.playerLobbyMetaItem svg{ width: 14px; height: 14px; flex: none; }
+.playerLobbyStatusBadge{
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.playerLobbyStatusBadge--open{
+  color: #4ade80;
+  background: rgba(34,197,94,.14);
+  border-color: rgba(34,197,94,.35);
+}
+.playerLobbyStatusBadge--locked{
+  color: #fbbf24;
+  background: rgba(245,158,11,.14);
+  border-color: rgba(245,158,11,.35);
+}
+.playerLobbyStatusBadge--playing{
+  color: #c4b5fd;
+  background: rgba(139,92,246,.16);
+  border-color: rgba(139,92,246,.40);
+}
+.playerLobbyStatusBadge--other{
+  color: #cbd5e1;
+  background: rgba(148,163,184,.14);
+  border-color: rgba(148,163,184,.30);
+}
+
+/* --- painéis (jogadores e configurações) --- */
+.playerLobbyPanel{
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: #151824;
+  box-shadow: 0 6px 16px rgba(0,0,0,.20);
+}
+.playerLobbyPanelHeader{ margin-bottom: 14px; }
+.playerLobbyPanelTitle{
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.playerLobbyPanelTitle svg{ width: 16px; height: 16px; flex: none; color: #a5b4fc; }
+.playerLobbyPanelHint{
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #aab3c5;
+}
+
+/* --- progresso de prontos --- */
+.playerLobbyProgress{ margin-bottom: 14px; }
+.playerLobbyProgressHeader{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 16px;
+  gap: 10px;
+  font-size: 13px;
+  color: #aab3c5;
+  margin-bottom: 6px;
 }
-.plFooterBtns{
+.playerLobbyProgressHeader b{ color: #fff; font-weight: 800; }
+.playerLobbyProgressTrack{
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+  overflow: hidden;
+}
+.playerLobbyProgressFill{
+  height: 100%;
+  border-radius: 999px;
+  background: #22c55e;
+  transition: width .25s ease;
+}
+
+.playerLobbyLoading{
+  padding: 14px 4px;
+  font-size: 14px;
+  color: #aab3c5;
+}
+
+/* --- lista de jogadores --- */
+.playerLobbyPlayers{
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.playerLobbyPlayerCard{
+  display: flex;
+  align-items: center;
   gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: #191c29;
+  transition: border-color .15s ease;
+}
+@media (hover: hover){
+  .playerLobbyPlayerCard:hover{ border-color: rgba(255,255,255,.16); }
+}
+.playerLobbyAvatar{
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5dfc, #8b5cf6);
+}
+.playerLobbyPlayerInfo{ min-width: 0; flex: 1; }
+.playerLobbyPlayerName{
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playerLobbyBadges{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.playerLobbyBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.playerLobbyBadge svg{ width: 12px; height: 12px; flex: none; }
+.playerLobbyBadge--host{
+  color: #fbbf24;
+  background: rgba(251,191,36,.12);
+  border-color: rgba(251,191,36,.35);
+}
+.playerLobbyBadge--me{
+  color: #93c5fd;
+  background: rgba(96,165,250,.12);
+  border-color: rgba(96,165,250,.35);
+}
+.playerLobbyBadge--ready{
+  color: #4ade80;
+  background: rgba(34,197,94,.14);
+  border-color: rgba(34,197,94,.35);
+}
+.playerLobbyBadge--waiting{
+  color: #cbd5e1;
+  background: rgba(148,163,184,.12);
+  border-color: rgba(148,163,184,.28);
+}
+
+/* --- botão Ficar pronto / Marcar como não pronto --- */
+.playerLobbyReadyBtn{
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6d5dfc, #8b5cf6);
+  box-shadow: 0 6px 16px rgba(109,93,252,.28);
+  transition: box-shadow .15s ease, background .15s ease, border-color .15s ease;
+}
+.playerLobbyReadyBtn svg{ width: 16px; height: 16px; flex: none; }
+@media (hover: hover){
+  .playerLobbyReadyBtn:hover:not(:disabled){ box-shadow: 0 10px 22px rgba(109,93,252,.40); }
+}
+.playerLobbyReadyBtn:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.playerLobbyReadyBtn:disabled{
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* quando já está pronto, a ação de desfazer vira secundária */
+.playerLobbyReadyBtn--undo{
+  background: #1b1e29;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: none;
+  color: #e9ecf1;
+}
+@media (hover: hover){
+  .playerLobbyReadyBtn--undo:hover:not(:disabled){
+    background: #232735;
+    border-color: rgba(255,255,255,.24);
+    box-shadow: none;
+  }
+}
+
+/* --- seletor de rodadas --- */
+.playerLobbyRounds{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.playerLobbyRoundBtn{
+  min-width: 48px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: #191c29;
+  color: #f8fafc;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+@media (hover: hover){
+  .playerLobbyRoundBtn:hover:not(:disabled){
+    background: #202433;
+    border-color: rgba(255,255,255,.24);
+  }
+}
+.playerLobbyRoundBtn:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.playerLobbyRoundBtn--active{
+  background: #6d5dfc;
+  border-color: rgba(199,210,254,.55);
+  box-shadow: 0 0 0 3px rgba(109,93,252,.22);
+}
+.playerLobbyRoundSelection{
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: #e9ecf1;
+}
+.playerLobbyRoundSelection b{ color: #fff; font-weight: 800; }
+.playerLobbyRoundNote{
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8b93a7;
+}
+
+/* --- painel inferior: status, mensagem e ações --- */
+.playerLobbyFooter{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: #151824;
+  box-shadow: 0 6px 16px rgba(0,0,0,.20);
+}
+.playerLobbyStatusGroup{
+  display: flex;
+  gap: 24px;
+  flex: none;
+}
+.playerLobbyStatusItem{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.playerLobbyStatusLabel{
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #8b93a7;
+}
+.playerLobbyStatusValue{
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+.playerLobbyDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.playerLobbyDot--open{ background: #22c55e; }
+.playerLobbyDot--locked{ background: #fbbf24; }
+.playerLobbyDot--playing{ background: #8b5cf6; }
+.playerLobbyMessageArea{
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.playerLobbyMessage{
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #aab3c5;
+}
+.playerLobbyWarning{
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(251,191,36,.35);
+  background: rgba(251,191,36,.10);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fbbf24;
+}
+.playerLobbyActions{
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+.playerLobbyStartBtn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 20px;
+  border: 0;
+  box-sizing: border-box;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #6d5dfc 0%, #8b5cf6 100%);
+  box-shadow: 0 6px 18px rgba(109,93,252,.30);
+  transition: box-shadow .15s ease;
+}
+.playerLobbyStartBtn svg{ width: 16px; height: 16px; flex: none; }
+@media (hover: hover){
+  .playerLobbyStartBtn:hover:not(:disabled){ box-shadow: 0 10px 24px rgba(109,93,252,.42); }
+}
+.playerLobbyStartBtn:focus-visible{
+  outline: 3px solid rgba(199,210,254,.8);
+  outline-offset: 2px;
+}
+.playerLobbyStartBtn:disabled{
+  background: rgba(255,255,255,.07);
+  color: #8b93a7;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.playerLobbyLeaveBtn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: transparent;
+  color: #e9ecf1;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.playerLobbyLeaveBtn svg{ width: 16px; height: 16px; flex: none; }
+@media (hover: hover){
+  .playerLobbyLeaveBtn:hover{
+    background: rgba(248,113,113,.10);
+    border-color: rgba(248,113,113,.40);
+    color: #f87171;
+  }
+}
+.playerLobbyLeaveBtn:focus-visible{
+  outline: 3px solid rgba(254,202,202,.7);
+  outline-offset: 2px;
+}
+
+/* movimento reduzido */
+@media (prefers-reduced-motion: reduce){
+  .playerLobbyBackBtn,
+  .playerLobbyPlayerCard,
+  .playerLobbyReadyBtn,
+  .playerLobbyRoundBtn,
+  .playerLobbyStartBtn,
+  .playerLobbyLeaveBtn,
+  .playerLobbyProgressFill{ transition: none; }
 }
 
 @media (max-width: 560px){
-  /* Lista de salas: título menor em telas pequenas */
+  /* Lista de salas: layout compacto em telas pequenas */
+  .lobbyPage{ padding: 20px 12px; }
+  .lobbyContainer{
+    max-height: calc(100vh - 40px);
+    max-height: calc(100dvh - 40px);
+  }
+  .lobbyPanel{ padding: 16px 14px; }
   .lobbyListTitle{ font-size: 22px; }
+  .lobbyActions{ width: 100%; }
+  .lobbyActions .lobbyBtn{ flex: 1 1 auto; min-height: 44px; }
+  .lobbyJoinBtn{ min-height: 44px; }
+  .lobbyScrollArea{ padding-right: 6px; }
 
-  /* Lobby: cada jogador vira um card vertical */
-  .plHead{ grid-template-columns: 1fr; }
-  .plHead .plColReady{ display: none; }
-  .plRow{ grid-template-columns: 1fr; gap: 10px; }
-  .plColReady{ justify-content: flex-start; }
-  .plReadyBtns{ flex-wrap: wrap; width: 100%; }
-  .plReadyBtns button{ flex: 1 1 auto; }
+  /* Modal "Criar sala": padding menor e botões dividindo a largura */
+  .lobbyModalBackdrop{ padding: 12px; }
+  .lobbyModal{ padding: 16px; }
+  .lobbyModalFooter .lobbyBtn{ flex: 1 1 auto; min-height: 44px; }
 
-  /* Rodapé do lobby empilha: status, dica, botões */
-  .plFooter{
+  /* Sala de jogadores (pré-partida): layout empilhado */
+  .playerLobbyPage{ padding: 20px 12px; }
+  .playerLobbyHero{
+    flex-wrap: wrap;
+    padding: 14px;
+    gap: 12px;
+  }
+  .playerLobbyBackBtn{ order: -1; width: 100%; }
+  .playerLobbyTitle{ font-size: 20px; }
+  .playerLobbyPanel{ padding: 14px; }
+
+  /* jogador vira card vertical; botão Pronto em largura total */
+  .playerLobbyPlayerCard{
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .playerLobbyReadyBtn{ width: 100%; }
+
+  /* seleção de rodadas distribuída */
+  .playerLobbyRounds{ width: 100%; }
+  .playerLobbyRoundBtn{ flex: 1 1 auto; }
+
+  /* painel inferior empilhado, botões em largura total */
+  .playerLobbyFooter{
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
+    padding: 14px;
   }
-  .plFooterBtns{ flex-direction: column; }
-  .plFooterBtns button{ width: 100%; }
+  .playerLobbyStatusGroup{ justify-content: space-between; }
+  .playerLobbyActions{ flex-direction: column; }
+  .playerLobbyStartBtn,
+  .playerLobbyLeaveBtn{ width: 100%; }
 }
 
 /* ====== Responsividade: tela da partida (mobile) ======

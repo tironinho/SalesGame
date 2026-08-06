@@ -1,14 +1,114 @@
 // src/pages/LobbyList.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   getOrCreateTabPlayerId,     // <-- id por ABA
   makeId,                     // opcional, se quiser usar id novo ao criar
 } from '../auth'
 import { listLobbies, onLobbiesRealtime, cleanupLobbiesOnce, getLobbyConfig, createLobby, joinLobby } from '../lib/lobbies'
 
+/* ---------- Ícones SVG inline (decorativos; sem dependência externa) ----------
+   Todos usam currentColor e recebem className/size via props. */
+const svgProps = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': 'true',
+  focusable: 'false',
+}
+
+function IconGamepad(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M6 8h12a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1.5l-2-2h-5l-2 2H6a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4z" />
+      <path d="M8 11v4M6 13h4" />
+      <circle cx="15.5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="14" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function IconUsers(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+      <circle cx="10" cy="7" r="4" />
+      <path d="M21 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
+}
+
+function IconRefresh(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M23 4v6h-6" />
+      <path d="M1 20v-6h6" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
+}
+
+function IconPlus(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  )
+}
+
+function IconEnter(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17l5-5-5-5" />
+      <path d="M15 12H3" />
+    </svg>
+  )
+}
+
+function IconClose(props) {
+  return (
+    <svg {...svgProps} {...props}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
+}
+
+/* Card fantasma exibido apenas durante o primeiro carregamento (visual puro) */
+function LobbySkeletonCard() {
+  return (
+    <div className="lobbyCard lobbySkelCard" aria-hidden="true">
+      <div className="lobbyCardTop">
+        <span className="lobbySkel lobbySkelAvatar" />
+        <div className="lobbyCardInfo">
+          <span className="lobbySkel lobbySkelLine lobbySkelLine--lg" />
+          <span className="lobbySkel lobbySkelLine lobbySkelLine--sm" />
+        </div>
+        <span className="lobbySkel lobbySkelBadge" />
+      </div>
+      <span className="lobbySkel lobbySkelBar" />
+      <span className="lobbySkel lobbySkelBtn" />
+    </div>
+  )
+}
+
 export default function LobbyList({ onEnterRoom, playerName }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
+
+  // Estados locais do modal "Criar sala" — apenas formulário de interface;
+  // nada disso vai para Supabase, realtime ou multiplayer.
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [lobbyNameDraft, setLobbyNameDraft] = useState('')
+  const [createNameError, setCreateNameError] = useState('')      // nome vazio
+  const [createSubmitError, setCreateSubmitError] = useState('')  // falha ao criar/entrar
+  const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false) // proteção síncrona contra envio duplicado
+  const createOpenerRef = useRef(null) // botão que abriu o modal (p/ devolver o foco)
 
   useEffect(() => {
     const cfg = getLobbyConfig()
@@ -38,26 +138,83 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     return off
   }, [])
 
-  // Cria e já entra na sala (host = jogador desta ABA)
-  async function handleCreate() {
+  // Abre o modal de criação com o mesmo nome padrão do antigo prompt.
+  // A criação em si acontece em confirmCreateLobby.
+  function handleCreate() {
     const pn = String(playerName || '').trim()
     if (!pn) {
       alert('Digite seu nome na tela inicial antes de criar/entrar em salas.')
       return
     }
     const defaultName = `Sala de ${pn}`
-    const name = prompt('Nome do lobby:', defaultName) || defaultName
+    createOpenerRef.current = document.activeElement
+    setLobbyNameDraft(defaultName)
+    setCreateNameError('')
+    setCreateSubmitError('')
+    setCreateModalOpen(true)
+  }
+
+  // Confirma o formulário do modal e executa a MESMA criação que antes
+  // acontecia após o prompt (createLobby + joinLobby + onEnterRoom).
+  // Em caso de falha, o modal permanece aberto com o erro visível.
+  async function confirmCreateLobby(e) {
+    e.preventDefault()
+    if (creatingRef.current) return // evita criação duplicada (síncrono)
+
+    const name = lobbyNameDraft.trim()
+    if (!name) {
+      setCreateNameError('Digite um nome para a sala.')
+      return
+    }
+
+    const pn = String(playerName || '').trim()
+    if (!pn) {
+      setCreateSubmitError('O nome do jogador não está disponível.')
+      return
+    }
 
     // usamos o id desta aba como hostId (ou gere um novo com makeId() se preferir)
     const hostId = getOrCreateTabPlayerId()
+
+    creatingRef.current = true
+    setCreating(true)
+    setCreateSubmitError('')
+
     try {
       const lobbyId = await createLobby({ name, hostId, max: 4 })
-      await joinLobby({ lobbyId, playerId: hostId, playerName: pn, ready: false })
+
+      await joinLobby({
+        lobbyId,
+        playerId: hostId,
+        playerName: pn,
+        ready: false,
+      })
+
+      // fecha somente após o sucesso
+      setCreateModalOpen(false)
+      createOpenerRef.current = null
       onEnterRoom?.(lobbyId)
-    } catch (e) {
-      alert(e.message || 'Não foi possível criar o lobby.')
+    } catch (err) {
+      // modal continua aberto com o rascunho preservado
+      setCreateSubmitError(
+        err.message || 'Não foi possível criar a sala. Tente novamente.'
+      )
       await refresh()
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
     }
+  }
+
+  // Fecha o modal sem criar sala (Cancelar, ×, Escape ou clique no backdrop)
+  function closeCreateModal() {
+    if (creatingRef.current) return // não fecha durante uma criação em andamento
+    setCreateModalOpen(false)
+    setCreateNameError('')
+    setCreateSubmitError('')
+    const opener = createOpenerRef.current
+    createOpenerRef.current = null
+    if (opener && typeof opener.focus === 'function') opener.focus()
   }
 
   // Entra usando o id desta ABA (cada aba = jogador diferente)
@@ -76,89 +233,241 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     }
   }
 
-  // ---------- UI ----------
-  const styles = {
-    page: { minHeight: '100vh', background: '#0f0f12', color: '#e9ecf1', padding: '32px 16px', display: 'flex', justifyContent: 'center' },
-    // coluna flexível: a área de scroll ocupa o restante sem depender de altura fixa do cabeçalho
-    container: { width: '100%', maxWidth: 980, display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 64px)', minHeight: 0 },
-    headerRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' },
-    actions: { display: 'flex', gap: 10, flexWrap: 'wrap' },
-    btn: { padding: '12px 16px', border: 0, borderRadius: 12, fontWeight: 800, cursor: 'pointer' },
-    btnPrimary: { background: '#4f46e5', color: '#fff', boxShadow: '0 8px 24px rgba(79,70,229,.25)' },
-    btnSecondary: { background: '#20222a', color: '#fff', border: '1px solid #2b2e38' },
-    // Área rolável (scroll interno, pois o body tem overflow:hidden no CSS global)
-    // - overflowY: 'scroll' força reservar a barra
-    // - maxHeight limita a área para a grid realmente “estourar” e rolar
-    scrollArea: {
-      flex: '1 1 auto',
-      minHeight: 0,
-      overflowY: 'scroll',
-      paddingRight: 10,
-      scrollbarGutter: 'stable',
-    },
-    // min(280px, 100%) impede que o track mínimo exceda a largura da viewport
-    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 14 },
-    card: { background: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.00) 100%)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 10px 20px rgba(0,0,0,.25)' },
-    cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-    lobbyName: { fontSize: 18, fontWeight: 800, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 },
-    meta: { fontSize: 13, color: '#b8c0cc' },
-    joinBtn: { padding: '10px 14px', borderRadius: 10, border: 0, background: '#7c3aed', color: '#fff', fontWeight: 800, cursor: 'pointer', boxShadow: '0 10px 20px rgba(124,58,237,.25)' },
-    disabled: { opacity: .6, cursor: 'not-allowed', filter: 'grayscale(.3)' },
-    empty: { marginTop: 24, padding: 18, borderRadius: 12, border: '1px dashed rgba(255,255,255,.12)', color: '#c7cfdb', textAlign: 'center' },
+  // ---------- UI (somente apresentação; nenhuma regra de negócio) ----------
+
+  // Rótulo/tema amigáveis por status — puramente visual; a lógica de
+  // habilitar/desabilitar continua usando o status cru como antes.
+  const STATUS_UI = {
+    open:    { label: 'Aberta',    key: 'open' },
+    locked:  { label: 'Bloqueada', key: 'locked' },
+    playing: { label: 'Em jogo',   key: 'playing' },
+    in_game: { label: 'Em jogo',   key: 'playing' },
   }
 
+  // contagens apenas de apresentação, derivadas do estado já carregado
+  const totalRooms = rows.length
+  const openRooms = rows.filter(room => (room.status ?? 'open') === 'open').length
+
+  const showSkeleton = loading && rows.length === 0
+  const showEmpty = !loading && rows.length === 0
+
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <div style={styles.headerRow}>
-          <h2 className="lobbyListTitle">SalesGame — Lobbies</h2>
-          <div style={styles.actions}>
-            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleCreate}>Criar Lobby</button>
-            <button style={{ ...styles.btn, ...styles.btnSecondary }} onClick={refresh} disabled={loading}>
+    <div className="lobbyPage">
+      <div className="lobbyContainer">
+        <header className="lobbyPanel">
+          <div className="lobbyPanelMain">
+            <span className="lobbyPanelIcon" aria-hidden="true"><IconGamepad /></span>
+            <div className="lobbyHeaderText">
+              <h2 className="lobbyListTitle">Salas de jogo</h2>
+              <p className="lobbyListHint">
+                Crie uma sala ou entre em uma existente para jogar com outros vendedores.
+              </p>
+              <p className="lobbyCounts">
+                <b>{totalRooms}</b> {totalRooms === 1 ? 'sala disponível' : 'salas disponíveis'}
+                {' · '}
+                <b>{openRooms}</b> {openRooms === 1 ? 'aberta' : 'abertas'}
+              </p>
+            </div>
+          </div>
+          <div className="lobbyActions">
+            <button type="button" className="lobbyBtn lobbyBtn--ghost" onClick={refresh} disabled={loading}>
+              <IconRefresh className={loading ? 'lobbyRefreshIcon--spinning' : undefined} />
               {loading ? 'Atualizando…' : 'Atualizar'}
             </button>
+            <button type="button" className="lobbyBtn lobbyBtn--primary" onClick={handleCreate}>
+              <IconPlus />
+              Criar sala
+            </button>
           </div>
-        </div>
+        </header>
 
-        <p className="lobbyListHint">
-          Crie uma sala ou entre em uma sala existente para começar.
-        </p>
-
-        {rows.length === 0 && !loading ? (
-          <div style={styles.empty}>Nenhuma sala criada ainda. Clique em <b>Criar Lobby</b> para começar.</div>
+        {showEmpty ? (
+          <div className="lobbyEmpty">
+            <span className="lobbyEmptyIcon" aria-hidden="true"><IconGamepad /></span>
+            <div className="lobbyEmptyTitle">Nenhuma sala disponível</div>
+            <p className="lobbyEmptyText">
+              Crie uma nova sala e convide outros jogadores para começar.
+            </p>
+            <button type="button" className="lobbyBtn lobbyBtn--primary" onClick={handleCreate}>
+              <IconPlus />
+              Criar primeira sala
+            </button>
+          </div>
         ) : (
-          <div className="lobbyScroll" style={styles.scrollArea}>
-            <div style={styles.grid}>
-              {rows.map(r => {
-                const isFull = (r.players ?? 0) >= (r.max ?? 4)
-                const isOpen = (r.status ?? 'open') === 'open'
-                const disabled = isFull || !isOpen
+          <div className="lobbyScroll lobbyScrollArea" aria-busy={loading}>
+            <div className="lobbyGrid">
+              {showSkeleton
+                ? [0, 1, 2, 3].map(i => <LobbySkeletonCard key={i} />)
+                : rows.map(r => {
+                    const isFull = (r.players ?? 0) >= (r.max ?? 4)
+                    const isOpen = (r.status ?? 'open') === 'open'
+                    const disabled = isFull || !isOpen
 
-                return (
-                  <div key={r.id} style={styles.card}>
-                    <div style={styles.cardHeader}>
-                      <div style={styles.lobbyName} title={r.name}>{r.name}</div>
-                      <span style={styles.meta}>{r.players ?? 0}/{r.max ?? 4}</span>
-                    </div>
+                    // leitura defensiva SÓ para exibição (ocupação/percentual);
+                    // as condições acima permanecem a fonte do comportamento
+                    const players = Math.max(0, Number(r.players ?? 0) || 0)
+                    const max = Math.max(1, Number(r.max ?? 4) || 4)
+                    const occPct = Math.max(0, Math.min(100, Math.round((players / max) * 100)))
+                    const rawStatus = r.status ?? 'open'
+                    const isPlaying =
+                      rawStatus === 'playing' || rawStatus === 'in_game'
 
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                      <span style={styles.meta}>status: {r.status ?? 'open'}</span>
-                      <button
-                        style={{ ...styles.joinBtn, ...(disabled ? styles.disabled : {}) }}
-                        disabled={disabled}
-                        onClick={() => handleJoin(r.id)}
-                        title={disabled ? (isFull ? 'Sala cheia' : 'Sala não está aberta') : 'Entrar na sala'}
-                      >
-                        Entrar
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+                    const st = STATUS_UI[rawStatus] || {
+                      label: rawStatus,
+                      key: 'other',
+                    }
+                    const roomName = String(r.name || '').trim() || 'Sala sem nome'
+                    const initial = roomName.charAt(0).toUpperCase()
+
+                    // vagas como círculos (máx. 6 p/ não quebrar; o texto numérico
+                    // continua mostrando o valor completo)
+                    const seatCount = Math.min(max, 6)
+                    const filledSeats = Math.max(0, Math.min(players, seatCount))
+
+                    // texto do botão conforme estado (apresentação; ação inalterada)
+                    const joinLabel = !disabled
+                      ? 'Entrar agora'
+                      : isPlaying
+                      ? 'Partida em andamento'
+                      : rawStatus === 'locked'
+                      ? 'Sala bloqueada'
+                      : isFull
+                      ? 'Sala lotada'
+                      : 'Sala indisponível'
+
+                    return (
+                      <div key={r.id} className={`lobbyCard lobbyCard--${st.key}`}>
+                        <div className="lobbyCardTop">
+                          <span className="lobbyCardAvatar" aria-hidden="true">{initial}</span>
+                          <div className="lobbyCardInfo">
+                            <div className="lobbyCardName" title={roomName}>{roomName}</div>
+                          </div>
+                          <span className={`lobbyBadge lobbyBadge--${st.key}`}>{st.label}</span>
+                        </div>
+
+                        <div className="lobbyCardBody">
+                          <div className="lobbyCardPlayersRow">
+                            <span className="lobbyCardPlayersLabel">
+                              <IconUsers />
+                              Jogadores
+                            </span>
+                            <span className="lobbyCardPlayersCount">{players}/{max}</span>
+                          </div>
+                          <div className="lobbySeats" aria-hidden="true">
+                            {Array.from({ length: seatCount }, (_, i) => (
+                              <span
+                                key={i}
+                                className={`lobbySeat${i < filledSeats ? ' lobbySeat--filled' : ''}`}
+                              />
+                            ))}
+                          </div>
+                          <div className="lobbyOcc" aria-hidden="true">
+                            <div className="lobbyOccFill" style={{ width: `${occPct}%` }} />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="lobbyJoinBtn"
+                          disabled={disabled}
+                          onClick={() => handleJoin(r.id)}
+                          title={!disabled ? 'Entrar na sala' : joinLabel}
+                        >
+                          {!disabled && <IconEnter />}
+                          {joinLabel}
+                        </button>
+                      </div>
+                    )
+                  })}
             </div>
           </div>
         )}
       </div>
+
+      {createModalOpen && (
+        <div
+          className="lobbyModalBackdrop"
+          role="presentation"
+          onClick={e => { if (e.target === e.currentTarget) closeCreateModal() }}
+          onKeyDown={e => { if (e.key === 'Escape') closeCreateModal() }}
+        >
+          <div
+            className="lobbyModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-lobby-title"
+          >
+            <div className="lobbyModalHeader">
+              <span className="lobbyModalIcon" aria-hidden="true"><IconGamepad /></span>
+              <div className="lobbyModalHeading">
+                <h3 id="create-lobby-title" className="lobbyModalTitle">Criar nova sala</h3>
+                <p className="lobbyModalSubtitle">Escolha um nome para identificar sua sala.</p>
+              </div>
+              <button
+                type="button"
+                className="lobbyModalClose"
+                onClick={closeCreateModal}
+                aria-label="Fechar"
+                disabled={creating}
+              >
+                <IconClose />
+              </button>
+            </div>
+
+            <form className="lobbyModalBody" onSubmit={confirmCreateLobby}>
+              <div className="lobbyModalField">
+                <label className="lobbyModalLabel" htmlFor="lobby-name-input">Nome da sala</label>
+                <input
+                  id="lobby-name-input"
+                  className={`lobbyModalInput${createNameError ? ' lobbyModalInput--error' : ''}`}
+                  type="text"
+                  value={lobbyNameDraft}
+                  onChange={e => {
+                    setLobbyNameDraft(e.target.value)
+                    if (createNameError) setCreateNameError('')
+                  }}
+                  maxLength={50}
+                  autoFocus
+                  autoComplete="off"
+                  disabled={creating}
+                  aria-invalid={createNameError ? true : undefined}
+                  aria-describedby={createNameError ? 'lobby-name-error' : 'lobby-name-help'}
+                />
+                {createNameError ? (
+                  <p id="lobby-name-error" className="lobbyModalError" role="alert">
+                    {createNameError}
+                  </p>
+                ) : (
+                  <p id="lobby-name-help" className="lobbyModalHelp">
+                    {lobbyNameDraft.length}/50 caracteres
+                  </p>
+                )}
+              </div>
+
+              {createSubmitError && (
+                <p className="lobbyModalSubmitError" role="alert">
+                  {createSubmitError}
+                </p>
+              )}
+
+              <div className="lobbyModalFooter">
+                <button
+                  type="button"
+                  className="lobbyBtn lobbyBtn--ghost"
+                  onClick={closeCreateModal}
+                  disabled={creating}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className="lobbyBtn lobbyBtn--primary" disabled={creating}>
+                  <IconPlus />
+                  {creating ? 'Criando…' : 'Criar sala'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
