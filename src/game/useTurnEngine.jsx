@@ -1347,6 +1347,16 @@ export function useTurnEngine({
     broadcastState(nextPlayers, turnIdx, currentRoundRef.current, false, null, {
       kind: 'PLAYER_DELTA',
       lastRollTurnKey: typeof turnSeqRef.current === 'number' ? String(turnSeqRef.current) : null,
+      // Campo passivo só para UI (última face do dado). Nenhuma regra depende dele.
+      lastRoll: {
+        playerId: String(cur.id),
+        playerName: String(cur.name || '').trim() || 'Jogador',
+        steps: Number(steps),
+        turnKey:
+          typeof turnSeqRef.current === 'number'
+            ? String(turnSeqRef.current)
+            : null,
+      },
     })
     
     // ✅ CORREÇÃO CRÍTICA: Atualiza a rodada garantindo que o incremento aconteça corretamente
