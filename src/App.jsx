@@ -9,6 +9,7 @@ import PlayersLobby from './pages/PlayersLobby.jsx'
 import Board from './components/board/Board.jsx'
 import HUD from './components/panel/HUD.jsx'
 import Controls from './components/panel/Controls.jsx'
+import DiceResult from './components/DiceResult.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
 import TutorialModal from './components/TutorialModal.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
@@ -81,6 +82,30 @@ const getVisibleLoanPending = (player = {}) => {
 
   if (isAlreadyPaid) return null
   return lp
+}
+
+// Normalização defensiva do campo passivo lastRoll (somente UI; nenhuma regra depende dele).
+function normalizeLastRoll(value) {
+  if (!value || typeof value !== 'object') return null
+
+  const steps = Number(value.steps)
+  if (!Number.isInteger(steps) || steps < 1 || steps > 6) return null
+
+  const playerId = String(value.playerId || '').trim()
+  const playerName = String(value.playerName || '').trim() || 'Jogador'
+  const turnKey =
+    value.turnKey !== null && value.turnKey !== undefined
+      ? String(value.turnKey)
+      : null
+
+  if (!playerId || turnKey === null) return null
+
+  return {
+    playerId,
+    playerName,
+    steps,
+    turnKey,
+  }
 }
 
 export default function App() {
@@ -275,6 +300,56 @@ export default function App() {
   // ✅ turnSeq: contador monotônico do turno (1 jogador: 0→1→2…; evita [ROLL_BLOCK])
   const [turnSeq, setTurnSeq] = useState(0)
 
+  // ===== Última rolagem do dado (somente apresentação; não entra em regras) =====
+  const [lastRollUI, setLastRollUI] = useState(null)
+  const [isRollingUI, setIsRollingUI] = useState(false)
+  const rollingTimeoutRef = useRef(null)
+  const lastRollUIRef = useRef(null)
+  useEffect(() => { lastRollUIRef.current = lastRollUI }, [lastRollUI])
+
+  const clearRollingTimeout = React.useCallback(() => {
+    if (rollingTimeoutRef.current) {
+      clearTimeout(rollingTimeoutRef.current)
+      rollingTimeoutRef.current = null
+    }
+  }, [])
+
+  // Aplica lastRoll no espelho local com proteção visual contra regressão de turnKey.
+  const applyLastRollUI = React.useCallback((incoming) => {
+    if (incoming === null) {
+      setLastRollUI(null)
+      return
+    }
+    const normalized = normalizeLastRoll(incoming)
+    if (!normalized) return
+
+    const prev = lastRollUIRef.current
+    if (prev && prev.turnKey != null && normalized.turnKey != null) {
+      const prevN = Number(prev.turnKey)
+      const nextN = Number(normalized.turnKey)
+      if (Number.isFinite(prevN) && Number.isFinite(nextN) && nextN < prevN) {
+        // Proteção apenas visual — não rejeita commits
+        return
+      }
+    }
+    setLastRollUI(normalized)
+    clearRollingTimeout()
+    setIsRollingUI(false)
+  }, [clearRollingTimeout])
+
+  // Limpa UI do dado ao sair da fase de jogo / unmount
+  useEffect(() => {
+    if (phase !== 'game') {
+      clearRollingTimeout()
+      setLastRollUI(null)
+      setIsRollingUI(false)
+    }
+  }, [phase, clearRollingTimeout])
+
+  useEffect(() => {
+    return () => { clearRollingTimeout() }
+  }, [clearRollingTimeout])
+
   // ====== HUD do meu jogador
   const [meHud, setMeHud] = useState({
     id: meId,
@@ -405,6 +480,9 @@ export default function App() {
           }
           setTurnSeq(0)
           setLastRollTurnKey(null)
+          setLastRollUI(null)
+          setIsRollingUI(false)
+          clearRollingTimeout()
           setLog(['Jogo iniciado!'])
           return
         }
@@ -647,6 +725,15 @@ export default function App() {
           // ✅ Log obrigatório
           if (d.gameOver === true) {
             console.log(`[App] [ENDGAME] estado remoto aplicado: gameOver=true winner=${d.winner?.name ?? d.winner ?? "N/A"}`);
+          }
+
+          // lastRoll passivo (somente UI) — mesmo canal BC quando net está desativado
+          if (Object.prototype.hasOwnProperty.call(d, 'lastRoll')) {
+            if (d.lastRoll === null) {
+              setLastRollUI(null)
+            } else {
+              applyLastRollUI(d.lastRoll)
+            }
           }
         }
       }
@@ -1089,6 +1176,9 @@ export default function App() {
       setWinner(null)
       setLastRollTurnKey(null)
       setTurnSeq(0)
+      setLastRollUI(null)
+      setIsRollingUI(false)
+      clearRollingTimeout()
     } else {
       setGameOver(prev => prev || !!netState.gameOver)
       setWinner(prev => {
@@ -1101,6 +1191,15 @@ export default function App() {
     // --- anti-double-roll autoritativo ---
     if (netState.lastRollTurnKey !== undefined) setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
     if (typeof netState.turnSeq === 'number') setTurnSeq(netState.turnSeq)
+
+    // --- última rolagem do dado (passivo; somente UI) ---
+    if (Object.prototype.hasOwnProperty.call(netState, 'lastRoll')) {
+      if (netState.lastRoll === null) {
+        setLastRollUI(null)
+      } else {
+        applyLastRollUI(netState.lastRoll)
+      }
+    }
 
     // init guard
     try {
@@ -1406,6 +1505,7 @@ export default function App() {
         roundFlags: nextRoundFlags,
         turnSeq: 0,
         lastRollTurnKey: null,
+        lastRoll: null,
         turnLock: false,
         lockOwner: null,
         stateId,
@@ -1500,6 +1600,19 @@ export default function App() {
         statePatch.turnSeq = Number(patch.turnSeq)
         setTurnSeq(Number(patch.turnSeq))
       }
+      if (patch && patch.lastRoll !== undefined) {
+        statePatch.lastRoll =
+          patch.lastRoll === null
+            ? null
+            : normalizeLastRoll(patch.lastRoll)
+        // Espelho local imediato: a própria aba não recebe o SYNC do BroadcastChannel,
+        // e commitGamePatch é no-op quando o net está desativado.
+        if (statePatch.lastRoll === null) {
+          setLastRollUI(null)
+        } else if (statePatch.lastRoll) {
+          applyLastRollUI(statePatch.lastRoll)
+        }
+      }
       commitGamePatch({
         playersDeltaById,
         statePatch
@@ -1512,7 +1625,7 @@ export default function App() {
     // 2) entre abas
     defer(() => {
       try {
-        bcRef.current?.postMessage?.({
+        const syncPayload = {
           type: 'SYNC',
           version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
           players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
@@ -1526,7 +1639,14 @@ export default function App() {
           winner: finalWinner,
           source: meId,
           timestamp: now,  // ✅ MELHORIA: Inclui timestamp
-        })
+        }
+        if (patch && patch.lastRoll !== undefined) {
+          syncPayload.lastRoll =
+            patch.lastRoll === null
+              ? null
+              : normalizeLastRoll(patch.lastRoll)
+        }
+        bcRef.current?.postMessage?.(syncPayload)
       } catch (e) { console.warn('[App] broadcastState failed:', e) }
     })
   }
@@ -1548,6 +1668,9 @@ export default function App() {
     playersBeforeRef.current = null
     setTurnSeq(0)
     setLastRollTurnKey(null)
+    setLastRollUI(null)
+    setIsRollingUI(false)
+    clearRollingTimeout()
     setMaxRounds(startMaxRounds)
     maxRoundsRef.current = startMaxRounds
 
@@ -1561,6 +1684,7 @@ export default function App() {
       roundFlags: Array(normalized.length).fill(false),
       turnSeq: 0,
       lastRollTurnKey: null,
+      lastRoll: null,
       isStartGame: true
     })
     // entre abas
@@ -2064,6 +2188,7 @@ export default function App() {
 
           {/* CONTROLES FIXOS NO RODAPÉ DA SIDEBAR */}
           <div className="controlsSticky">
+            <DiceResult lastRoll={lastRollUI} isRolling={isRollingUI} />
             <div
               className={`nextStepHint${nextStepIsMyTurn ? ' nextStepHintMyTurn' : ''}`}
               role="status"
@@ -2073,6 +2198,15 @@ export default function App() {
             </div>
             <Controls
               onAction={(act) => {
+                // Estado visual “Rolando…” — não altera a ação nem as regras
+                if (act?.type === 'ROLL' && controlsCanRoll) {
+                  setIsRollingUI(true)
+                  clearRollingTimeout()
+                  rollingTimeoutRef.current = setTimeout(() => {
+                    setIsRollingUI(false)
+                    rollingTimeoutRef.current = null
+                  }, 2800)
+                }
                 // Encaminha para o motor de turnos
                 onAction(act)
               }}
