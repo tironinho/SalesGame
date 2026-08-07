@@ -11,6 +11,7 @@ import {
   pickSkipCoordinator,
   startLobbyHeartbeat,
   touchLobbyPlayer,
+  attemptHostTransferFromPresence,
 } from '../lib/lobbies.js'
 
 const DEV = !!import.meta.env.DEV
@@ -153,6 +154,26 @@ export function useGamePresenceAutoSkip({
       const coordinatorId = pickSkipCoordinator(roster, presence, now)
       const amCoordinator = coordinatorId != null && String(coordinatorId) === String(myUid)
       devLog('[presence] coordinator=' + (amCoordinator ? 'true' : 'false'))
+
+      // Host transfer (independente do auto-skip): não mexe em rooms.state / turn
+      try {
+        const candidateIds = roster.map((p) => String(p?.id ?? '')).filter(Boolean)
+        const ht = await attemptHostTransferFromPresence({
+          lobbyId,
+          myUid: String(myUid),
+          candidateIds,
+        })
+        if (ht?.transferred) {
+          devLog('[host-transfer] committed')
+        } else if (ht?.casLost) {
+          devLog('[host-transfer] CAS lost')
+        } else if (ht?.reason === 'no-present') {
+          devLog('[host-transfer] no present candidate')
+        }
+      } catch {
+        // fail-safe: não derruba presença/auto-skip
+      }
+      if (cancelled) return
 
       if (turnPresent) {
         if (statusRef.current === 'waiting') {

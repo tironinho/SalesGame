@@ -157,7 +157,11 @@ export async function leaveLobby({ lobbyId, playerId }) {
   if (lobby?.host_id === playerId) {
     const nextHost = rest[0]?.player_id
     if (nextHost) {
-      await supabase.from('lobbies').update({ host_id: nextHost }).eq('id', lobbyId)
+      await transferLobbyHost({
+        lobbyId,
+        fromHostId: playerId,
+        toHostId: nextHost,
+      })
     }
   }
 }
@@ -395,18 +399,20 @@ export async function leaveRoom({ roomCode, playerId }) {
     } else {
       console.log(`[leaveRoom] Jogador ${playerId} saiu do lobby ${roomCode}. Restam ${remainingPlayers.length} jogadores.`)
       
-      // Se o jogador que saiu era o host, transfere para o próximo jogador
+      // Se o jogador que saiu era o host, transfere para o próximo (CAS)
       if (lobby.host_id === playerId && remainingPlayers.length > 0) {
         const nextHost = remainingPlayers[0].player_id
-        const { error: updateError } = await supabase
-          .from('lobbies')
-          .update({ host_id: nextHost })
-          .eq('id', roomCode)
-
-        if (updateError) {
-          console.warn('[leaveRoom] Erro ao transferir host:', updateError)
-        } else {
+        const tr = await transferLobbyHost({
+          lobbyId: roomCode,
+          fromHostId: playerId,
+          toHostId: nextHost,
+        })
+        if (tr.transferred) {
           console.log(`[leaveRoom] Host transferido para ${nextHost}`)
+        } else if (tr.casLost) {
+          console.log('[leaveRoom] Host já havia sido transferido (CAS)')
+        } else if (tr.error) {
+          console.warn('[leaveRoom] Erro ao transferir host:', tr.error)
         }
       }
     }
@@ -465,6 +471,21 @@ export async function leaveRoomById({ roomId, playerId }) {
       }
     } else {
       console.log(`[leaveRoomById] Jogador ${playerId} saiu do lobby ${roomId}. Restam ${remainingPlayers.length} jogadores.`)
+      const { data: lobbyRow } = await supabase
+        .from('lobbies')
+        .select('host_id')
+        .eq('id', roomId)
+        .maybeSingle()
+      if (lobbyRow?.host_id && String(lobbyRow.host_id) === String(playerId)) {
+        const nextHost = remainingPlayers[0]?.player_id
+        if (nextHost) {
+          await transferLobbyHost({
+            lobbyId: roomId,
+            fromHostId: playerId,
+            toHostId: nextHost,
+          })
+        }
+      }
     }
   } catch (error) {
     console.error('[leaveRoomById] Erro inesperado:', error)
@@ -646,6 +667,7 @@ export function isPresenceFresh(
 /**
  * Coordinator determinístico: primeiro jogador vivo (ordem do roster)
  * cujo last_seen ainda está fresco. Não usa host.
+ * Também usado para escolher quem tenta (e assume) host transfer.
  */
 export function pickSkipCoordinator(rosterPlayers, presenceList, now = Date.now()) {
   const byId = new Map(
@@ -658,6 +680,140 @@ export function pickSkipCoordinator(rosterPlayers, presenceList, now = Date.now(
     if (isPresenceFresh(byId.get(id), now)) return id
   }
   return null
+}
+
+/**
+ * Transferência condicional de host (CAS em lobbies.host_id).
+ * UPDATE ... WHERE id = lobbyId AND host_id = fromHostId
+ * Não toca rooms.state.
+ */
+export async function transferLobbyHost({ lobbyId, fromHostId, toHostId } = {}) {
+  if (!lobbyId || !fromHostId || !toHostId) {
+    return { ok: false, skipped: true }
+  }
+  if (String(fromHostId) === String(toHostId)) {
+    return { ok: true, transferred: false }
+  }
+
+  const { data, error } = await supabase
+    .from('lobbies')
+    .update({ host_id: toHostId })
+    .eq('id', lobbyId)
+    .eq('host_id', fromHostId)
+    .select('id, host_id')
+
+  if (error) {
+    console.warn('[host-transfer] falha CAS:', error?.message || error)
+    return { ok: false, error }
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    return { ok: true, transferred: false, casLost: true }
+  }
+
+  return { ok: true, transferred: true, newHostId: String(toHostId) }
+}
+
+/**
+ * Se o host atual está offline (mesmo threshold do game), o primeiro
+ * jogador presente na ordem de candidateIds tenta assumir via CAS.
+ * Fail-safe: erro de presença / ninguém presente → não transferir.
+ */
+export async function attemptHostTransferFromPresence({
+  lobbyId,
+  myUid,
+  candidateIds,
+} = {}) {
+  if (!lobbyId || !myUid) return { ok: false, skipped: true }
+
+  const order = (Array.isArray(candidateIds) ? candidateIds : [])
+    .map((id) => String(id ?? ''))
+    .filter(Boolean)
+  if (!order.length) return { ok: false, skipped: true }
+
+  let lobby
+  try {
+    const { data, error } = await supabase
+      .from('lobbies')
+      .select('id, host_id, status')
+      .eq('id', lobbyId)
+      .single()
+    if (error) throw error
+    lobby = data
+  } catch (e) {
+    return { ok: false, error: e }
+  }
+
+  const currentHost = lobby?.host_id != null ? String(lobby.host_id) : ''
+  if (!currentHost) return { ok: true, transferred: false, reason: 'no-host' }
+
+  let presence
+  try {
+    presence = await listLobbyPresence(lobbyId)
+  } catch (e) {
+    // Fail-safe: erro de rede ≠ host offline
+    return { ok: false, error: e }
+  }
+
+  const now = Date.now()
+  const hostLastSeen = (presence || []).find(
+    (p) => String(p.playerId) === currentHost
+  )?.lastSeen
+  if (isPresenceFresh(hostLastSeen, now, GAME_OFFLINE_THRESHOLD_MS)) {
+    return { ok: true, transferred: false, reason: 'host-present' }
+  }
+
+  const roster = order.map((id) => ({ id, bankrupt: false }))
+  const coordinatorId = pickSkipCoordinator(roster, presence, now)
+  if (!coordinatorId) {
+    return { ok: true, transferred: false, reason: 'no-present' }
+  }
+  if (String(coordinatorId) !== String(myUid)) {
+    return { ok: true, transferred: false, reason: 'not-coordinator' }
+  }
+
+  // Reconfirma antes do write
+  let lobby2
+  let presence2
+  try {
+    const [{ data: l2, error: lErr }, p2] = await Promise.all([
+      supabase.from('lobbies').select('id, host_id').eq('id', lobbyId).single(),
+      listLobbyPresence(lobbyId),
+    ])
+    if (lErr) throw lErr
+    lobby2 = l2
+    presence2 = p2
+  } catch (e) {
+    return { ok: false, error: e }
+  }
+
+  const hostStill = lobby2?.host_id != null ? String(lobby2.host_id) : ''
+  if (hostStill !== currentHost) {
+    return { ok: true, transferred: false, casLost: true }
+  }
+
+  const now2 = Date.now()
+  const hostLastSeen2 = (presence2 || []).find(
+    (p) => String(p.playerId) === currentHost
+  )?.lastSeen
+  if (isPresenceFresh(hostLastSeen2, now2, GAME_OFFLINE_THRESHOLD_MS)) {
+    return { ok: true, transferred: false, reason: 'host-returned' }
+  }
+
+  const coord2 = pickSkipCoordinator(
+    order.map((id) => ({ id, bankrupt: false })),
+    presence2,
+    now2
+  )
+  if (!coord2 || String(coord2) !== String(myUid)) {
+    return { ok: true, transferred: false, reason: 'not-coordinator' }
+  }
+
+  return transferLobbyHost({
+    lobbyId,
+    fromHostId: currentHost,
+    toHostId: coord2,
+  })
 }
 
 export function startLobbyHeartbeat({
@@ -727,10 +883,14 @@ async function _fixHostsIfNeeded(lobbyIds) {
       const pids = byLobby.get(l.id) || []
       if (!pids.length) continue
 
-      if (!pids.includes(l.host_id)) {
+      if (l.host_id && !pids.includes(l.host_id)) {
         const newHost = pids[0]
-        const { error: uErr } = await supabase.from('lobbies').update({ host_id: newHost }).eq('id', l.id)
-        if (uErr) console.warn('[cleanup] falha ao atualizar host:', uErr.message || uErr)
+        const tr = await transferLobbyHost({
+          lobbyId: l.id,
+          fromHostId: l.host_id,
+          toHostId: newHost,
+        })
+        if (tr.error) console.warn('[cleanup] falha ao atualizar host:', tr.error?.message || tr.error)
       }
     }
   }

@@ -2630,6 +2630,34 @@ html, body {
   background: rgba(251,191,36,.12);
   border-color: rgba(251,191,36,.35);
 }
+
+/* Selo Host durante a partida (topbar) — compacto, sem alterar altura do layout */
+.gameHostBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #fbbf24;
+  background: rgba(251,191,36,.12);
+  border: 1px solid rgba(251,191,36,.35);
+  vertical-align: middle;
+  max-width: 42vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gameHostBadge--other{
+  color: #e7c66a;
+  background: rgba(251,191,36,.08);
+  border-color: rgba(251,191,36,.28);
+  font-weight: 700;
+}
 .playerLobbyBadge--me{
   color: #93c5fd;
   background: rgba(96,165,250,.12);
@@ -3170,6 +3198,13 @@ html, body {
 
   .topbar .topbarRow--player{
     flex-wrap: nowrap;
+  }
+
+  .gameHostBadge{
+    font-size: 10px;
+    padding: 1px 6px;
+    margin-left: 4px;
+    max-width: 36vw;
   }
 
   .topbar .topbarDot{

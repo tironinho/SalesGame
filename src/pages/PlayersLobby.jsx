@@ -13,6 +13,8 @@ import {
   getLatestMatch,          // <<< novo: verificar se já existe match
   startLobbyHeartbeat, // ✅ NOVO
   canResumeLockedMatch,
+  attemptHostTransferFromPresence,
+  GAME_PRESENCE_POLL_INTERVAL_MS,
 } from '../lib/lobbies'
 import {
   resolvePlayerIdForRoom,   // id persistido por sala
@@ -312,6 +314,38 @@ useEffect(() => {
     return stop
   }, [lobbyId, meId])
 
+  // Host offline no lobby open: transferência por presença (mesmo threshold do game).
+  // Saída explícita já transfere via leaveLobby; isto cobre queda de rede / aba morta.
+  useEffect(() => {
+    if (!lobbyId || !meId) return
+    if (lobby?.status && lobby.status !== 'open') return
+
+    let cancelled = false
+    const tick = async () => {
+      if (cancelled) return
+      const candidateIds = (players || []).map((p) => p.player_id).filter(Boolean)
+      if (!candidateIds.length) return
+      try {
+        const ht = await attemptHostTransferFromPresence({
+          lobbyId,
+          myUid: meId,
+          candidateIds,
+        })
+        if (ht?.transferred && !cancelled) {
+          if (import.meta.env.DEV) console.log('[host-transfer] lobby committed')
+          refreshAll()
+        }
+      } catch {}
+    }
+
+    tick().catch(() => {})
+    const t = setInterval(() => { tick().catch(() => {}) }, GAME_PRESENCE_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lobbyId, meId, lobby?.status, players])
 
   useEffect(() => {
     triedEnsure.current = false

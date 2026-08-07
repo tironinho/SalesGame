@@ -47,7 +47,7 @@ import { getOrCreateTabPlayerId, setTabPlayerName, resolvePlayerIdForRoom, setMa
 import { useGameNet } from './net/GameNetProvider.jsx'
 
 // Gerenciamento de salas
-import { leaveRoom } from './lib/lobbies'
+import { leaveRoom, getLobby, onLobbyRealtime } from './lib/lobbies'
 import { useGamePresenceAutoSkip } from './game/useGamePresenceAutoSkip.js'
 
 // Tamanho da pista
@@ -1959,6 +1959,60 @@ export default function App() {
     onStatus: setTurnAbsenceStatus,
   })
 
+  // Host visual durante game — fonte: lobbies.host_id (realtime de lobby já existente)
+  const [lobbyHostId, setLobbyHostId] = useState(null)
+  const [hostPromotedHint, setHostPromotedHint] = useState(false)
+  const prevLobbyHostIdRef = useRef(null)
+
+  useEffect(() => {
+    if (phase !== 'game' || !currentLobbyId) {
+      setLobbyHostId(null)
+      prevLobbyHostIdRef.current = null
+      setHostPromotedHint(false)
+      return
+    }
+
+    let cancelled = false
+    const refreshHost = async () => {
+      try {
+        const lobby = await getLobby(currentLobbyId)
+        if (cancelled) return
+        const next = lobby?.host_id != null ? String(lobby.host_id) : null
+        setLobbyHostId(next)
+      } catch {}
+    }
+
+    refreshHost()
+    const off = onLobbyRealtime(currentLobbyId, () => { refreshHost() })
+    return () => {
+      cancelled = true
+      try { off?.() } catch {}
+    }
+  }, [phase, currentLobbyId])
+
+  useEffect(() => {
+    const next = lobbyHostId != null ? String(lobbyHostId) : null
+    const prev = prevLobbyHostIdRef.current
+    const me = String(myUid || meId || '')
+    prevLobbyHostIdRef.current = next
+
+    // Só mensagem quando o host_id muda PARA o jogador local (não no load inicial)
+    if (prev != null && next != null && prev !== next && me && next === me) {
+      setHostPromotedHint(true)
+      const t = setTimeout(() => setHostPromotedHint(false), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [lobbyHostId, myUid, meId])
+
+  const iAmLobbyHost =
+    !!lobbyHostId &&
+    !!myUid &&
+    String(lobbyHostId) === String(myUid || meId)
+  const lobbyHostPlayer = useMemo(() => {
+    if (!lobbyHostId) return null
+    return (players || []).find((p) => String(p?.id) === String(lobbyHostId)) || null
+  }, [players, lobbyHostId])
+
   // ====== Jogo (derivações + logs) ======
   // ✅ IMPORTANT: Hooks (useEffect) NÃO podem ficar depois de returns condicionais por phase.
   // Mantemos estas derivações sempre declaradas para evitar React error #310.
@@ -1991,6 +2045,8 @@ export default function App() {
   // ====== Faixa de próximo passo (somente exibição; não altera turno/ações)
   const nextStepHint = gameOver
     ? 'Partida encerrada — veja o resultado.'
+    : hostPromotedHint
+    ? 'Você agora é o Host da sala.'
     : turnAbsenceStatus === 'waiting'
     ? 'Jogador desconectado — aguardando reconexão...'
     : turnAbsenceStatus === 'skipped'
@@ -2006,7 +2062,7 @@ export default function App() {
     : current?.name
     ? `Aguarde a jogada de ${current.name}.`
     : 'Aguarde o próximo jogador.'
-  const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus
+  const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus && !hostPromotedHint
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
@@ -2333,6 +2389,16 @@ export default function App() {
             >
               👤 {meHudLive.name}
             </span>
+            {iAmLobbyHost && (
+              <span className="gameHostBadge" title="Você é o Host da sala">
+                👑 Você é o Host
+              </span>
+            )}
+            {!iAmLobbyHost && lobbyHostId && (
+              <span className="gameHostBadge gameHostBadge--other" title="Host atual da sala">
+                👑 Host{lobbyHostPlayer?.name ? `: ${lobbyHostPlayer.name}` : ''}
+              </span>
+            )}
           </div>
           <div className="topbarRow topbarRow--metrics">
             <span>Possib. Atendimento: <b>{meHudLive.possibAt ?? 0}</b></span>
