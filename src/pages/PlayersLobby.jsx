@@ -12,9 +12,11 @@ import {
   setPlayerName,
   getLatestMatch,          // <<< novo: verificar se já existe match
   startLobbyHeartbeat, // ✅ NOVO
+  canResumeLockedMatch,
 } from '../lib/lobbies'
 import {
-  getOrCreateTabPlayerId,   // id por ABA
+  resolvePlayerIdForRoom,   // id persistido por sala
+  getMatchIdentity,
 } from '../auth'
 import {
   DEFAULT_MAX_ROUNDS,
@@ -128,8 +130,12 @@ const STATUS_UI = {
 }
 
 export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame }) {
-  const meId = getOrCreateTabPlayerId()
   const meName = String(playerName || '').trim()
+  // Mesma room → mesmo playerId (sobrevive fechar aba). Nome não é chave.
+  const meId = useMemo(
+    () => resolvePlayerIdForRoom(lobbyId, { playerName: meName }),
+    [lobbyId, meName]
+  )
 
   const [lobby, setLobby] = useState(null)
   const [players, setPlayers] = useState([])
@@ -200,6 +206,36 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
     }
   }
 
+  /**
+   * Reentrada em lobby locked/playing sem joinLobby:
+   * identidade persistida + playerId em rooms.state.players → resumeExistingMatch.
+   */
+  async function tryResumeLockedMatch () {
+    if (navigatedOnce.current) return false
+    const persisted = getMatchIdentity(lobbyId)
+    const playerId = persisted?.playerId
+    if (!playerId) return false
+
+    const { ok } = await canResumeLockedMatch(lobbyId, playerId)
+    if (!ok) return false
+
+    navigatedOnce.current = true
+    let matchId = null
+    try {
+      const match = await getLatestMatch(lobbyId)
+      matchId = match?.id || null
+    } catch {}
+
+    onStartGame?.({
+      lobbyId,
+      matchId,
+      players: [],
+      me: { id: playerId, name: meName || persisted.playerName || '' },
+      resumeExistingMatch: true,
+    })
+    return true
+  }
+
   async function refreshAll() {
     if (firstLoad.current) setLoading(true)
     try {
@@ -212,8 +248,10 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
       const mine = pls.find(p => p.player_id === meId)
       console.log('[PlayersLobby] refreshAll - mine:', mine, 'meId:', meId)
 
-      // 1) Se não estou na sala, entra (uma vez)
-      if (!mine && !triedEnsure.current && lb?.status === 'open') {
+      const lobbyOpen = lb?.status === 'open'
+
+      // 1) Se não estou na sala e lobby AINDA open, entra (uma vez). Locked → sem join.
+      if (!mine && !triedEnsure.current && lobbyOpen) {
         console.log('[PlayersLobby] refreshAll - entrando na sala')
         triedEnsure.current = true
         try { 
@@ -237,6 +275,11 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
 
       // 3) Se já existe match (host iniciou), navega todos imediatamente
       await maybeNavigate(pls)
+
+      // 4) Lobby locked/playing: reentrada legítima via rooms.state (sem joinLobby)
+      if (!navigatedOnce.current && !lobbyOpen) {
+        await tryResumeLockedMatch()
+      }
     } catch (e) {
       console.error('[PlayersLobby] refreshAll - erro:', e)
     } finally {

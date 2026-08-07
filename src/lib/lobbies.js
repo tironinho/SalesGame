@@ -281,6 +281,46 @@ export async function getLatestMatch(lobbyId) {
   return data?.[0] || null
 }
 
+/**
+ * Busca o state autoritativo em `rooms` pelo code (= lobbyId).
+ * Preferência: row com state.players.length > 0.
+ * Não altera schema; só leitura.
+ */
+export async function findAuthoritativeRoomState (roomCode) {
+  const code = String(roomCode ?? '').trim()
+  if (!code) return null
+
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('id, code, state, version, updated_at')
+    .eq('code', code)
+    .order('updated_at', { ascending: false })
+    .limit(10)
+
+  if (error) throw error
+  const rows = Array.isArray(data) ? data : []
+  const usable = rows.find(
+    (r) => Array.isArray(r?.state?.players) && r.state.players.length > 0
+  )
+  return (usable || rows[0])?.state ?? null
+}
+
+/**
+ * Reentrada legítima em partida locked:
+ * identidade persistida da room + playerId presente em rooms.state.players.
+ * Nome NÃO é usado.
+ */
+export async function canResumeLockedMatch (roomCode, playerId) {
+  const code = String(roomCode ?? '').trim()
+  const pid = String(playerId ?? '').trim()
+  if (!code || !pid) return { ok: false, state: null }
+
+  const state = await findAuthoritativeRoomState(code)
+  const players = Array.isArray(state?.players) ? state.players : []
+  const found = players.some((p) => String(p?.id) === pid)
+  return { ok: found, state: found ? state : null }
+}
+
 /* ==============================
    GERENCIAMENTO DE SALAS DE JOGO (ROOMS)
    ============================== */

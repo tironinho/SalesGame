@@ -1,10 +1,21 @@
 // src/pages/LobbyList.jsx
 import { useEffect, useRef, useState } from 'react'
 import {
-  getOrCreateTabPlayerId,     // <-- id por ABA
-  makeId,                     // opcional, se quiser usar id novo ao criar
+  getOrCreateTabPlayerId,     // <-- id por ABA (fallback / create)
+  resolvePlayerIdForRoom,     // <-- id persistido por sala
+  setMatchIdentity,
+  getMatchIdentity,
+  countMatchIdentities,
 } from '../auth'
-import { listLobbies, onLobbiesRealtime, cleanupLobbiesOnce, getLobbyConfig, createLobby, joinLobby } from '../lib/lobbies'
+import {
+  listLobbies,
+  onLobbiesRealtime,
+  cleanupLobbiesOnce,
+  getLobbyConfig,
+  createLobby,
+  joinLobby,
+  canResumeLockedMatch,
+} from '../lib/lobbies'
 
 /* ---------- Ícones SVG inline (decorativos; sem dependência externa) ----------
    Todos usam currentColor e recebem className/size via props. */
@@ -182,7 +193,7 @@ export default function LobbyList({ onEnterRoom, playerName }) {
       return
     }
 
-    // usamos o id desta aba como hostId (ou gere um novo com makeId() se preferir)
+    // usamos o id desta aba como hostId; após criar, vinculamos à sala
     const hostId = getOrCreateTabPlayerId()
 
     creatingRef.current = true
@@ -191,6 +202,8 @@ export default function LobbyList({ onEnterRoom, playerName }) {
 
     try {
       const lobbyId = await createLobby({ name, hostId, max: 4 })
+
+      setMatchIdentity(lobbyId, { playerId: hostId, playerName: pn })
 
       await joinLobby({
         lobbyId,
@@ -226,15 +239,46 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     if (opener && typeof opener.focus === 'function') opener.focus()
   }
 
-  // Entra usando o id desta ABA (cada aba = jogador diferente)
-  async function handleJoin(lobbyId) {
+  // Entra em sala open (join) OU reentra em partida locked se identidade + rooms.state validarem.
+  async function handleJoin(lobbyId, roomStatus = 'open') {
     try {
       const pn = String(playerName || '').trim()
       if (!pn) {
         alert('Digite seu nome na tela inicial antes de entrar em salas.')
         return
       }
-      const playerId = getOrCreateTabPlayerId()
+
+      const status = String(roomStatus || 'open')
+      const isOpen = status === 'open'
+
+      if (!isOpen) {
+        // Bypass de "Sala bloqueada" SOMENTE se identidade persistida + player no snapshot.
+        const persisted = getMatchIdentity(lobbyId)
+        const playerId = persisted?.playerId
+        if (import.meta.env.DEV) {
+          console.log('[resume-card] click locked', {
+            identity: !!playerId,
+            idSuffix: String(lobbyId || '').slice(-8),
+          })
+        }
+        if (!playerId) {
+          alert('Sala bloqueada.')
+          return
+        }
+        const { ok } = await canResumeLockedMatch(lobbyId, playerId)
+        if (import.meta.env.DEV) {
+          console.log('[resume-card] snapshot/playerMatch', { ok })
+        }
+        if (!ok) {
+          alert('Sala bloqueada.')
+          return
+        }
+        // Não joinLobby: recuperação de assento existente → PlayersLobby → resumeExistingMatch
+        onEnterRoom?.(lobbyId)
+        return
+      }
+
+      const playerId = resolvePlayerIdForRoom(lobbyId, { playerName: pn })
       await joinLobby({ lobbyId, playerId, playerName: pn, ready: false })
       onEnterRoom?.(lobbyId)
     } catch (e) {
@@ -310,8 +354,24 @@ export default function LobbyList({ onEnterRoom, playerName }) {
                 : rows.map(r => {
                     const isFull = (r.players ?? 0) >= (r.max ?? 4)
                     const isOpen = (r.status ?? 'open') === 'open'
-                    const disabled = isFull || !isOpen
+                    // Reentrada: se há identidade local desta room, o botão fica clicável
+                    // (validação real contra rooms.state ocorre no clique — localStorage sozinho não basta).
+                    const identity = !isOpen ? getMatchIdentity(r.id) : null
+                    const hasLocalMatchIdentity = !!identity?.playerId
+                    const disabled = isFull || (!isOpen && !hasLocalMatchIdentity)
 
+                    if (import.meta.env.DEV && !isOpen) {
+                      // Diagnóstico do card locked — sem UUID completo / sem snapshot financeiro
+                      console.log('[resume-card] locked=true', {
+                        identity: hasLocalMatchIdentity,
+                        full: isFull,
+                        status: String(r.status || ''),
+                        idSuffix: String(r.id || '').slice(-8),
+                        storedIdentities: countMatchIdentities(),
+                        // 1/4 vem de lobby_players (contador visual), NÃO de rooms.state
+                        lobbyPlayersCount: Number(r.players ?? 0) || 0,
+                      })
+                    }
                     // leitura defensiva SÓ para exibição (ocupação/percentual);
                     // as condições acima permanecem a fonte do comportamento
                     const players = Math.max(0, Number(r.players ?? 0) || 0)
@@ -335,7 +395,7 @@ export default function LobbyList({ onEnterRoom, playerName }) {
 
                     // texto do botão conforme estado (apresentação; ação inalterada)
                     const joinLabel = !disabled
-                      ? 'Entrar agora'
+                      ? (!isOpen && hasLocalMatchIdentity ? 'Reentrar na partida' : 'Entrar agora')
                       : isPlaying
                       ? 'Partida em andamento'
                       : rawStatus === 'locked'
@@ -379,8 +439,8 @@ export default function LobbyList({ onEnterRoom, playerName }) {
                           type="button"
                           className="lobbyJoinBtn"
                           disabled={disabled}
-                          onClick={() => handleJoin(r.id)}
-                          title={!disabled ? 'Entrar na sala' : joinLabel}
+                          onClick={() => handleJoin(r.id, rawStatus)}
+                          title={!disabled ? (isOpen ? 'Entrar na sala' : 'Reentrar na partida') : joinLabel}
                         >
                           {!disabled && <IconEnter />}
                           {joinLabel}

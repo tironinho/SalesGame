@@ -41,7 +41,7 @@ if (import.meta.env.DEV) {
 }
 
 // Identidade por aba
-import { getOrCreateTabPlayerId, setTabPlayerName } from './auth'
+import { getOrCreateTabPlayerId, setTabPlayerName, resolvePlayerIdForRoom, setMatchIdentity, clearMatchIdentity, getMatchIdentity } from './auth'
 
 // Net (opcional)
 import { useGameNet } from './net/GameNetProvider.jsx'
@@ -376,6 +376,9 @@ export default function App() {
   const bcRef = useRef(null)
   // ✅ INIT_GUARD: após aplicar snapshot autoritativo do Supabase, nunca mais aceitar "reset local" de turno/round
   const hydratedFromNetRef = useRef(false)
+  // Resume: força o effect de hidratação a reavaliar mesmo se netState/version não mudarem
+  // (Provider já tinha o snapshot da mesma room antes de limpar players).
+  const [resumeHydrateNonce, setResumeHydrateNonce] = useState(0)
   
   // ✅ BUG 2 FIX: Refs para watchdog anti-trava
   const lockSinceRef = useRef(null)
@@ -744,13 +747,14 @@ export default function App() {
     }
   }, [syncKey, meId, phase])
 
-  // ====== Gerenciamento de saída de salas de jogo ======
+  // ====== Gerenciamento de saída de salas (somente LOBBY — não em partida ativa)
+  // Fechar/refresh/pagehide durante `game` NÃO remove o assento (presença virá depois).
+  // Saída explícita ("Sair para Lobbies") continua chamando leaveRoom + clearMatchIdentity.
   useEffect(() => {
     const handleLeaveRoom = async () => {
       console.log(`[App] handleLeaveRoom chamado - fase: ${phase}, currentLobbyId: ${currentLobbyId}, myUid: ${myUid}`)
-      
-      // Executa se estivermos em uma sala (lobbies ou game) e tivermos IDs válidos
-      if ((phase === 'lobbies' || phase === 'playersLobby' || phase === 'game') && currentLobbyId && myUid) {
+
+      if ((phase === 'lobbies' || phase === 'playersLobby') && currentLobbyId && myUid) {
         try {
           console.log(`[App] Saindo da sala ${currentLobbyId} na fase ${phase}`)
           await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
@@ -758,13 +762,11 @@ export default function App() {
           console.warn('[App] Erro ao sair da sala:', error)
         }
       } else {
-        console.log(`[App] Não executando leaveRoom - condições não atendidas`)
+        console.log(`[App] Não executando leaveRoom automático - fase=${phase}`)
       }
     }
 
-    // Event listeners para detectar saída
     const handleBeforeUnload = () => {
-      // Executa a saída da sala de forma síncrona
       handleLeaveRoom()
     }
 
@@ -772,11 +774,9 @@ export default function App() {
       handleLeaveRoom()
     }
 
-    // Adiciona os event listeners
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('pagehide', handlePageHide)
 
-    // Cleanup
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('pagehide', handlePageHide)
@@ -834,9 +834,11 @@ export default function App() {
   useEffect(() => {
     if (!net?.enabled) return
     if (!currentLobbyId) return
-    const stop = startLobbyHeartbeat({ lobbyId: currentLobbyId, playerId: meId })
+    const pid = String(myUid || meId || '')
+    if (!pid) return
+    const stop = startLobbyHeartbeat({ lobbyId: currentLobbyId, playerId: pid })
     return stop
-  }, [net?.enabled, currentLobbyId, meId])
+  }, [net?.enabled, currentLobbyId, myUid, meId])
   
   // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {
@@ -1083,14 +1085,15 @@ export default function App() {
     const lastAppliedVer = Number(lastAppliedNetVersionRef.current) || 0
     const isNumericallyOlder = versionIsNumber && incomingNetVersion < lastAppliedVer
 
-    // ✅ Gate correto:
-    // - aplica se for START (mesmo com version menor)
-    // - OU se stateId mudou (mesmo com version repetida/menor)
-    // - OU se netVersion aumentou (caso normal)
+    // ✅ Gate:
+    // - START sempre aplica
+    // - version maior aplica
+    // - stateId novo só aplica se version NÃO for numericamente mais antiga
+    //   (evita snapshot stale com stateId fresco sobrescrever partida mais nova)
     const shouldApply =
       isStartState ||
-      (!!incomingStateId && !sameStateId) ||
-      (versionIsNumber && incomingNetVersion > lastAppliedNetVersionRef.current)
+      (versionIsNumber && incomingNetVersion > lastAppliedNetVersionRef.current) ||
+      (!!incomingStateId && !sameStateId && (!versionIsNumber || !isNumericallyOlder))
 
     if (!shouldApply) return false
 
@@ -1109,20 +1112,57 @@ export default function App() {
     }
 
     // --- aplica players ---
+    // Proteção: se já hidratamos / temos roster local válido, NÃO deixar players:[] apagar.
+    // Resume inicial (players=[] local, hydrated=false) ainda aceita o primeiro snapshot com jogadores.
     if (np) {
-      const normalizedPlayers = normalizePlayers(np)
-      setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
-      playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+      const localRoster =
+        (Array.isArray(playersBeforeRef.current) && playersBeforeRef.current.length > 0)
+          ? playersBeforeRef.current
+          : null
+      const skipEmptyWipe =
+        np.length === 0 &&
+        (hydratedFromNetRef.current || (localRoster && localRoster.length > 0))
 
-      // turnIdx derivado do turnPlayerId (nunca do remoto)
-      if (incomingTurnId) {
-        const derivedTurnIdx = normalizedPlayers.findIndex(p => String(p.id) === String(incomingTurnId))
-        if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
-          setTurnIdx(derivedTurnIdx)
+      if (skipEmptyWipe) {
+        if (DEBUG_LOGS) {
+          console.warn('[NET] ignorando snapshot com players:[] sobre roster válido', {
+            version: incomingNetVersion,
+            stateId: incomingStateId,
+            localCount: localRoster?.length ?? 0,
+            hydrated: hydratedFromNetRef.current,
+          })
         }
+      } else {
+        const normalizedPlayers = normalizePlayers(np)
+        setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
+        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+
+        // turnIdx derivado do turnPlayerId (nunca do remoto)
+        if (incomingTurnId) {
+          const derivedTurnIdx = normalizedPlayers.findIndex(p => String(p.id) === String(incomingTurnId))
+          if (derivedTurnIdx >= 0 && derivedTurnIdx !== turnIdx) {
+            setTurnIdx(derivedTurnIdx)
+          }
+        }
+
+        // Reassocia myUid pela identidade persistida da sala (nunca por nome)
+        try {
+          const roomKey = currentLobbyId || roomId
+          const persisted = roomKey ? getMatchIdentity(roomKey) : null
+          const wantId = persisted?.playerId || myUid || meId
+          const mine = normalizedPlayers.find(p => String(p.id) === String(wantId))
+          if (mine) {
+            setMyUid(String(mine.id))
+            if (roomKey) {
+              setMatchIdentity(roomKey, {
+                playerId: String(mine.id),
+                playerName: String(mine.name || myName || ''),
+              })
+            }
+          }
+        } catch {}
       }
     }
-
     // --- round ---
     if (nr !== null) {
       const limit = Object.prototype.hasOwnProperty.call(incomingNetState, 'maxRounds')
@@ -1216,13 +1256,13 @@ export default function App() {
     } catch {}
 
     return true
-  }, [turnPlayerId, turnIdx, setPlayers, applyLastRollUI, clearRollingTimeout, DEBUG_LOGS])
+  }, [turnPlayerId, turnIdx, setPlayers, applyLastRollUI, clearRollingTimeout, DEBUG_LOGS, currentLobbyId, roomId, myUid, meId, myName])
 
   useEffect(() => {
     if (!net?.enabled || !net?.ready) return
     if (!netState) return
     applyRemoteNetState(netState, netVersion, netStateId)
-  }, [netVersion, netState, netStateId, net?.enabled, net?.ready, applyRemoteNetState])
+  }, [netVersion, netState, netStateId, net?.enabled, net?.ready, applyRemoteNetState, resumeHydrateNonce])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
   useEffect(() => {
@@ -1965,6 +2005,8 @@ export default function App() {
 
           // ✅ após confirmar nome: se há roomId (URL), entra direto nela; senão vai para lista de salas
           if (roomId) {
+            const resolvedId = resolvePlayerIdForRoom(roomId, { playerName: clean })
+            setMyUid(String(resolvedId))
             setCurrentLobbyId(roomId)
             window.__setRoomCode?.(roomId)
             setPhase('playersLobby')
@@ -1984,6 +2026,8 @@ export default function App() {
         <LobbyList
           playerName={myName}
           onEnterRoom={(id) => {
+          const resolvedId = resolvePlayerIdForRoom(id, { playerName: myName })
+          setMyUid(String(resolvedId))
           setCurrentLobbyId(id)
           window.__setRoomCode?.(id)
           try {
@@ -2038,16 +2082,67 @@ export default function App() {
 
           if (resumeExistingMatch) {
             // Retomada: NÃO aplicar starter kit / NÃO broadcastStart.
-            // NÃO ler net.state neste callback (__setRoomCode só vale no próximo render).
-            // Espera bootstrap limpo do Provider + effect → applyRemoteNetState.
+            // Problema clássico: Provider JÁ tem snapshot da mesma room; limpar players
+            // e esperar o effect não funciona porque netState/version/stateId não mudam.
+            const roomKey = String(payload?.lobbyId || currentLobbyId || roomId || '')
+            const resolvedId = resolvePlayerIdForRoom(roomKey, {
+              playerName: myName || payload?.me?.name || '',
+            })
+
+            const resumeLog = (msg, extra) => {
+              if (!import.meta.env.DEV) return
+              try {
+                if (extra === undefined) console.log(`[resume] ${msg}`)
+                else console.log(`[resume] ${msg}`, extra)
+              } catch {}
+            }
+
+            resumeLog('room requested', roomKey)
+            resumeLog('identity found', !!resolvedId)
+
             lastLocalStateRef.current = null
             playersBeforeRef.current = null
             lastAppliedNetVersionRef.current = 0
             lastAppliedStateIdRef.current = null
             hydratedFromNetRef.current = false
-            try { setMyUid(String(meId)) } catch {}
+            try { setMyUid(String(resolvedId)) } catch {}
+            if (roomKey) {
+              setCurrentLobbyId(roomKey)
+              window.__setRoomCode?.(roomKey)
+              setMatchIdentity(roomKey, {
+                playerId: String(resolvedId),
+                playerName: String(myName || payload?.me?.name || ''),
+              })
+            }
             setPlayers([], { source: 'RESUME_EXISTING_WAIT' })
             setPhase('game')
+
+            // Bootstrap determinístico: se o Provider já tem a MESMA room com roster válido
+            // contendo o playerId persistido, aplica AGORA (não espera realtime).
+            const snap = net?.state
+            const snapPlayers = Array.isArray(snap?.players) ? snap.players : []
+            const providerReady = !!(net?.enabled && net?.ready)
+            const playerInSnap = snapPlayers.some((p) => String(p?.id) === String(resolvedId))
+            const canApplyNow =
+              providerReady &&
+              !!roomKey &&
+              snapPlayers.length > 0 &&
+              playerInSnap &&
+              (typeof net?.version === 'number' || net?.stateId != null || snap?.stateId != null)
+
+            resumeLog('provider ready', providerReady)
+            resumeLog('provider room matches', !!roomKey && providerReady)
+            resumeLog('players count', snapPlayers.length)
+
+            if (canApplyNow) {
+              const applied = applyRemoteNetState(snap, net.version, net.stateId)
+              resumeLog(applied ? 'snapshot apply' : 'snapshot skip', applied ? 'immediate' : 'gate')
+            } else {
+              resumeLog('snapshot apply', 'wait_effect')
+            }
+
+            // Garante reavaliação do effect mesmo se netState for referencialmente estável
+            setResumeHydrateNonce((n) => n + 1)
             return
           }
 
@@ -2085,11 +2180,23 @@ export default function App() {
           // ✅ CORREÇÃO: Normaliza players antes de usar
           const normalized = normalizePlayers(mapped)
 
-          // ✅ FIX: myUid NUNCA deve ser inferido por nome (nomes podem colidir: "Jogador").
-          // Identidade por aba é SEMPRE meId.
+          // ✅ FIX: myUid pela identidade da sala (UUID), nunca por nome.
+          const roomKey = String(payload?.lobbyId || currentLobbyId || roomId || '')
           try {
-            const mineById = normalized.find(p => String(p.id) === String(meId))
-            if (mineById) setMyUid(String(meId))
+            const resolvedId = resolvePlayerIdForRoom(roomKey, { playerName: myName })
+            const mineById = normalized.find(p => String(p.id) === String(resolvedId))
+              || normalized.find(p => String(p.id) === String(meId))
+            if (mineById) {
+              setMyUid(String(mineById.id))
+              if (roomKey) {
+                setMatchIdentity(roomKey, {
+                  playerId: String(mineById.id),
+                  playerName: String(mineById.name || myName || ''),
+                })
+              }
+            } else if (resolvedId) {
+              setMyUid(String(resolvedId))
+            }
           } catch {}
 
           // ✅ CORREÇÃO CRÍTICA: Reset explícito de refs antes de iniciar jogo
@@ -2140,7 +2247,15 @@ export default function App() {
             <div style={{ opacity: .75, marginBottom: 12 }}>
               Aguardando snapshot do Supabase (START). Se ficar preso, volte para Lobbies e entre novamente.
             </div>
-            <button onClick={() => setPhase('lobbies')} style={{ padding:'10px 12px', borderRadius: 10 }}>
+            <button onClick={() => {
+              // NÃO clearMatchIdentity aqui: voltar da tela de loading NÃO é abandonar a partida.
+              // Apagar a identidade impede "Reentrar" no card locked.
+              if (import.meta.env.DEV) {
+                console.log('[resume] back-to-lobbies from loading (identity preserved)')
+              }
+              window.__setRoomCode?.(null)
+              setPhase('lobbies')
+            }} style={{ padding:'10px 12px', borderRadius: 10 }}>
               Voltar para Lobbies
             </button>
           </div>
@@ -2250,13 +2365,14 @@ export default function App() {
               <button
                 className="btn dark"
                 onClick={async () => {
-                  // Remove o jogador da sala antes de sair
+                  // Saída explícita: remove assento + identidade persistida da sala
                   if (currentLobbyId && myUid) {
                     try {
                       await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
                     } catch (error) {
                       console.warn('[App] Erro ao sair da sala:', error)
                     }
+                    clearMatchIdentity(currentLobbyId)
                   }
                   window.__setRoomCode?.(null) // pausa sync remoto ao sair
                   setPhase('lobbies')
@@ -2283,13 +2399,14 @@ export default function App() {
               maxRounds={maxRounds}
               endedRound={round}
               onExit={async () => {
-                // Remove o jogador da sala antes de sair
+                // Saída explícita ao fim da partida
                 if (currentLobbyId && myUid) {
                   try {
                     await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
                   } catch (error) {
                     console.warn('[App] Erro ao sair da sala:', error)
                   }
+                  clearMatchIdentity(currentLobbyId)
                 }
                 window.__setRoomCode?.(null)
                 setPhase('lobbies')
