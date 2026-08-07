@@ -17,6 +17,10 @@ const TOKEN_BASE_PX = 40;     // tamanho “normal” do peão
 const TOKEN_ACTIVE_SCALE = 1.15; // multiplicador para o peão do jogador da vez
 const TOKEN_RING_PX = 3;      // largura do anel branco
 
+/** Duração visual por casa (ms). Só afeta a UI — não altera player.pos. */
+const TOKEN_STEP_MS = 150
+const TOKEN_ANIM_MAX_MS = 2200
+
 const DEFAULT_STATS = {
   cash: 18000,
   possibAt: 0,
@@ -35,6 +39,37 @@ const DEFAULT_STATS = {
   gestores: 0,
 }
 
+function normalizeTrackPos(pos) {
+  const n = Number(pos)
+  if (!Number.isFinite(n)) return 0
+  return ((Math.trunc(n) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
+}
+
+/** Percurso visual somente para frente: from → … → to (ciclo 0…TRACK_LEN-1). */
+function buildForwardPath(from, to) {
+  const start = normalizeTrackPos(from)
+  const end = normalizeTrackPos(to)
+  if (start === end) return []
+  const path = []
+  let cur = start
+  for (let guard = 0; guard < TRACK_LEN; guard += 1) {
+    cur = (cur + 1) % TRACK_LEN
+    path.push(cur)
+    if (cur === end) break
+  }
+  return path
+}
+
+/** Distância progressiva no ciclo (0 = mesmo ponto; 1…TRACK_LEN-1 = casas à frente). */
+function forwardDistance(from, to) {
+  const start = normalizeTrackPos(from)
+  const end = normalizeTrackPos(to)
+  return (end - start + TRACK_LEN) % TRACK_LEN
+}
+
+/** Movimento oficial do dado: 1–6 casas (ver useTurnEngine / gameReducer ROLL). */
+const MAX_NORMAL_MOVE_STEPS = 6
+
 export default function Board({
   players,
   turnIdx,
@@ -45,6 +80,14 @@ export default function Board({
 }) {
   const boardRef = useRef(null)
   const [size, setSize] = useState({ w: BASE_W, h: BASE_H })
+
+  // Posição visual dos peões (separada de player.pos — só apresentação)
+  const [visualPositions, setVisualPositions] = useState({})
+  const visualRef = useRef({})
+  const animTimersRef = useRef({})
+  const animTargetRef = useRef({}) // alvo oficial da animação em curso
+  const playersRef = useRef(players)
+  playersRef.current = players
 
   // 🔐 “quem sou eu” preferindo o que vem do pai (PlayersLobby/App)
   const myId = me?.id || getOrCreateTabPlayerId()
@@ -105,6 +148,124 @@ export default function Board({
     return () => ro.disconnect()
   }, [])
 
+  // Assinatura só de id+pos — evita reiniciar animação em updates irrelevantes
+  const positionsSignature = useMemo(() => {
+    if (!Array.isArray(players)) return ''
+    return players
+      .map((p) => `${p?.id}:${normalizeTrackPos(p?.pos)}`)
+      .join('|')
+  }, [players])
+
+  // Animação visual: NÃO altera player.pos nem o estado da partida.
+  // Depende só da assinatura id:pos para não reiniciar em updates irrelevantes.
+  useEffect(() => {
+    const list = Array.isArray(playersRef.current) ? playersRef.current : []
+    const alive = new Set(list.map((p) => String(p?.id)))
+
+    Object.keys(visualRef.current).forEach((id) => {
+      if (!alive.has(id)) {
+        if (animTimersRef.current[id]) {
+          clearTimeout(animTimersRef.current[id])
+          delete animTimersRef.current[id]
+        }
+        delete visualRef.current[id]
+        delete animTargetRef.current[id]
+        setVisualPositions((prev) => {
+          if (!(id in prev)) return prev
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+      }
+    })
+
+    list.forEach((p) => {
+      if (p?.id == null) return
+      const id = String(p.id)
+      const target = normalizeTrackPos(p.pos)
+      const current = visualRef.current[id]
+
+      // Primeira aparição: posiciona direto, sem animar desde a casa 0
+      if (current === undefined) {
+        visualRef.current[id] = target
+        animTargetRef.current[id] = target
+        setVisualPositions((prev) => (
+          prev[id] === target ? prev : { ...prev, [id]: target }
+        ))
+        return
+      }
+
+      if (current === target) {
+        animTargetRef.current[id] = target
+        return
+      }
+
+      // Já animando rumo ao mesmo alvo oficial — não reinicia
+      if (animTimersRef.current[id] && animTargetRef.current[id] === target) {
+        return
+      }
+
+      if (animTimersRef.current[id]) {
+        clearTimeout(animTimersRef.current[id])
+        delete animTimersRef.current[id]
+      }
+
+      animTargetRef.current[id] = target
+
+      // Distância progressiva: jogada real do dado é 1–6; >6 = resync/correção → snap
+      const dist = forwardDistance(current, target)
+      if (dist === 0) {
+        visualRef.current[id] = target
+        setVisualPositions((prev) => ({ ...prev, [id]: target }))
+        return
+      }
+      if (dist > MAX_NORMAL_MOVE_STEPS) {
+        visualRef.current[id] = target
+        setVisualPositions((prev) => ({ ...prev, [id]: target }))
+        return
+      }
+
+      const path = buildForwardPath(current, target)
+      if (path.length === 0) {
+        visualRef.current[id] = target
+        setVisualPositions((prev) => ({ ...prev, [id]: target }))
+        return
+      }
+
+      // 16ms = piso técnico (evita 0); TOKEN_ANIM_MAX_MS limita ~duração total
+      const stepMs = Math.max(
+        16,
+        Math.min(TOKEN_STEP_MS, Math.floor(TOKEN_ANIM_MAX_MS / path.length))
+      )
+
+      let step = 0
+      const tick = () => {
+        if (step >= path.length) {
+          delete animTimersRef.current[id]
+          return
+        }
+        const nextPos = path[step]
+        step += 1
+        visualRef.current[id] = nextPos
+        setVisualPositions((prev) => ({ ...prev, [id]: nextPos }))
+        if (step < path.length) {
+          animTimersRef.current[id] = setTimeout(tick, stepMs)
+        } else {
+          delete animTimersRef.current[id]
+        }
+      }
+
+      animTimersRef.current[id] = setTimeout(tick, stepMs)
+    })
+  }, [positionsSignature])
+
+  useEffect(() => {
+    return () => {
+      Object.values(animTimersRef.current).forEach((t) => clearTimeout(t))
+      animTimersRef.current = {}
+    }
+  }, [])
+
   const sx = size.w / BASE_W
   const sy = size.h / BASE_H
   const s  = Math.min(sx, sy)
@@ -133,7 +294,9 @@ export default function Board({
             // ✅ OBJ 6: turno por ID estável (não por índice potencialmente divergente)
             const activePlayerId = players?.[turnIdx]?.id
             const isTurn = String(p?.id) === String(activePlayerId)
-            const i   = ((p.pos % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
+            const official = normalizeTrackPos(p.pos)
+            const visual = visualPositions[String(p.id)]
+            const i = visual !== undefined ? normalizeTrackPos(visual) : official
             const pt  = TRACK_POINTS_NORM[i]
             const xy  = scalePoint(pt, size.w, size.h)
 
@@ -167,8 +330,8 @@ export default function Board({
                   zIndex: isTurn ? 4 : 3,
                   fontSize: `${Math.max(16, sizePx * 0.6)}px`, // inicial proporcional
                 }}
-                title={`${p.name} • Casa ${i + 1}`}
-                aria-label={`${p.name} está na casa ${i + 1}`}
+                title={`${p.name} • Casa ${official + 1}`}
+                aria-label={`${p.name} está na casa ${official + 1}`}
               >
                 <span className="tokenInitial">{initial}</span>
                 {/* Indicador da vez: estrela pequena no canto, sem cobrir a inicial */}

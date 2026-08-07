@@ -16,7 +16,12 @@ export default function StartScreen({ onEnter }) {
   const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial())
   const inputRef = useRef(null)
 
+  // Desktop: foca o nome. Mobile/touch: NÃO autofocar — Safari dá zoom em inputs.
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    const coarse = window.matchMedia('(pointer: coarse)').matches
+    const narrow = window.matchMedia('(max-width: 960px)').matches
+    if (coarse || narrow) return
     inputRef.current?.focus()
   }, [])
 

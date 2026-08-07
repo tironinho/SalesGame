@@ -1047,38 +1047,41 @@ export default function App() {
     }
   }, [players, turnIdx, round])
 
-  useEffect(() => {
-    if (!net?.enabled || !net?.ready) return
-    if (!netState) return
+  // Hidratação autoritativa de rooms.state → estado local (única implementação).
+  const applyRemoteNetState = React.useCallback((incomingNetState, incomingNetVersion, incomingNetStateId) => {
+    if (!incomingNetState) return false
 
-    const np = Array.isArray(netState.players) ? netState.players : null
-    const nr = Number.isInteger(netState.round) ? netState.round : null
+    const np = Array.isArray(incomingNetState.players) ? incomingNetState.players : null
+    const nr = Number.isInteger(incomingNetState.round) ? incomingNetState.round : null
 
     const incomingTurnId =
-      (netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== '')
-        ? String(netState.turnPlayerId)
+      (incomingNetState.turnPlayerId !== undefined && incomingNetState.turnPlayerId !== null && String(incomingNetState.turnPlayerId) !== '')
+        ? String(incomingNetState.turnPlayerId)
         : null
 
     // stateId/actionId muda a cada commit e é um ótimo “dedupe” mesmo se version resetar
     let incomingStateId = null
     try {
-      const raw = netState?.stateId ?? netState?.actionId ?? netStateId ?? null
+      const raw = incomingNetState?.stateId ?? incomingNetState?.actionId ?? incomingNetStateId ?? null
       incomingStateId = (raw === null || raw === undefined) ? null : String(raw)
     } catch {}
 
-    const versionIsNumber = (typeof netVersion === 'number')
+    const versionIsNumber = (typeof incomingNetVersion === 'number')
 
     // Detecta START/RESET (mesma heurística do teu código, mas usada ANTES do gate)
     const heuristicReset = (
       nr === 1 &&
       Array.isArray(np) && np.length > 0 &&
       np.every(p => Number(p?.pos ?? 0) === 0) &&
-      (netState.gameOver === false || netState.gameOver == null) &&
-      !netState.winner
+      (incomingNetState.gameOver === false || incomingNetState.gameOver == null) &&
+      !incomingNetState.winner
     )
-    const isStartState = (netState.kind === 'START') || (netState.isStartGame === true) || heuristicReset
+    const isStartState = (incomingNetState.kind === 'START') || (incomingNetState.isStartGame === true) || heuristicReset
 
     const sameStateId = !!incomingStateId && (lastAppliedStateIdRef.current === incomingStateId)
+
+    const lastAppliedVer = Number(lastAppliedNetVersionRef.current) || 0
+    const isNumericallyOlder = versionIsNumber && incomingNetVersion < lastAppliedVer
 
     // ✅ Gate correto:
     // - aplica se for START (mesmo com version menor)
@@ -1087,14 +1090,18 @@ export default function App() {
     const shouldApply =
       isStartState ||
       (!!incomingStateId && !sameStateId) ||
-      (versionIsNumber && netVersion > lastAppliedNetVersionRef.current)
+      (versionIsNumber && incomingNetVersion > lastAppliedNetVersionRef.current)
 
-    if (!shouldApply) return
+    if (!shouldApply) return false
 
-    // marca aplicado (não exige monotonicidade estrita)
-    if (versionIsNumber) lastAppliedNetVersionRef.current = netVersion
-    if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
-    else if (isStartState && versionIsNumber) lastAppliedStateIdRef.current = `START:${netVersion}`
+    // marca aplicado (não exige monotonicidade estrita; nunca rebaixa version/stateId por snapshot mais antigo)
+    if (versionIsNumber) {
+      lastAppliedNetVersionRef.current = Math.max(lastAppliedVer, incomingNetVersion)
+    }
+    if (!isNumericallyOlder) {
+      if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
+      else if (isStartState && versionIsNumber) lastAppliedStateIdRef.current = `START:${incomingNetVersion}`
+    }
 
     // --- aplica turno (turnPlayerId é a fonte de verdade) ---
     if (incomingTurnId && String(turnPlayerId || '') !== incomingTurnId) {
@@ -1118,8 +1125,8 @@ export default function App() {
 
     // --- round ---
     if (nr !== null) {
-      const limit = Object.prototype.hasOwnProperty.call(netState, 'maxRounds')
-        ? normalizeMaxRounds(netState.maxRounds)
+      const limit = Object.prototype.hasOwnProperty.call(incomingNetState, 'maxRounds')
+        ? normalizeMaxRounds(incomingNetState.maxRounds)
         : maxRoundsRef.current
       const safeNr = clampRound(nr, limit)
       setRound(prev => {
@@ -1127,36 +1134,36 @@ export default function App() {
         return finalRound
       })
     }
-    if (netState.gameOver === true || netState.winner) {
-      const limit = Object.prototype.hasOwnProperty.call(netState, 'maxRounds')
-        ? normalizeMaxRounds(netState.maxRounds)
+    if (incomingNetState.gameOver === true || incomingNetState.winner) {
+      const limit = Object.prototype.hasOwnProperty.call(incomingNetState, 'maxRounds')
+        ? normalizeMaxRounds(incomingNetState.maxRounds)
         : maxRoundsRef.current
       setRound(limit)
     }
 
-    if (Object.prototype.hasOwnProperty.call(netState, 'maxRounds')) {
-      setMaxRounds(normalizeMaxRounds(netState.maxRounds))
+    if (Object.prototype.hasOwnProperty.call(incomingNetState, 'maxRounds')) {
+      setMaxRounds(normalizeMaxRounds(incomingNetState.maxRounds))
     } else if (isStartState) {
       // Partida antiga completa sem o campo: fallback 5
       setMaxRounds(DEFAULT_MAX_ROUNDS)
     }
 
     // --- roundFlags ---
-    if (netState.roundFlags !== undefined) {
-      if (Array.isArray(netState.roundFlags)) setRoundFlags(netState.roundFlags)
-      else if (typeof netState.roundFlags === 'object' && netState.roundFlags) setRoundFlags(Object.values(netState.roundFlags))
+    if (incomingNetState.roundFlags !== undefined) {
+      if (Array.isArray(incomingNetState.roundFlags)) setRoundFlags(incomingNetState.roundFlags)
+      else if (typeof incomingNetState.roundFlags === 'object' && incomingNetState.roundFlags) setRoundFlags(Object.values(incomingNetState.roundFlags))
     }
 
     // --- LOCKS (estado compartilhado) ---
-    if (typeof netState.turnLock !== 'undefined') setTurnLock(!!netState.turnLock)
-    if (typeof netState.lockOwner !== 'undefined') setLockOwner(netState.lockOwner ? String(netState.lockOwner) : null)
+    if (typeof incomingNetState.turnLock !== 'undefined') setTurnLock(!!incomingNetState.turnLock)
+    if (typeof incomingNetState.lockOwner !== 'undefined') setLockOwner(incomingNetState.lockOwner ? String(incomingNetState.lockOwner) : null)
 
     // ✅ INVARIANTE CRÍTICA:
     // Se chegar turnLock=true SEM lockOwner => isso trava TODOS (porque controlsCanRoll exige !turnLock).
     // Nesse caso, limpamos o lock localmente e tentamos limpar no Supabase 1 vez por stateId.
-    const corruptLock = (netState.turnLock === true) && (!netState.lockOwner || String(netState.lockOwner) === '')
+    const corruptLock = (incomingNetState.turnLock === true) && (!incomingNetState.lockOwner || String(incomingNetState.lockOwner) === '')
     if (corruptLock) {
-      const fixKey = incomingStateId || (versionIsNumber ? `v:${netVersion}` : 'noid')
+      const fixKey = incomingStateId || (versionIsNumber ? `v:${incomingNetVersion}` : 'noid')
       if (fixedCorruptLockRef.current !== fixKey) {
         fixedCorruptLockRef.current = fixKey
         console.warn('[NET] turnLock=true sem lockOwner; limpando lock (anti-trava).', { fixKey })
@@ -1180,34 +1187,42 @@ export default function App() {
       setIsRollingUI(false)
       clearRollingTimeout()
     } else {
-      setGameOver(prev => prev || !!netState.gameOver)
+      setGameOver(prev => prev || !!incomingNetState.gameOver)
       setWinner(prev => {
-        const willBeGameOver = (!!netState.gameOver || !!netState.winner)
-        if (willBeGameOver && prev && (!netState.winner)) return prev
-        return netState.winner ?? prev
+        const willBeGameOver = (!!incomingNetState.gameOver || !!incomingNetState.winner)
+        if (willBeGameOver && prev && (!incomingNetState.winner)) return prev
+        return incomingNetState.winner ?? prev
       })
     }
 
     // --- anti-double-roll autoritativo ---
-    if (netState.lastRollTurnKey !== undefined) setLastRollTurnKey(netState.lastRollTurnKey ? String(netState.lastRollTurnKey) : null)
-    if (typeof netState.turnSeq === 'number') setTurnSeq(netState.turnSeq)
+    if (incomingNetState.lastRollTurnKey !== undefined) setLastRollTurnKey(incomingNetState.lastRollTurnKey ? String(incomingNetState.lastRollTurnKey) : null)
+    if (typeof incomingNetState.turnSeq === 'number') setTurnSeq(incomingNetState.turnSeq)
 
     // --- última rolagem do dado (passivo; somente UI) ---
-    if (Object.prototype.hasOwnProperty.call(netState, 'lastRoll')) {
-      if (netState.lastRoll === null) {
+    if (Object.prototype.hasOwnProperty.call(incomingNetState, 'lastRoll')) {
+      if (incomingNetState.lastRoll === null) {
         setLastRollUI(null)
       } else {
-        applyLastRollUI(netState.lastRoll)
+        applyLastRollUI(incomingNetState.lastRoll)
       }
     }
 
     // init guard
     try {
-      const hasPlayers = Array.isArray(netState.players) && netState.players.length > 0
-      const hasTurn = netState.turnPlayerId !== undefined && netState.turnPlayerId !== null && String(netState.turnPlayerId) !== ''
+      const hasPlayers = Array.isArray(incomingNetState.players) && incomingNetState.players.length > 0
+      const hasTurn = incomingNetState.turnPlayerId !== undefined && incomingNetState.turnPlayerId !== null && String(incomingNetState.turnPlayerId) !== ''
       if (hasPlayers && hasTurn) hydratedFromNetRef.current = true
     } catch {}
-  }, [netVersion, netState, netStateId, net?.enabled, net?.ready, DEBUG_LOGS])
+
+    return true
+  }, [turnPlayerId, turnIdx, setPlayers, applyLastRollUI, clearRollingTimeout, DEBUG_LOGS])
+
+  useEffect(() => {
+    if (!net?.enabled || !net?.ready) return
+    if (!netState) return
+    applyRemoteNetState(netState, netVersion, netStateId)
+  }, [netVersion, netState, netStateId, net?.enabled, net?.ready, applyRemoteNetState])
 
   // ✅ BUG 2 FIX: Watchdog anti-trava - libera turnLock se travado por muito tempo
   useEffect(() => {
@@ -2023,9 +2038,13 @@ export default function App() {
 
           if (resumeExistingMatch) {
             // Retomada: NÃO aplicar starter kit / NÃO broadcastStart.
-            // Aguarda snapshot autoritativo de rooms.state.
+            // NÃO ler net.state neste callback (__setRoomCode só vale no próximo render).
+            // Espera bootstrap limpo do Provider + effect → applyRemoteNetState.
             lastLocalStateRef.current = null
             playersBeforeRef.current = null
+            lastAppliedNetVersionRef.current = 0
+            lastAppliedStateIdRef.current = null
+            hydratedFromNetRef.current = false
             try { setMyUid(String(meId)) } catch {}
             setPlayers([], { source: 'RESUME_EXISTING_WAIT' })
             setPhase('game')
@@ -2135,27 +2154,35 @@ export default function App() {
     <ModalProvider>
     <div className="page">
       <header className="topbar">
-        <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <span
-            style={{
-              width:18, height:18, borderRadius:'50%',
-              border:'2px solid rgba(255,255,255,.9)',
-              boxShadow:'0 0 0 2px rgba(0,0,0,.25)',
-              background: meHudLive.color
-            }}
-          />
-          <span style={{
-            background:'#1f2430', border:'1px solid rgba(255,255,255,.12)',
-            borderRadius:10, padding:'4px 10px', fontWeight:800
-          }}>
-            👤 {meHudLive.name}
-          </span>
-          <span>Possib. Atendimento: <b>{meHudLive.possibAt ?? 0}</b></span>
-          <span>Clientes em Atendimento: <b>{meHudLive.clientsAt ?? 0}</b></span>
+        <div className="status topbarPrimary">
+          <div className="topbarRow topbarRow--player">
+            <span
+              className="topbarDot"
+              style={{
+                width:18, height:18, borderRadius:'50%',
+                border:'2px solid rgba(255,255,255,.9)',
+                boxShadow:'0 0 0 2px rgba(0,0,0,.25)',
+                background: meHudLive.color
+              }}
+            />
+            <span
+              className="topbarName"
+              style={{
+                background:'#1f2430', border:'1px solid rgba(255,255,255,.12)',
+                borderRadius:10, padding:'4px 10px', fontWeight:800
+              }}
+            >
+              👤 {meHudLive.name}
+            </span>
+          </div>
+          <div className="topbarRow topbarRow--metrics">
+            <span>Possib. Atendimento: <b>{meHudLive.possibAt ?? 0}</b></span>
+            <span>Clientes em Atendimento: <b>{meHudLive.clientsAt ?? 0}</b></span>
+          </div>
           <DebugPanel players={players} turnIdx={turnIdx} round={round} gameOver={gameOver} winner={winner} />
         </div>
 
-        <div className="status" style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <div className="status topbarSecondary">
           <span>Rodada: {round}/{maxRounds}</span>
           <span className="money">💵 $ {Number(myCash).toLocaleString()}</span>
         </div>

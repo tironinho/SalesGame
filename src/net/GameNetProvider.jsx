@@ -10,6 +10,32 @@ export const useGameNet = () => {
   return useContext(Ctx)
 }
 
+const DEV_NET_LOGS = import.meta.env.DEV
+const LOOKUP_BACKOFF_MS = [250, 500, 1000]
+
+function netLog(tag, payload) {
+  if (!DEV_NET_LOGS) return
+  try {
+    console.log(tag, payload)
+  } catch {}
+}
+
+function roomHasPlayers(row) {
+  const players = row?.state?.players
+  return Array.isArray(players) && players.length > 0
+}
+
+/**
+ * Escolhe UMA row autoritativa entre candidatas (já ordenadas por updated_at desc).
+ * Prioridade: row com players.length > 0; senão a mais recente.
+ */
+function pickAuthoritativeRoom(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  const usable = rows.find(roomHasPlayers)
+  if (usable) return { row: usable, kind: 'usable' }
+  return { row: rows[0], kind: 'fallback' }
+}
+
 /**
  * Tabela rooms: { id, code (UNIQUE), host_id, state (jsonb), version (int), updated_at }
  * Props:
@@ -31,61 +57,209 @@ function GameNetProvider({ roomCode, hostId, children }) {
   const lastEvtRef = useRef(0)
   const activeRoomIdRef = useRef(null)
   const latestKnownUpdatedAtRef = useRef(null)
+  const activeCodeRef = useRef(code)
   useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => { versionRef.current = version }, [version])
   useEffect(() => { stateIdRef.current = stateId }, [stateId])
+  useEffect(() => { activeCodeRef.current = code }, [code])
 
-  // Helper: obtém a row mais recente por code (evita erro de .single() com duplicatas)
+  /**
+   * Lookup autoritativo por code.
+   * Retorno:
+   *  - { status: 'ok', row }
+   *  - { status: 'empty', row: null }  // SELECT ok, zero rows
+   *  - { status: 'error', row: null, error }  // SELECT falhou após retries
+   * Nunca trata erro de SELECT como "sala inexistente".
+   */
   const getLatestRoomByCode = async (roomCode) => {
-    const { data, error } = await supabase
-      .from('rooms')
-      .select('id, code, host_id, state, version, updated_at')
-      .eq('code', roomCode)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    
-    if (error) {
-      console.warn('[NET] getLatestRoomByCode error:', error.message || error)
-      return null
+    const targetCode = String(roomCode || '').trim()
+    let lastError = null
+    // attempt 0 = imediato; depois até 3 backoffs (total até 4 leituras)
+    const maxAttempts = LOOKUP_BACKOFF_MS.length + 1
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, LOOKUP_BACKOFF_MS[attempt - 1]))
+      }
+
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('id, code, host_id, state, version, updated_at')
+        .eq('code', targetCode)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+
+      if (error) {
+        lastError = error
+        netLog('[NET] room lookup error', {
+          code: targetCode,
+          attempt: attempt + 1,
+          message: error.message || String(error),
+        })
+        continue
+      }
+
+      const rows = Array.isArray(data) ? data : []
+      netLog('[NET] room candidates', { code: targetCode, count: rows.length })
+
+      if (rows.length === 0) {
+        netLog('[NET] room lookup empty', { code: targetCode })
+        return { status: 'empty', row: null }
+      }
+
+      const picked = pickAuthoritativeRoom(rows)
+      const row = picked.row
+      const hasPlayers = roomHasPlayers(row)
+      if (picked.kind === 'usable') {
+        netLog('[NET] selected usable room', {
+          code: targetCode,
+          id: row.id,
+          version: row.version ?? 0,
+          hasPlayers,
+          candidates: rows.length,
+        })
+      } else {
+        netLog('[NET] selected fallback room', {
+          code: targetCode,
+          id: row.id,
+          version: row.version ?? 0,
+          hasPlayers,
+          candidates: rows.length,
+        })
+      }
+      return { status: 'ok', row }
     }
-    return data
+
+    return { status: 'error', row: null, error: lastError }
   }
 
-  // bootstrap: carrega/cria pelo code
-  useEffect(() => {
-    if (!enabled) return
-    let cancelled = false
-    ;(async () => {
-      let current = await getLatestRoomByCode(code)
+  const resetLocalRoom = () => {
+    setReady(false)
+    setState({})
+    setVersion(0)
+    setStateId(null)
+    versionRef.current = 0
+    stateIdRef.current = null
+    stateRef.current = {}
+    activeRoomIdRef.current = null
+    latestKnownUpdatedAtRef.current = null
+    lastEvtRef.current = 0
+  }
 
-      if (!current) {
-        // Se não existe, cria uma nova row
-        const initial = { code, state: {}, version: 0, host_id: hostId || null }
+  // bootstrap: carrega/cria pelo code (ciclo limpo a cada code)
+  useEffect(() => {
+    if (!enabled) {
+      resetLocalRoom()
+      return
+    }
+
+    let cancelled = false
+    const bootCode = code
+
+    // Novo code: zera sala anterior antes do SELECT (evita A vazar como B)
+    resetLocalRoom()
+    netLog('[NET] bootstrap start', { code: bootCode })
+
+    const applyRoomRow = (row) => {
+      if (!row || cancelled) return false
+      // Resposta atrasada da sala antiga não sobrescreve a nova
+      if (activeCodeRef.current !== bootCode) return false
+      const nextState = row.state || {}
+      const nextVersion = row.version ?? 0
+      const nextStateId = nextState?.stateId != null ? String(nextState.stateId) : null
+      activeRoomIdRef.current = row.id
+      latestKnownUpdatedAtRef.current = row.updated_at
+      versionRef.current = nextVersion
+      stateIdRef.current = nextStateId
+      stateRef.current = nextState
+      setState(nextState)
+      setVersion(nextVersion)
+      setStateId(nextStateId)
+      return true
+    }
+
+    ;(async () => {
+      const lookup = await getLatestRoomByCode(bootCode)
+      if (cancelled || activeCodeRef.current !== bootCode) return
+
+      if (lookup.status === 'error') {
+        netLog('[NET] bootstrap ready', {
+          code: bootCode,
+          ready: true,
+          hasPlayers: false,
+          reason: 'lookup_error_after_retries',
+        })
+        // Bootstrap terminou sem inventar row; polling/realtime podem recuperar depois
+        setReady(true)
+        return
+      }
+
+      let current = lookup.status === 'ok' ? lookup.row : null
+
+      if (!current && lookup.status === 'empty') {
+        // Só INSERT quando SELECT confirmou ZERO rows (nunca após erro)
+        const initial = { code: bootCode, state: {}, version: 0, host_id: hostId || null }
         const { data, error: upErr } = await supabase
           .from('rooms')
           .insert(initial)
           .select('id, code, host_id, state, version, updated_at')
           .maybeSingle()
-        if (upErr) { 
-          console.warn('[NET] rooms/create:', upErr.message || upErr)
-          return 
+
+        if (cancelled || activeCodeRef.current !== bootCode) return
+
+        if (upErr) {
+          // Concorrência/unique: 1 re-SELECT (sem loop)
+          console.warn('[NET] rooms/create:', upErr.message || upErr, '- re-SELECT uma vez')
+          const retry = await getLatestRoomByCode(bootCode)
+          if (cancelled || activeCodeRef.current !== bootCode) return
+          if (retry.status === 'ok' && retry.row) {
+            applyRoomRow(retry.row)
+            netLog('[NET] bootstrap ready', {
+              code: bootCode,
+              id: retry.row.id,
+              version: retry.row.version ?? 0,
+              hasPlayers: roomHasPlayers(retry.row),
+              ready: true,
+            })
+            setReady(true)
+            return
+          }
+          console.warn('[NET] rooms/bootstrap failed: insert error and re-SELECT empty/error', {
+            code: bootCode,
+            error: upErr.message || upErr,
+            retryStatus: retry.status,
+          })
+          setReady(true)
+          return
         }
-        if (cancelled) return
+
         if (data) {
           current = data
         } else {
-          // Se insert não retornou, tenta buscar novamente
-          current = await getLatestRoomByCode(code)
+          const again = await getLatestRoomByCode(bootCode)
+          if (cancelled || activeCodeRef.current !== bootCode) return
+          current = again.status === 'ok' ? again.row : null
         }
       }
 
-      if (cancelled) return
+      if (cancelled || activeCodeRef.current !== bootCode) return
       if (current) {
-        activeRoomIdRef.current = current.id
-        latestKnownUpdatedAtRef.current = current.updated_at
-        setState(current.state || {})
-        setVersion(current.version ?? 0)
+        applyRoomRow(current)
+        netLog('[NET] bootstrap ready', {
+          code: bootCode,
+          id: current.id,
+          version: current.version ?? 0,
+          hasPlayers: roomHasPlayers(current),
+          ready: true,
+        })
+      } else {
+        console.warn('[NET] rooms/bootstrap: nenhuma row para code=', bootCode)
+        netLog('[NET] bootstrap ready', {
+          code: bootCode,
+          ready: true,
+          hasPlayers: false,
+          reason: 'no_row',
+        })
       }
       setReady(true)
     })()
@@ -102,26 +276,43 @@ function GameNetProvider({ roomCode, hostId, children }) {
         { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${code}` },
         (payload) => {
           const row = payload.new || payload.old || {}
+          if (!row || (row.code != null && String(row.code) !== String(code))) return
+
           const incomingVersion = (typeof row.version === 'number') ? row.version : null
           const incomingState = row.state || null
           const incomingStateId = incomingState?.stateId ?? null
+          const remoteHasPlayers =
+            Array.isArray(incomingState?.players) && incomingState.players.length > 0
+          const localHasPlayers =
+            Array.isArray(stateRef.current?.players) && stateRef.current.players.length > 0
 
-          // ✅ FIX: aplica update se versão avançou OU se mesma versão mas stateId diferente.
+          // Aplica se versão avançou, stateId mudou, OU recuperação: local sem players e remoto com players
           const shouldApply =
+            (remoteHasPlayers && !localHasPlayers) ||
             (incomingVersion != null && incomingVersion > versionRef.current) ||
             (incomingVersion != null && incomingVersion === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
 
           if (shouldApply) {
-            if (incomingVersion != null) setVersion(incomingVersion)
-            if (incomingState) setState(incomingState)
-            if (incomingStateId) setStateId(String(incomingStateId))
+            if (incomingVersion != null) {
+              versionRef.current = incomingVersion
+              setVersion(incomingVersion)
+            }
+            if (incomingState) {
+              stateRef.current = incomingState
+              setState(incomingState)
+            }
+            if (incomingStateId) {
+              stateIdRef.current = String(incomingStateId)
+              setStateId(String(incomingStateId))
+            }
             if (row.updated_at) latestKnownUpdatedAtRef.current = row.updated_at
             if (row.id) activeRoomIdRef.current = row.id
             lastEvtRef.current = Date.now()
-            if (incomingVersion === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current) {
-              console.warn('[NET] ✅ applied remote (same version, different stateId)', { version: incomingVersion, stateId: incomingStateId })
-            } else {
-              console.log('[NET] ✅ applied remote v=%d (realtime)', incomingVersion)
+            if (DEV_NET_LOGS) {
+              console.log('[NET] ✅ applied remote (realtime)', {
+                version: incomingVersion,
+                hasPlayers: remoteHasPlayers,
+              })
             }
           }
         }
@@ -133,22 +324,39 @@ function GameNetProvider({ roomCode, hostId, children }) {
   // polling de segurança (se o realtime estiver off)
   useEffect(() => {
     if (!enabled) return
+    const pollCode = code
     const id = setInterval(async () => {
       if (Date.now() - (lastEvtRef.current || 0) < 2000) return
-      const current = await getLatestRoomByCode(code)
-      if (current) {
-        const incomingStateId = current.state?.stateId ?? null
-        const shouldApply =
-          (current.version > versionRef.current) ||
-          (current.version === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
+      if (activeCodeRef.current !== pollCode) return
 
-        if (shouldApply) {
-          setVersion(current.version)
-          setState(current.state || {})
-          if (incomingStateId) setStateId(String(incomingStateId))
-          if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
-          if (current.id) activeRoomIdRef.current = current.id
+      const lookup = await getLatestRoomByCode(pollCode)
+      if (activeCodeRef.current !== pollCode) return
+      // SELECT_ERROR: não tratar como empty; só tenta de novo no próximo tick
+      if (lookup.status !== 'ok' || !lookup.row) return
+
+      const current = lookup.row
+      const incomingStateId = current.state?.stateId ?? null
+      const remoteHasPlayers = roomHasPlayers(current)
+      const localHasPlayers =
+        Array.isArray(stateRef.current?.players) && stateRef.current.players.length > 0
+
+      const shouldApply =
+        (remoteHasPlayers && !localHasPlayers) ||
+        (current.version > versionRef.current) ||
+        (current.version === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
+
+      if (shouldApply) {
+        versionRef.current = current.version
+        setVersion(current.version)
+        const nextState = current.state || {}
+        stateRef.current = nextState
+        setState(nextState)
+        if (incomingStateId) {
+          stateIdRef.current = String(incomingStateId)
+          setStateId(String(incomingStateId))
         }
+        if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
+        if (current.id) activeRoomIdRef.current = current.id
       }
     }, 700)
     return () => clearInterval(id)
@@ -162,11 +370,25 @@ function GameNetProvider({ roomCode, hostId, children }) {
     const nowISO = new Date().toISOString()
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      // 1) lê snapshot mais recente usando helper
-      let current = await getLatestRoomByCode(code)
+      // 1) lê snapshot autoritativo (mesma seleção do bootstrap/poll)
+      const lookup = await getLatestRoomByCode(code)
+      let current = null
+
+      if (lookup.status === 'error') {
+        console.warn(`[NET] commit - lookup error (attempt ${attempt}/${MAX_ATTEMPTS}):`, lookup.error?.message || lookup.error)
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(resolve => setTimeout(resolve, 50 * attempt))
+          continue
+        }
+        return
+      }
+
+      if (lookup.status === 'ok') {
+        current = lookup.row
+      }
 
       if (!current) {
-        // Se não existe, cria uma nova row
+        // Só cria row se SELECT confirmou empty (não após erro)
         const initial = { code, state: {}, version: 0, host_id: hostId || null }
         const { data, error: insErr } = await supabase
           .from('rooms')
@@ -175,20 +397,26 @@ function GameNetProvider({ roomCode, hostId, children }) {
           .maybeSingle()
         if (insErr) {
           console.warn(`[NET] commit - insert failed (attempt ${attempt}/${MAX_ATTEMPTS}):`, insErr.message || insErr)
-          if (attempt < MAX_ATTEMPTS) {
+          const retry = await getLatestRoomByCode(code)
+          if (retry.status === 'ok' && retry.row) {
+            current = retry.row
+            activeRoomIdRef.current = current.id
+            latestKnownUpdatedAtRef.current = current.updated_at
+          } else if (attempt < MAX_ATTEMPTS) {
             await new Promise(resolve => setTimeout(resolve, 50 * attempt))
             continue
+          } else {
+            return
           }
-          return
-        }
-        if (data) {
+        } else if (data) {
           current = data
           activeRoomIdRef.current = current.id
           latestKnownUpdatedAtRef.current = current.updated_at
         } else {
-          // Tenta buscar novamente
-          current = await getLatestRoomByCode(code)
-          if (!current) {
+          const again = await getLatestRoomByCode(code)
+          if (again.status === 'ok' && again.row) {
+            current = again.row
+          } else {
             console.warn(`[NET] commit - no row after insert (attempt ${attempt}/${MAX_ATTEMPTS})`)
             if (attempt < MAX_ATTEMPTS) {
               await new Promise(resolve => setTimeout(resolve, 50 * attempt))
@@ -198,6 +426,8 @@ function GameNetProvider({ roomCode, hostId, children }) {
           }
         }
       }
+
+      if (!current) return
 
       // Atualiza activeRoomIdRef se necessário
       if (current.id) activeRoomIdRef.current = current.id
@@ -242,6 +472,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
       if (!e2 && updated) {
         setState(updated.state || {})
         setVersion(updated.version ?? ((current.version || 0) + 1))
+        if (updated.state?.stateId != null) setStateId(String(updated.state.stateId))
         if (updated.updated_at) latestKnownUpdatedAtRef.current = updated.updated_at
         if (attempt > 1) {
           console.log(`[NET] commit succeeded on attempt ${attempt}/${MAX_ATTEMPTS}`)
@@ -250,34 +481,35 @@ function GameNetProvider({ roomCode, hostId, children }) {
       }
 
       // ✅ CORREÇÃO: Trata conflito de versão, "0 rows", ou "Cannot coerce" como conflito e re-tenta
-      const isConflict = e2?.code === 'PGRST116' || 
+      const isConflict = e2?.code === 'PGRST116' ||
                          e2?.status === 406 || // ✅ trata 406 (no rows / single mismatch) como conflito de versão
                          e2?.message?.includes('0 rows') ||
                          e2?.message?.includes('Cannot coerce') ||
                          e2?.code === '23505' || // unique violation
                          (e2?.message && e2.message.includes('version')) ||
                          !updated // Se não retornou row, é conflito de versão
-      
+
       if (isConflict && attempt < MAX_ATTEMPTS) {
         console.warn(`[NET] commit conflict (attempt ${attempt}/${MAX_ATTEMPTS}):`, e2?.message || e2 || 'no rows updated', '- retrying with merge monotônico...')
-        
+
         // ✅ CORREÇÃO 2: Retry robusto com merge monotônico
         // Re-fetch estado mais recente
-        const fresh = await getLatestRoomByCode(code)
-        if (fresh) {
+        const freshLookup = await getLatestRoomByCode(code)
+        if (freshLookup.status === 'ok' && freshLookup.row) {
+          const fresh = freshLookup.row
           current = fresh
           activeRoomIdRef.current = fresh.id
           latestKnownUpdatedAtRef.current = fresh.updated_at
-          
+
           // Re-aplica updater no estado mais recente (faz merge)
           base = fresh.state || {}
           const localState = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
-          
+
           // ✅ CORREÇÃO: Merge monotônico - garante que versão sempre avança
           const freshStateVersion = fresh.state?.stateVersion ?? 0
           const localStateVersion = localState?.stateVersion ?? 0
           const mergedStateVersion = Math.max(freshStateVersion, localStateVersion) + 1
-          
+
           // Merge: preserva campos do fresh que não foram alterados localmente
           next = {
             ...base, // Estado remoto como base
@@ -285,7 +517,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
             stateVersion: mergedStateVersion // ✅ Versão monotônica garantida
           }
         }
-        
+
         // Pequeno delay antes de re-tentar para evitar race condition
         await new Promise(resolve => setTimeout(resolve, 50 * attempt))
         continue
@@ -295,15 +527,17 @@ function GameNetProvider({ roomCode, hostId, children }) {
     }
 
     // fallback: resync final
-    const current = await getLatestRoomByCode(code)
-    if (current) { 
+    const finalLookup = await getLatestRoomByCode(code)
+    if (finalLookup.status === 'ok' && finalLookup.row) {
+      const current = finalLookup.row
       setState(current.state || {})
       setVersion(current.version ?? 0)
+      if (current.state?.stateId != null) setStateId(String(current.state.stateId))
       if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
       if (current.id) activeRoomIdRef.current = current.id
       console.warn('[NET] commit failed after retries, resynced to latest state')
     } else {
-      console.warn('[NET] commit fallback resync failed: no row found')
+      console.warn('[NET] commit fallback resync failed: no row found', finalLookup.status)
     }
   }
 

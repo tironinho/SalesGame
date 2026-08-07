@@ -56,6 +56,10 @@ html, body {
 .topbar .icons .icon{ margin-right:8px; font-size:18px }
 .topbar .status{ display:flex; gap:14px; align-items:center; font-weight:600; font-size:14px }
 .topbar .money{ background:#2a2a2a; padding:6px 10px; border-radius:8px }
+/* Wrappers do cabeçalho: no desktop/landscape os filhos participam do flex do .status
+   (layout plano). Em portrait o media query redefine .topbarRow como linhas reais. */
+.topbar .topbarRow{ display: contents; }
+.topbar .topbarDot{ display:inline-block; flex:0 0 auto; }
 
 /* Área útil da viewport (sem rolar) */
 .content{
@@ -117,7 +121,19 @@ html, body {
   user-select:none;
   pointer-events:none; /* apenas visual; movimento é por botão */
   transform:translate(-50%,-50%);
-  transition: width .25s ease, height .25s ease, box-shadow .25s ease;
+  /* left/top ~ TOKEN_STEP_MS (150ms) em Board.jsx — movimento casa a casa */
+  transition:
+    width .25s ease,
+    height .25s ease,
+    box-shadow .25s ease,
+    left 150ms linear,
+    top 150ms linear;
+}
+@media (prefers-reduced-motion: reduce){
+  /* Mantém left/top (movimento casa a casa); só desliga pulse decorativo */
+  .token--active{
+    animation: none;
+  }
 }
 .tokenInitial{
   line-height:1;
@@ -126,6 +142,29 @@ html, body {
 /* jogador da vez: halo na cor do jogador + pulse sutil (sem piscar) */
 .token--active{
   animation: sgTokenPulse 1.8s ease-in-out infinite;
+}
+/* Desktop: pulse anima box-shadow; misturar box-shadow na transition do
+   mesmo elemento pode cancelar left/top no Chromium (peão “pula” ao destino).
+   Mobile (max-width:760px) não redefine transition e já funciona — não tocar. */
+@media (min-width: 761px){
+  .token.token--active{
+    transition:
+      width .25s ease,
+      height .25s ease,
+      left 150ms linear,
+      top 150ms linear;
+  }
+}
+@media (min-width: 761px) and (prefers-reduced-motion: reduce){
+  .token.token--active{
+    /* left/top permanecem; só para o pulse */
+    transition:
+      width .25s ease,
+      height .25s ease,
+      left 150ms linear,
+      top 150ms linear;
+    animation: none;
+  }
 }
 .tokenTurnBadge{
   position:absolute;
@@ -169,6 +208,15 @@ html, body {
 .hud .score{ background:#171717; border:1px solid #2a2a2a; border-radius:10px; margin-top:8px; }
 .hud .score .title{ background:#2a2a2a; padding:8px 10px; border-radius:10px 10px 0 0; font-weight:800; }
 .hud .score .row{ display:flex; justify-content:space-between; padding:8px 10px; border-top:1px dashed #2a2a2a; }
+
+/* Wrappers do HUD: transparentes no desktop/portrait (não alteram o fluxo) */
+.hudMetricsPrimary,
+.hudMetricsSecondary{
+  display: contents;
+}
+.hudDetailsToggle{
+  display: none;
+}
 
 /* Botões */
 .controls{ background:#171717; border:1px solid #2a2a2a; border-radius:10px; padding:10px; display:flex; flex-direction:column; gap:8px; }
@@ -310,7 +358,7 @@ html, body {
   padding:16px;
 }
 .startCard{
-  width:min(520px, 90vw);
+  width:min(520px, 100%);
   background: rgba(18,18,18,.72);
   border:1px solid rgba(255,255,255,.1);
   border-radius:16px;
@@ -2267,7 +2315,7 @@ html, body {
   border: 1px solid rgba(255,255,255,.14);
   background: #0f1119;
   color: #fff;
-  font-size: 15px;
+  font-size: 16px;
   outline: none;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -3042,104 +3090,861 @@ html, body {
   }
 }
 
-/* ====== Mobile landscape: tabuleiro + painel lado a lado ======
-   Sobrescreve o empilhamento do bloco ≤760px. Sem alterar lógica:
-   só layout — board ~78% à esquerda, painel à direita, circuito
-   inteiro visível (aspect-ratio 800/700) sem scroll. */
-@media (max-width: 960px) and (orientation: landscape){
+/* ====== Mobile portrait: partida compacta (não afeta landscape/desktop) ====== */
+@media (max-width: 760px) and (orientation: portrait){
+  /*
+   * Documento vertical: html/body liberam scroll (base global é overflow:hidden).
+   * Sem isso, .page com height:100vh + Safari chrome corta HUD/placar,
+   * sobretudo com tabuleiro expandido.
+   */
+  html, body{
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .page{
-    height: 100vh;
-    height: 100dvh;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: visible;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+  }
+
+  /*
+   * Cabeçalho em coluna previsível.
+   * L1 jogador → L2 métricas → L3 rodada/caixa → (gap) → botão → tabuleiro.
+   */
+  .topbar{
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 8px 10px;
+    gap: 8px;
+    row-gap: 8px;
+    column-gap: 0;
+    overflow: visible;
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+  }
+
+  .topbar .status,
+  .topbar .topbarPrimary,
+  .topbar .topbarSecondary{
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 6px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 12px;
+    line-height: 1.25;
+    font-weight: 600;
+  }
+
+  .topbar .topbarRow{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar .topbarRow--player{
+    flex-wrap: nowrap;
+  }
+
+  .topbar .topbarDot{
+    flex: 0 0 auto;
+  }
+
+  .topbar .topbarName{
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding: 4px 10px;
+  }
+
+  .topbar .topbarRow--metrics{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 4px;
+  }
+
+  .topbar .topbarSecondary{
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+
+  .topbar .money{
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .debugToggle{
+    display: none !important;
+  }
+
+  /* Conteúdo: fluxo de documento, sem limite de viewport */
+  .content,
+  .content--boardFocus{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding-top: 0;
+  }
+
+  .boardModeBtn{
+    position: static;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    order: 0;
+    min-height: 40px;
+    padding: 10px 12px;
+    margin: 10px 0 12px;
+    font-size: 13px;
+    border-radius: 8px;
+    transform: none;
+    top: auto;
+    left: auto;
+    z-index: auto;
+  }
+
+  /* Tabuleiro no fluxo; expandido só altera largura */
+  .boardWrap,
+  .boardWrap--follow,
+  .content--boardFocus .boardWrap{
+    position: relative;
+    top: auto;
+    margin-top: 0;
+    margin-bottom: 0;
+    flex: 0 0 auto;
+    order: 1;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .boardWrap:not(.boardWrap--follow){
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .boardWrap:not(.boardWrap--follow) .board{
+    aspect-ratio: 800 / 700;
+    width: min(100%, calc(clamp(240px, 38vh, 320px) * 800 / 700));
+    width: min(100%, calc(clamp(240px, 38dvh, 320px) * 800 / 700));
+    height: auto;
+    max-width: 100%;
+  }
+
+  .content--boardFocus .boardWrap,
+  .content--boardFocus .boardWrap--follow{
+    margin-top: 0;
+    margin-bottom: 0;
+    height: auto;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .content--boardFocus .board,
+  .boardWrap--follow .board{
+    height: auto;
+    max-height: none;
+  }
+
+  /*
+   * Sidebar: SEM scroll interno / SEM max-height de viewport.
+   * (Base .side e regra .side{max-height:calc(100vh-88px)} cortavam o HUD.)
+   */
+  .side{
+    display: flex;
+    flex-direction: column;
+    order: 2;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    flex: none;
+    gap: 8px;
+    padding-right: 0;
+    padding-bottom: 8px;
+  }
+
+  /* Controles no fluxo (não sticky no rodapé) */
+  .side > .controlsSticky,
+  .controlsSticky{
+    order: 1;
+    position: static;
+    bottom: auto;
+    top: auto;
+    z-index: auto;
+    padding: 6px 4px 4px;
+    box-shadow: none;
+    backdrop-filter: none;
+    background: transparent;
+    border-top: none;
+  }
+  .side > .hud{
+    order: 2;
+    min-width: 0;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .controlsSticky .diceResult{
+    margin-bottom: 6px;
+    padding: 8px 10px;
+  }
+  .controlsSticky .diceResultDie{
+    width: 48px;
+    height: 48px;
+  }
+  .controlsSticky .diceResultLabel{
+    font-size: 12px;
+  }
+  .controlsSticky .diceResultPlayer{
+    font-size: 13px;
+  }
+  .controlsSticky .nextStepHint{
+    margin: 0 0 6px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .controlsSticky .controls{
+    padding: 6px;
+    gap: 6px;
+  }
+  .controlsSticky .btn{
+    padding: 10px 12px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  /* HUD: reaproveita “Ver detalhes” (markup já existente) */
+  .hud .panel{
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+  }
+  .hudMetricsPrimary{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px 8px;
+    min-width: 0;
+    order: 1;
+  }
+  .hudMetricsPrimary--capacity{
+    order: 2;
+  }
+  .hudDetailsToggle{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 6px;
+    background: #242a38;
+    color: #e8ecf4;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    text-align: center;
+    order: 3;
+  }
+  .hudDetailsToggle:hover,
+  .hudDetailsToggle:focus-visible{
+    background: #2e3648;
+    outline: 2px solid rgba(120, 160, 255, 0.55);
+    outline-offset: 1px;
+  }
+  .hudMetricsSecondary{
+    display: none;
+    min-width: 0;
+    order: 4;
+  }
+  .hudMetricsSecondary.is-open{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+  .hud .line,
+  .hudMetric{
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.25;
+    min-width: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .hudMetric--wide{
+    grid-column: 1 / -1;
+  }
+
+  .hud .score{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 6px;
+    margin-top: 6px;
+  }
+  .hud .score .title{
+    grid-column: 1 / -1;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .hud .score .row{
+    min-width: 0;
+    padding: 4px 6px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+}
+
+/* ====== Mobile landscape: documento rolável + 2 colunas ======
+   Estratégia simples (sem cqw/cqh, sem scroll interno na .side):
+   - scroll principal = html/body (evita ficar preso ao girar do portrait)
+   - board limitado por max-height em dvh + max-width da coluna (AR 800/700)
+   - boardWrap sticky à esquerda; side no fluxo do documento
+   - text-size-adjust:100% evita inflação de texto do iOS no landscape
+   - boardFocus: board sozinho cabendo na viewport (sem edge-to-edge portrait)
+   Não altera .token nem regras de peões. Não altera portrait. */
+@media (max-width: 960px) and (orientation: landscape){
+  html, body{
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* index.html fixa height:100% no #root — liberar para o documento crescer */
+  #root{
+    height: auto;
+    min-height: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .page{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 100dvh;
+    max-height: none;
+    overflow: visible;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 
   .topbar{
     height: auto;
     min-height: 0;
-    max-height: 40px;
+    max-height: none;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 4px 8px;
+    flex: 0 0 auto;
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
     row-gap: 0;
+    box-sizing: border-box;
   }
   .topbar .status{
     flex-wrap: nowrap;
     gap: 8px;
-    font-size: 12px;
+    font-size: clamp(11px, 1.5vw, 13px);
+    min-width: 0;
   }
 
+  /*
+   * Duas colunas equilibradas (~52/48). height:auto — a página rola.
+   * Neutraliza column/100dvw do bloco ≤760px quando ambos aplicam.
+   */
   .content,
   .content--boardFocus{
-    flex-direction: row;
-    align-items: stretch;
-    height: calc(100vh - var(--topbar-h));
-    height: calc(100dvh - var(--topbar-h));
+    display: grid;
+    grid-template-columns: minmax(0, 52%) minmax(0, 48%);
+    grid-template-rows: auto;
+    align-items: start;
+    justify-items: stretch;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
     min-height: 0;
-    overflow: hidden;
-    padding: 6px;
+    min-width: 0;
+    overflow: visible;
+    overflow-x: hidden;
+    padding: 6px 8px;
     gap: 8px;
+    flex: 0 0 auto;
   }
 
-  /* no landscape o circuito já cabe ao lado do painel */
+  /* Modo normal: botão oculto (economiza altura). Expandido: ver abaixo. */
   .boardModeBtn{
     display: none;
   }
 
+  /*
+   * Board wrap: coluna 1, sticky, sem container queries.
+   * Anula 100vw/100dvw + margin negativa do portrait boardFocus.
+   */
   .boardWrap,
-  .content--boardFocus .boardWrap{
-    flex: 1 1 78%;
-    width: auto;
-    max-width: 80%;
-    height: 100%;
+  .content--boardFocus .boardWrap,
+  .boardWrap--follow,
+  .content--boardFocus .boardWrap--follow{
+    grid-column: 1;
+    grid-row: 1;
+    box-sizing: border-box;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
+    height: auto;
+    max-height: none;
     min-height: 0;
+    margin: 0;
     margin-left: 0;
-    overflow: hidden;
+    margin-right: 0;
+    flex: none;
+    overflow: visible;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    container-type: normal;
   }
 
-  /* proporção do track (BASE_W/BASE_H = 800/700); caber sem distorcer */
+  /*
+   * Board INTEIRO na altura visual: max-height em dvh define o teto;
+   * width = min(coluna, altura×800/700). Sem cqw/cqh.
+   * --sg-board-max-h ≈ viewport − topbar − paddings.
+   */
   .board,
-  .content--boardFocus .board{
-    --board-max-h: calc(100dvh - var(--topbar-h) - 16px);
+  .content--boardFocus .board,
+  .boardWrap--follow .board,
+  .content--boardFocus .boardWrap--follow .board{
+    --sg-board-max-h: calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
     aspect-ratio: 800 / 700;
-    width: min(100%, calc(var(--board-max-h) * 800 / 700));
-    height: auto;
+    width: min(100%, calc(var(--sg-board-max-h) * 800 / 700));
     max-width: 100%;
-    max-height: var(--board-max-h);
+    height: auto;
+    max-height: var(--sg-board-max-h);
     flex: 0 0 auto;
+    margin: 0;
   }
 
   .boardImg{
     width: 100%;
     height: 100%;
     display: block;
-    object-fit: contain; /* com aspect-ratio do .board = sem distorção */
+    object-fit: fill;
     margin: 0;
   }
 
+  /* Sidebar no fluxo do documento — SEM scroll interno */
   .side{
-    flex: 0 0 22%;
-    width: 22%;
-    min-width: 168px;
-    max-width: 240px;
-    height: 100%;
-    max-height: 100%;
+    --side-w: 100%;
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    flex: none;
+    flex-basis: auto;
+    overflow: visible;
     overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-right: 0;
+    padding-bottom: 8px;
+    font-size: clamp(11px, 1.5vw, 13px);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
-  /* peões um pouco maiores: o board ocupa mais área útil no landscape */
+  .side > .hud{
+    order: 2;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    max-height: none;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .hud .panel{
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+  }
+
+  .hudMetricsPrimary{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px 8px;
+    min-width: 0;
+    order: 1;
+  }
+  .hudMetricsPrimary--capacity{
+    order: 2;
+  }
+
+  .hudDetailsToggle{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 5px 8px;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 6px;
+    background: #242a38;
+    color: #e8ecf4;
+    font-size: clamp(11px, 1.5vw, 13px);
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    text-align: center;
+    order: 3;
+  }
+  .hudDetailsToggle:hover,
+  .hudDetailsToggle:focus-visible{
+    background: #2e3648;
+    outline: 2px solid rgba(120, 160, 255, 0.55);
+    outline-offset: 1px;
+  }
+
+  .hudMetricsSecondary{
+    display: none;
+    min-width: 0;
+    order: 4;
+  }
+  .hudMetricsSecondary.is-open{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2px 8px;
+  }
+
+  .hud .line,
+  .hudMetric{
+    margin: 0;
+    font-size: clamp(11px, 1.5vw, 13px);
+    line-height: 1.25;
+    min-width: 0;
+    overflow-wrap: normal;
+    word-break: normal;
+    white-space: normal;
+  }
+
+  .hudMetric--wide{
+    grid-column: 1 / -1;
+  }
+
+  .hud .score{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 6px;
+    margin-top: 4px;
+  }
+
+  .hud .score .title{
+    grid-column: 1 / -1;
+    padding: 4px 8px;
+    font-size: clamp(11px, 1.5vw, 13px);
+  }
+
+  .hud .score .row{
+    min-width: 0;
+    padding: 3px 6px;
+    font-size: clamp(11px, 1.45vw, 12.5px);
+    line-height: 1.2;
+    gap: 4px;
+  }
+
+  /* Controles no fluxo (não sticky de rodapé) */
+  .side > .controlsSticky,
+  .controlsSticky{
+    position: static;
+    bottom: auto;
+    top: auto;
+    z-index: auto;
+    flex: 0 0 auto;
+    order: 1;
+    min-width: 0;
+    padding: 4px 2px 2px;
+    box-shadow: none;
+    border-top: 1px solid rgba(255,255,255,.08);
+    background: rgba(15, 20, 32, 0.96);
+  }
+
+  /* DiceResult compacto — cabe na coluna da side */
+  .controlsSticky .diceResult,
+  .side .diceResult{
+    margin-bottom: 4px;
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+  .controlsSticky .diceResultHeader,
+  .side .diceResultHeader{
+    margin-bottom: 4px;
+  }
+  .controlsSticky .diceResultLabel,
+  .side .diceResultLabel{
+    font-size: 10px;
+    letter-spacing: .04em;
+  }
+  .controlsSticky .diceResultContent,
+  .side .diceResultContent{
+    gap: 8px;
+  }
+  .controlsSticky .diceResultDie,
+  .side .diceResultDie{
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+  .controlsSticky .diceResultPip,
+  .side .diceResultPip{
+    width: 6px;
+    height: 6px;
+  }
+  .controlsSticky .diceResultPlayer,
+  .side .diceResultPlayer{
+    font-size: clamp(11px, 1.5vw, 13px);
+    line-height: 1.25;
+  }
+  .controlsSticky .diceResultHelp,
+  .side .diceResultHelp{
+    margin-top: 2px;
+    font-size: clamp(10px, 1.35vw, 12px);
+    line-height: 1.25;
+  }
+
+  .controlsSticky .nextStepHint{
+    margin: 0 0 4px;
+    font-size: clamp(11px, 1.5vw, 13px);
+    line-height: 1.25;
+  }
+
+  .controlsSticky .controls{
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .controlsSticky .btn{
+    padding: 7px 10px;
+    font-size: clamp(11px, 1.6vw, 14px);
+    min-height: 0;
+  }
+
+  /*
+   * Expandido (boardFocus/follow): board sozinho, INTEIRO na viewport.
+   * Sem 100dvw / margem negativa. Botão "Voltar" visível acima do board.
+   */
+  .content--boardFocus{
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    justify-items: center;
+    gap: 6px;
+    padding: 6px 8px 12px;
+  }
+  .content--boardFocus .boardModeBtn{
+    display: block;
+    grid-column: 1;
+    grid-row: 1;
+    width: min(100%, 420px);
+    min-height: 36px;
+    margin: 0;
+    padding: 8px 12px;
+    font-size: clamp(12px, 1.7vw, 14px);
+    box-sizing: border-box;
+  }
+  .content--boardFocus .boardWrap,
+  .content--boardFocus .boardWrap--follow{
+    grid-column: 1;
+    grid-row: 2;
+    position: static;
+    width: 100%;
+    max-width: 100%;
+    justify-content: center;
+  }
+  .content--boardFocus .side{
+    display: none;
+  }
+  .content--boardFocus .board,
+  .content--boardFocus .boardWrap--follow .board{
+    --sg-board-max-h: calc(100dvh - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    width: min(100%, calc(var(--sg-board-max-h) * 800 / 700));
+    max-width: 100%;
+    max-height: var(--sg-board-max-h);
+  }
+
+  /* peões: tamanho visual já existente no landscape */
   .token{
     transform-origin: 0 0;
     scale: 0.95;
   }
   .token.token--active{
     scale: 0.82;
+  }
+}
+
+/* ====== Guard temporário: mobile landscape → pedir portrait ======
+   Overlay só em touch/coarse + landscape estreito. Jogo permanece montado.
+   Mensagem ancorada no canto superior esquerdo com px fixos — legível
+   mesmo com zoom/viewport estranho do Safari ao girar. */
+.mobilePortraitGuard{
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  align-items: flex-start;
+  justify-content: flex-start;
+  background: rgba(8, 10, 16, 0.96);
+  color: #e8ecf4;
+  text-align: left;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mobilePortraitGuardInner{
+  box-sizing: border-box;
+  width: min(320px, calc(100% - 32px));
+  max-width: 320px;
+  margin: 0;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 24, 36, 0.98);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.mobilePortraitGuard .mobilePortraitGuardIcon{
+  display: inline-block;
+  font-size: 22px;
+  line-height: 1;
+  vertical-align: -2px;
+  margin: 0 4px 0 0;
+}
+.mobilePortraitGuard .mobilePortraitGuardTitle{
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 20px !important;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color: #f2f5fb;
+}
+.mobilePortraitGuard .mobilePortraitGuardText{
+  margin: 0;
+  padding: 0;
+  font-size: 14px !important;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #c5cad6;
+}
+.mobilePortraitGuard .mobilePortraitGuardHint{
+  margin: 12px 0 0;
+  padding: 0;
+  font-size: 20px !important;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse){
+  .mobilePortraitGuard{
+    display: flex;
+  }
+}
+
+/* ====== iOS Safari: evitar auto-zoom em formulários (mobile/touch) ======
+   Inputs com font-size < 16px fazem o Safari ampliar a página ao focar.
+   text-size-adjust impede inflação automática de texto também no portrait.
+   Não usa maximum-scale / user-scalable=no (pinch zoom permanece). */
+@media (max-width: 960px) and (pointer: coarse){
+  html, body{
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="file"]):not([type="hidden"]),
+  textarea,
+  select{
+    font-size: 16px;
+  }
+
+  .startInput,
+  .lobbyModalInput,
+  .isInput,
+  .meBox .txt,
+  .lobbyCreate .txt,
+  .lobbyCreate .num{
+    font-size: 16px;
   }
 }

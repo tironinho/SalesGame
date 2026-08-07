@@ -109,6 +109,15 @@ export default function LobbyList({ onEnterRoom, playerName }) {
   const [creating, setCreating] = useState(false)
   const creatingRef = useRef(false) // proteção síncrona contra envio duplicado
   const createOpenerRef = useRef(null) // botão que abriu o modal (p/ devolver o foco)
+  // iOS: autoFocus em input <16px / ao abrir modal causa zoom residual
+  const allowCreateAutoFocus = useRef(
+    typeof window === 'undefined'
+      ? true
+      : !(
+          window.matchMedia('(pointer: coarse)').matches ||
+          window.matchMedia('(max-width: 960px)').matches
+        )
+  ).current
 
   useEffect(() => {
     const cfg = getLobbyConfig()
@@ -427,7 +436,7 @@ export default function LobbyList({ onEnterRoom, playerName }) {
                     if (createNameError) setCreateNameError('')
                   }}
                   maxLength={50}
-                  autoFocus
+                  autoFocus={allowCreateAutoFocus}
                   autoComplete="off"
                   disabled={creating}
                   aria-invalid={createNameError ? true : undefined}

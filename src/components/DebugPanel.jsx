@@ -128,7 +128,9 @@ export default function DebugPanel({ players, turnIdx, round, gameOver, winner }
 
   if (!isVisible) {
     return (
-      <div style={{
+      <div
+        className="debugToggle"
+        style={{
         background: '#1a1a1a',
         color: '#fff',
         padding: '6px 10px',
