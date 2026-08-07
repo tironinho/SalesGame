@@ -5,6 +5,7 @@ import React from 'react'
 import { TRACK_LEN } from '../data/track'
 
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './roundConfig'
+import { planOfflineTurnSkip } from './offlineTurnSkip.js'
 
 // Modal system
 import { useModal } from '../modals/ModalContext'
@@ -3024,6 +3025,88 @@ export function useTurnEngine({
     })
   }, [broadcastState, gameOver, players, round, setTurnIdx, setTurnPlayerId, turnIdx])
 
+  /**
+   * Auto-skip: avança turno do jogador ausente sem movimento/dado/eventos.
+   * Reutiliza findNextAliveIdx (via planOfflineTurnSkip) + turnSeq + TURN patch.
+   * Retorna true se o avanço local foi aplicado (CAS remoto pode ainda falhar).
+   */
+  const skipAbsentTurn = React.useCallback(({ expectedTurnPlayerId, expectedTurnSeq } = {}) => {
+    if (gameOverRef.current) return false
+
+    const expectId = expectedTurnPlayerId != null
+      ? String(expectedTurnPlayerId)
+      : String(turnPlayerIdRef.current || '')
+    const expectSeq = Number.isFinite(Number(expectedTurnSeq))
+      ? Number(expectedTurnSeq)
+      : (Number(turnSeqRef.current) || 0)
+
+    if (!expectId) return false
+    if (String(turnPlayerIdRef.current || '') !== expectId) return false
+    if ((Number(turnSeqRef.current) || 0) !== expectSeq) return false
+
+    const roster = Array.isArray(playersRef.current) && playersRef.current.length
+      ? playersRef.current
+      : (Array.isArray(players) ? players : [])
+
+    const plan = planOfflineTurnSkip({
+      players: roster,
+      turnPlayerId: expectId,
+      turnSeq: expectSeq,
+      round: currentRoundRef.current,
+      maxRounds: MAX_ROUNDS,
+    })
+    if (!plan) return false
+
+    // Reconfirma imediatamente antes do commit local
+    if (String(turnPlayerIdRef.current || '') !== expectId) return false
+    if ((Number(turnSeqRef.current) || 0) !== expectSeq) return false
+
+    pendingTurnDataRef.current = null
+    turnChangeInProgressRef.current = false
+    openingModalRef.current = false
+
+    if (typeof setTurnSeq === 'function') setTurnSeq(plan.nextTurnSeq)
+    turnSeqRef.current = plan.nextTurnSeq
+    if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+    lastRollTurnKeyRef.current = null
+
+    setTurnIdx(plan.nextTurnIdx)
+    turnIdxRef.current = plan.nextTurnIdx
+    if (setTurnPlayerId) setTurnPlayerId(plan.nextTurnPlayerId)
+    turnPlayerIdRef.current = plan.nextTurnPlayerId
+
+    // Limpa lock local; o TURN também zera lock no snapshot compartilhado
+    setTurnLockBroadcast(false)
+
+    broadcastState(roster, plan.nextTurnIdx, currentRoundRef.current, false, null, {
+      kind: 'TURN',
+      turnPlayerId: plan.nextTurnPlayerId,
+      turnSeq: plan.nextTurnSeq,
+      lastRollTurnKey: null,
+      lastAction: 'AUTO_SKIP_OFFLINE',
+      turnLock: false,
+      lockOwner: null,
+      _expectTurnPlayerId: expectId,
+      _expectTurnSeq: expectSeq,
+    })
+
+    try {
+      appendLog?.('Turno avançado: jogador desconectado.')
+    } catch {}
+
+    return true
+  }, [
+    players,
+    MAX_ROUNDS,
+    broadcastState,
+    setTurnIdx,
+    setTurnPlayerId,
+    setTurnSeq,
+    setLastRollTurnKey,
+    setTurnLockBroadcast,
+    appendLog,
+  ])
+
   const onAction = React.useCallback((act) => {
     if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
 
@@ -3723,6 +3806,7 @@ export function useTurnEngine({
     advanceAndMaybeLap,
     onAction,
     nextTurn,
+    skipAbsentTurn,
     modalLocks,
     lockOwner,
   }

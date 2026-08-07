@@ -47,7 +47,8 @@ import { getOrCreateTabPlayerId, setTabPlayerName, resolvePlayerIdForRoom, setMa
 import { useGameNet } from './net/GameNetProvider.jsx'
 
 // Gerenciamento de salas
-import { leaveRoom, startLobbyHeartbeat } from './lib/lobbies'
+import { leaveRoom } from './lib/lobbies'
+import { useGamePresenceAutoSkip } from './game/useGamePresenceAutoSkip.js'
 
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
@@ -831,15 +832,6 @@ export default function App() {
   const netState = net?.state
   const netStateId = net?.stateId
 
-  useEffect(() => {
-    if (!net?.enabled) return
-    if (!currentLobbyId) return
-    const pid = String(myUid || meId || '')
-    if (!pid) return
-    const stop = startLobbyHeartbeat({ lobbyId: currentLobbyId, playerId: pid })
-    return stop
-  }, [net?.enabled, currentLobbyId, myUid, meId])
-  
   // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {
     const me = String(myUid || meId || "")
@@ -898,6 +890,23 @@ export default function App() {
       try {
         netCommit(prev => {
           const prevState = prev || {}
+
+        // Auto-skip / TURN guard: só aplica se turno/seq ainda forem os esperados.
+        // Fail-safe contra double-skip em retry CAS do provider.
+        const expectTurnId = statePatch?._expectTurnPlayerId
+        const expectTurnSeq = statePatch?._expectTurnSeq
+        if (expectTurnId != null || expectTurnSeq != null) {
+          const remoteTurnId = prevState.turnPlayerId != null ? String(prevState.turnPlayerId) : ''
+          const remoteTurnSeq = Number(prevState.turnSeq) || 0
+          if (expectTurnId != null && remoteTurnId !== String(expectTurnId)) {
+            if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
+            return prevState
+          }
+          if (expectTurnSeq != null && remoteTurnSeq !== Number(expectTurnSeq)) {
+            if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
+            return prevState
+          }
+        }
         
         // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
         const localStateVersion = currentVersion
@@ -966,8 +975,13 @@ export default function App() {
         const mergedPlayers = normalizePlayers(Array.from(byId.values()))
         
         // Prepara statePatch completo (inclui versionamento monotônico)
+        const {
+          _expectTurnPlayerId: _dropExpectId,
+          _expectTurnSeq: _dropExpectSeq,
+          ...publicStatePatch
+        } = statePatch || {}
         const finalStatePatch = {
-          ...statePatch,
+          ...publicStatePatch,
           stateVersion: safeVersion, // ✅ CORREÇÃO: Versão monotônica garantida
           updatedAt: now,
           updatedBy: myUid
@@ -1648,12 +1662,23 @@ export default function App() {
             }
           : {}),
       }
+      // Auto-skip / TURN pode limpar lock no mesmo commit (sem depender só do patch LOCK)
+      if (patch && patch.turnLock !== undefined) {
+        statePatch.turnLock = !!patch.turnLock
+        statePatch.lockOwner = patch.lockOwner !== undefined ? patch.lockOwner : null
+      }
       if (patch && patch.lastRollTurnKey !== undefined) {
         statePatch.lastRollTurnKey = patch.lastRollTurnKey ? String(patch.lastRollTurnKey) : null
       }
       if (patch && patch.turnSeq !== undefined) {
         statePatch.turnSeq = Number(patch.turnSeq)
         setTurnSeq(Number(patch.turnSeq))
+      }
+      if (patch && patch._expectTurnPlayerId !== undefined) {
+        statePatch._expectTurnPlayerId = patch._expectTurnPlayerId
+      }
+      if (patch && patch._expectTurnSeq !== undefined) {
+        statePatch._expectTurnSeq = patch._expectTurnSeq
       }
       if (patch && patch.lastRoll !== undefined) {
         statePatch.lastRoll =
@@ -1892,6 +1917,7 @@ export default function App() {
     advanceAndMaybeLap,
     onAction,
     nextTurn,
+    skipAbsentTurn,
     modalLocks,
   } = useTurnEngine({
     players, setPlayers,
@@ -1917,6 +1943,20 @@ export default function App() {
     turnSeq,
     setTurnSeq,
     maxRounds,
+  })
+
+  // Presença + auto-skip (Etapa 2) — só durante game multiplayer
+  const [turnAbsenceStatus, setTurnAbsenceStatus] = useState(null)
+  useGamePresenceAutoSkip({
+    enabled: phase === 'game' && !!net?.enabled && !!net?.ready,
+    lobbyId: currentLobbyId,
+    myUid: myUid || meId,
+    players,
+    turnPlayerId,
+    turnSeq,
+    gameOver,
+    attemptSkipTurn: skipAbsentTurn,
+    onStatus: setTurnAbsenceStatus,
   })
 
   // ====== Jogo (derivações + logs) ======
@@ -1951,6 +1991,10 @@ export default function App() {
   // ====== Faixa de próximo passo (somente exibição; não altera turno/ações)
   const nextStepHint = gameOver
     ? 'Partida encerrada — veja o resultado.'
+    : turnAbsenceStatus === 'waiting'
+    ? 'Jogador desconectado — aguardando reconexão...'
+    : turnAbsenceStatus === 'skipped'
+    ? 'Turno avançado: jogador desconectado.'
     : me?.bankrupt
     ? 'Você declarou falência — acompanhe o restante da partida.'
     : Number(modalLocks || 0) > 0
@@ -1962,7 +2006,7 @@ export default function App() {
     : current?.name
     ? `Aguarde a jogada de ${current.name}.`
     : 'Aguarde o próximo jogador.'
-  const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll
+  const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock

@@ -518,28 +518,154 @@ export async function isLastSeenSupported() {
   return __lastSeenProbePromise
 }
 
-export async function touchLobbyPlayer({ lobbyId, playerId }) {
+/** Heartbeat / presença durante a partida (não misturar com rooms.state). */
+export const GAME_HEARTBEAT_INTERVAL_MS = 10_000
+export const GAME_OFFLINE_THRESHOLD_MS = 35_000
+export const GAME_PRESENCE_POLL_INTERVAL_MS = 5_000
+
+/**
+ * Atualiza last_seen do jogador.
+ * - Caminho normal: UPDATE
+ * - Se a row sumiu (ex.: cleanup) e allowRecreateIfSeated=true:
+ *   só recria via UPSERT se playerId existir em rooms.state.players.
+ *   Não abre sala, não faz joinLobby, não cria assento novo na partida.
+ */
+export async function touchLobbyPlayer({
+  lobbyId,
+  playerId,
+  allowRecreateIfSeated = false,
+} = {}) {
   if (!lobbyId || !playerId) return { ok: false, skipped: true }
 
   const supported = await isLastSeenSupported()
   if (!supported) return { ok: false, skipped: true }
 
   const nowIso = new Date().toISOString()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('lobby_players')
     .update({ last_seen: nowIso })
     .eq('lobby_id', lobbyId)
     .eq('player_id', playerId)
+    .select('player_id')
 
   if (error) {
     console.warn('[hb] falha ao atualizar last_seen:', error?.message || error)
     return { ok: false, error }
   }
 
-  return { ok: true }
+  if (Array.isArray(data) && data.length > 0) {
+    return { ok: true }
+  }
+
+  // UPDATE afetou 0 rows → row ausente (cleanup / leave antigo)
+  if (!allowRecreateIfSeated) {
+    return { ok: false, missing: true }
+  }
+
+  let state = null
+  try {
+    state = await findAuthoritativeRoomState(lobbyId)
+  } catch (e) {
+    console.warn('[hb] falha ao validar assento p/ recriar presença:', e?.message || e)
+    return { ok: false, missing: true, error: e }
+  }
+
+  const seated = (Array.isArray(state?.players) ? state.players : []).find(
+    (p) => String(p?.id) === String(playerId)
+  )
+  if (!seated) {
+    return { ok: false, missing: true, notSeated: true }
+  }
+
+  const playerName =
+    typeof seated.name === 'string' && seated.name.trim()
+      ? seated.name.trim()
+      : 'Jogador'
+
+  const { error: upsertErr } = await supabase
+    .from('lobby_players')
+    .upsert(
+      {
+        lobby_id: lobbyId,
+        player_id: playerId,
+        player_name: playerName,
+        ready: true,
+        joined_at: nowIso,
+        last_seen: nowIso,
+      },
+      { onConflict: 'lobby_id,player_id' }
+    )
+
+  if (upsertErr) {
+    console.warn('[hb] falha ao recriar presença:', upsertErr?.message || upsertErr)
+    return { ok: false, error: upsertErr }
+  }
+
+  if (import.meta.env.DEV) {
+    console.log('[presence] row restored for seated player')
+  }
+  return { ok: true, restored: true }
 }
 
-export function startLobbyHeartbeat({ lobbyId, playerId, intervalMs } = {}) {
+/**
+ * Presença mínima da sala (lobby_players).
+ * Após START os jogadores permanecem na tabela — reutilizamos last_seen no game.
+ * Não usa nome como identidade.
+ */
+export async function listLobbyPresence(lobbyId) {
+  if (!lobbyId) return []
+
+  const supported = await isLastSeenSupported()
+  if (!supported) return []
+
+  const { data, error } = await supabase
+    .from('lobby_players')
+    .select('player_id, last_seen')
+    .eq('lobby_id', lobbyId)
+
+  if (error) {
+    console.warn('[presence] falha ao ler last_seen:', error?.message || error)
+    throw error
+  }
+
+  return (data || []).map((row) => ({
+    playerId: String(row.player_id),
+    lastSeen: row.last_seen ? Date.parse(row.last_seen) : null,
+  }))
+}
+
+export function isPresenceFresh(
+  lastSeenMs,
+  now = Date.now(),
+  thresholdMs = GAME_OFFLINE_THRESHOLD_MS
+) {
+  if (lastSeenMs == null || !Number.isFinite(lastSeenMs)) return false
+  return (now - lastSeenMs) <= thresholdMs
+}
+
+/**
+ * Coordinator determinístico: primeiro jogador vivo (ordem do roster)
+ * cujo last_seen ainda está fresco. Não usa host.
+ */
+export function pickSkipCoordinator(rosterPlayers, presenceList, now = Date.now()) {
+  const byId = new Map(
+    (presenceList || []).map((p) => [String(p.playerId), p.lastSeen])
+  )
+  for (const p of rosterPlayers || []) {
+    if (!p || p.bankrupt) continue
+    const id = String(p.id ?? '')
+    if (!id) continue
+    if (isPresenceFresh(byId.get(id), now)) return id
+  }
+  return null
+}
+
+export function startLobbyHeartbeat({
+  lobbyId,
+  playerId,
+  intervalMs,
+  allowRecreateIfSeated = false,
+} = {}) {
   if (!lobbyId || !playerId) return () => {}
 
   const cfg = getLobbyConfig()
@@ -549,10 +675,10 @@ export function startLobbyHeartbeat({ lobbyId, playerId, intervalMs } = {}) {
 
   const tick = async () => {
     if (stopped) return
-    await touchLobbyPlayer({ lobbyId, playerId })
+    await touchLobbyPlayer({ lobbyId, playerId, allowRecreateIfSeated })
   }
 
-  // dispara já (não esperar 30s)
+  // dispara já (não esperar o intervalo)
   tick().catch(() => {})
   const t = setInterval(() => tick().catch(() => {}), ms)
 
