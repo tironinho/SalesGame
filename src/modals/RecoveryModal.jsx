@@ -7,6 +7,7 @@ import RecoveryMenu from './RecoveryMenu'
 import RecoveryLoan from './RecoveryLoan'
 import RecoveryReduce from './RecoveryReduce'
 import RecoveryFire from './RecoveryFire' // mesmo diretório
+import { ERP_RULES } from '../game/gameRules.js'
 
 export default function RecoveryModal({ playerName = 'Jogador', bens = 0, currentPlayer, canClose = true }) {
   const { resolveTop, popModal } = useModal?.() || {}
@@ -27,9 +28,14 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     }
   }
 
-  // --- preços de compra (manual) -> crédito = 50% ---
+  // --- preços de compra -> crédito = 50% (ERP da fonte única ERP_RULES) ---
   const MIX_PRICES = useMemo(() => ({ A: 12000, B: 6000, C: 3000, D: 1000 }), [])
-  const ERP_PRICES = useMemo(() => ({ A: 10000, B: 4000, C: 1500, D: 500 }), [])
+  const ERP_PRICES = useMemo(() => ({
+    A: ERP_RULES.A.price,
+    B: ERP_RULES.B.price,
+    C: ERP_RULES.C.price,
+    D: ERP_RULES.D.price,
+  }), [])
 
   // --------- helpers de normalização ---------
   const letterFrom = (v) => {

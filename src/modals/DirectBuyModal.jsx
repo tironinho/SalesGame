@@ -1,5 +1,6 @@
 // src/modals/DirectBuyModal.jsx
 import React, { useEffect, useRef } from 'react'
+import { ERP_RULES } from '../game/gameRules.js'
 
 /**
  * Modal “roteador de compras”.
@@ -74,7 +75,12 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'erp',
       title: 'ERP/Sistemas',
-      lines: ['Nível A: $10000', 'Nível B: $4000', 'Nível C: $1500', 'Nível D: $500'],
+      lines: [
+        `Nível A: $${ERP_RULES.A.price}`,
+        `Nível B: $${ERP_RULES.B.price}`,
+        `Nível C: $${ERP_RULES.C.price}`,
+        `Nível D: $${ERP_RULES.D.price}`,
+      ],
       onBuy: open('ERP'),
     },
     {

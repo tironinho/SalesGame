@@ -7,7 +7,7 @@ import {
   MIX_RULES,
   MANAGER_BOOST_BY_CERT,
   MANAGER_MANAGES_UP_TO,
-} from './gameRules'
+} from './gameRules.js'
 
 // Back-compat: alguns testes/dev-tools podem importar estas constantes do gameMath.
 // Mantemos os exports, mas a fonte real está em `gameRules.js`.
@@ -32,10 +32,10 @@ export const MIX = {
 }
 
 export const ERP = {
-  A: { fat: ERP_RULES.A.fat, desp: ERP_RULES.A.desp },
-  B: { fat: ERP_RULES.B.fat, desp: ERP_RULES.B.desp },
-  C: { fat: ERP_RULES.C.fat, desp: ERP_RULES.C.desp },
-  D: { fat: ERP_RULES.D.fat, desp: ERP_RULES.D.desp },
+  A: { price: ERP_RULES.A.price, fat: ERP_RULES.A.fat, desp: ERP_RULES.A.desp },
+  B: { price: ERP_RULES.B.price, fat: ERP_RULES.B.fat, desp: ERP_RULES.B.desp },
+  C: { price: ERP_RULES.C.price, fat: ERP_RULES.C.fat, desp: ERP_RULES.C.desp },
+  D: { price: ERP_RULES.D.price, fat: ERP_RULES.D.fat, desp: ERP_RULES.D.desp },
 }
 
 export const num = (v) => Number(v || 0);

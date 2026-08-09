@@ -3,42 +3,65 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { ERP_RULES } from '../game/gameRules'
 import {
   buildErpPurchaseDeltas,
   calculateErpReturn,
   countErpCollaborators,
+  getErpLevelView,
 } from '../game/erpPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from '../game/roundConfig'
 
-const LEVELS = {
-  A: { compra: 10000, despesa: ERP_RULES.A.desp, faturamento: ERP_RULES.A.fat, color:'#1d4ed8', pill:'NÍVEL A' },
-  B: { compra: 4000,  despesa: ERP_RULES.B.desp, faturamento: ERP_RULES.B.fat, color:'#16a34a', pill:'NÍVEL B' },
-  C: { compra: 1500,  despesa: ERP_RULES.C.desp, faturamento: ERP_RULES.C.fat, color:'#f59e0b', pill:'NÍVEL C' },
-  D: { compra: 500,   despesa: ERP_RULES.D.desp, faturamento: ERP_RULES.D.fat, color:'#6b7280', pill:'NÍVEL D' } // agora comprável
+const LEVEL_META = {
+  A: { color: '#1d4ed8', pill: 'NÍVEL A' },
+  B: { color: '#16a34a', pill: 'NÍVEL B' },
+  C: { color: '#f59e0b', pill: 'NÍVEL C' },
+  D: { color: '#6b7280', pill: 'NÍVEL D' },
+}
+
+function levelView(k) {
+  const rule = getErpLevelView(k)
+  const meta = LEVEL_META[k] || {}
+  if (!rule) return null
+  return {
+    ...rule,
+    color: meta.color,
+    pill: meta.pill,
+  }
 }
 
 /**
  * onResolve(payload)
  *  - {action:'BUY', level:'A'|'B'|'C'|'D', values:{...}}
  *  - {action:'SKIP'}
- *
- * Props:
- *  - currentCash?: number (saldo atual do jogador; usado para validar compra)
- *  - currentLevel?: string (nível atual do ERP: 'A', 'B', 'C', 'D' ou null)
- *  - erpOwned?: object (níveis possuídos: { A:boolean, B:boolean, C:boolean, D:boolean })
- *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
-export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLevel = null, erpOwned = null, allowBack = false, currentPlayer = null, horizonRounds = DEFAULT_MAX_ROUNDS }) {
+export default function ERPSystemsModal({
+  onResolve,
+  currentCash = 0,
+  currentLevel = null,
+  erpOwned = null,
+  allowBack = false,
+  currentPlayer = null,
+  horizonRounds = DEFAULT_MAX_ROUNDS,
+}) {
   const closeRef = useRef(null)
   const { pushModal, awaitTop } = useModal()
   const [selectedLevel, setSelectedLevel] = useState(null)
 
-  const normLevel = (v) => { const L = String(v || '').toUpperCase(); return ['A', 'B', 'C', 'D'].includes(L) ? L : '' }
+  const normLevel = (v) => {
+    const L = String(v || '').toUpperCase()
+    return ['A', 'B', 'C', 'D'].includes(L) ? L : ''
+  }
   const current = normLevel(currentLevel) || 'D'
   const cashNow = Number(currentCash || 0)
   const staffCount = countErpCollaborators(currentPlayer || { cash: cashNow })
+
+  const LEVELS = useMemo(() => ({
+    A: levelView('A'),
+    B: levelView('B'),
+    C: levelView('C'),
+    D: levelView('D'),
+  }), [])
 
   const draftPayload = useMemo(() => {
     const desired = normLevel(selectedLevel)
@@ -46,7 +69,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
     const values = LEVELS[desired]
     if (!values) return null
     return { action: 'BUY', level: desired, values }
-  }, [selectedLevel, current])
+  }, [selectedLevel, current, LEVELS])
 
   const purchaseImpact = useMemo(() => {
     if (!draftPayload) return null
@@ -67,20 +90,27 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
 
   const erpReturn = useMemo(() => {
     if (!purchaseImpact) return null
-    return calculateErpReturn({ impact: purchaseImpact, horizonRounds: safeHorizon })
-  }, [purchaseImpact, safeHorizon])
+    return calculateErpReturn({
+      impact: purchaseImpact,
+      horizonRounds: safeHorizon,
+      staffCount,
+    })
+  }, [purchaseImpact, safeHorizon, staffCount])
 
   const handleClose = (e) => {
     e?.preventDefault?.()
     e?.stopPropagation?.()
     onResolve?.({ action: 'SKIP' })
   }
-  const handleBack = (e) => { e?.preventDefault?.(); e?.stopPropagation?.(); onResolve?.({ action:'BACK' }) }
+  const handleBack = (e) => {
+    e?.preventDefault?.()
+    e?.stopPropagation?.()
+    onResolve?.({ action: 'BACK' })
+  }
 
   const handleSelect = (level) => {
     const desired = normLevel(level)
     if (!desired) return
-    // ✅ Bloqueia só recompra do nível ATUAL
     if (desired === current) return
     setSelectedLevel(desired)
   }
@@ -108,7 +138,6 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
     onResolve?.({ action: 'BUY', level: desired, values })
   }
 
-  // UX: trava scroll e foca no X (ESC/backdrop não fecham)
   useEffect(() => {
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -127,13 +156,13 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
   const paybackLabel = (() => {
     if (!erpReturn) return null
     if (erpReturn.status === 'no_financial_return' || erpReturn.paybackRounds == null) {
-      return 'Sem retorno financeiro estimado'
+      return 'Sem retorno financeiro estimado (ganho líquido ≤ 0)'
     }
     if (erpReturn.paybackRounds === 0) {
-      return 'Retorno estimado: 0 rodadas'
+      return 'Retorno estimado: 0 ciclos'
     }
     const rounded = Math.ceil(erpReturn.paybackRounds * 10) / 10
-    return `Retorno estimado: ${rounded} rodadas`
+    return `Retorno estimado: ~${rounded} ciclos`
   })()
 
   return (
@@ -143,63 +172,74 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
 
         <h2 className="erpTitle">Escolha o nível de <b>ERP / Sistemas</b>:</h2>
 
-        {/* Nota explicativa */}
         <div style={S.note}>
-          <div style={{fontWeight:900, marginBottom:4}}>ERP / SISTEMAS</div>
-          <div><b>Impacto mensal:</b> adiciona <b>Despesa</b> e <b>Faturamento</b> de acordo com o nível.</div>
-          <div>O nível <b>D</b> também pode ser adquirido.</div>
+          <div style={{ fontWeight: 900, marginBottom: 4 }}>ERP / SISTEMAS</div>
+          <div>
+            O benefício do ERP cresce conforme o tamanho da sua equipe.
+          </div>
+          <div style={{ marginTop: 4 }}>
+            Quanto mais colaboradores sua empresa possui (vendedores e gestores),
+            maior o impacto financeiro do sistema.
+          </div>
         </div>
 
         <p className="purchasePreviewHint">
-          O ERP gera faturamento e despesas por colaborador da equipe comercial
-          (Vendedores Comuns, Inside Sales, Field Sales e Gestores Comerciais).
-          Ele não escala diretamente com a quantidade de clientes, clientes atendidos
-          ou certificações. Avalie o impacto líquido e o tempo estimado para recuperar
-          o investimento antes de trocar de nível.
+          O ERP gera faturamento e despesas por colaborador da equipe comercial.
+          Ele não escala com a quantidade de clientes — o Mix de Produtos já cobre essa parte.
+          Avalie o ganho líquido por ciclo e o tempo estimado para recuperar o investimento.
         </p>
 
-        {/* Saldo disponível (ajuda visual) */}
-        <div style={S.saldo}>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
+        <div style={S.saldo}>
+          Saldo disponível: <b>$ {cashNow.toLocaleString()}</b>
+          {' · '}
+          Equipe atual: <b>{staffCount}</b> colaborador{staffCount === 1 ? '' : 'es'}
+        </div>
 
-        {/* Tabela comparativa (rolagem horizontal própria no mobile) */}
         <div className="erpTableScroll">
           <div className="erpTable">
             <div style={S.trHead}>
               <div className="erpStickyCell erpStickyHead" style={S.th}></div>
-              <div style={{...S.th, background:'#10214d'}}>Nível A</div>
-              <div style={{...S.th, background:'#0f3a1c'}}>Nível B</div>
-              <div style={{...S.th, background:'#4a3705'}}>Nível C</div>
-              <div style={{...S.th, background:'#2a2f3b'}}>Nível D</div>
+              <div style={{ ...S.th, background: '#10214d' }}>Nível A</div>
+              <div style={{ ...S.th, background: '#0f3a1c' }}>Nível B</div>
+              <div style={{ ...S.th, background: '#4a3705' }}>Nível C</div>
+              <div style={{ ...S.th, background: '#2a2f3b' }}>Nível D</div>
             </div>
-            <Row label="COMPRA"      fmt vA={LEVELS.A.compra} vB={LEVELS.B.compra} vC={LEVELS.C.compra} vD={LEVELS.D.compra} />
-            <Row label="DESPESA"     fmt vA={LEVELS.A.despesa} vB={LEVELS.B.despesa} vC={LEVELS.C.despesa} vD={LEVELS.D.despesa} />
+            <Row label="COMPRA" fmt vA={LEVELS.A.compra} vB={LEVELS.B.compra} vC={LEVELS.C.compra} vD={LEVELS.D.compra} />
+            <Row label="DESPESA" fmt vA={LEVELS.A.despesa} vB={LEVELS.B.despesa} vC={LEVELS.C.despesa} vD={LEVELS.D.despesa} />
             <Row label="FATURAMENTO" fmt vA={LEVELS.A.faturamento} vB={LEVELS.B.faturamento} vC={LEVELS.C.faturamento} vD={LEVELS.D.faturamento} />
           </div>
         </div>
-        <div style={S.perStaffNote}>Valores de despesa e faturamento na tabela são <b>por colaborador</b>.</div>
+        <div style={S.perStaffNote}>
+          Valores de despesa e faturamento na tabela são <b>por colaborador</b>. Upgrade cobra o preço cheio do nível escolhido.
+        </div>
 
-        {/* Cards + botões */}
         <div className="erpCards">
-          {(['A','B','C','D']).map((k) => {
+          {(['A', 'B', 'C', 'D']).map((k) => {
             const v = LEVELS[k]
-            const isOwned = current === k  // ✅ apenas o atual
+            const isOwned = current === k
             const isDisabled = isOwned
             const isSelected = selectedLevel === k
 
             return (
-              <div key={k} style={{
-                ...S.cardItem, 
-                borderColor: isOwned ? '#16a34a' : (isSelected ? '#2442f9' : 'rgba(255,255,255,.15)'),
-                opacity: isDisabled ? 0.6 : 1
-              }}>
-                <div className="erpPill" style={{
-                  ...S.pill, 
-                  background: isOwned ? '#16a34a' : '#fff', 
-                  color: isOwned ? '#fff' : '#111'
-                }}>
+              <div
+                key={k}
+                style={{
+                  ...S.cardItem,
+                  borderColor: isOwned ? '#16a34a' : (isSelected ? '#2442f9' : 'rgba(255,255,255,.15)'),
+                  opacity: isDisabled ? 0.6 : 1,
+                }}
+              >
+                <div
+                  className="erpPill"
+                  style={{
+                    ...S.pill,
+                    background: isOwned ? '#16a34a' : '#fff',
+                    color: isOwned ? '#fff' : '#111',
+                  }}
+                >
                   {isOwned ? '✓ ADQUIRIDO' : v.pill}
                 </div>
-                <div style={{...S.cardBadge, background:v.color}} />
+                <div style={{ ...S.cardBadge, background: v.color }} />
                 <ul style={S.lines}>
                   <li>Compra: <b>$ {v.compra.toLocaleString()}</b></li>
                   <li>Despesa: <b>$ {v.despesa.toLocaleString()}</b> / colab.</li>
@@ -211,7 +251,7 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
                   style={{
                     ...S.buyBtn,
                     background: isDisabled ? '#6b7280' : (isSelected ? '#1d4ed8' : '#2442f9'),
-                    cursor: isDisabled ? 'not-allowed' : 'pointer'
+                    cursor: isDisabled ? 'not-allowed' : 'pointer',
                   }}
                   onClick={() => handleSelect(k)}
                   disabled={isDisabled}
@@ -224,15 +264,31 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
           })}
         </div>
 
-        {purchaseImpact && (
+        {purchaseImpact && erpReturn && (
           <>
             <PurchaseImpactPreview impact={purchaseImpact} />
 
             <div className="purchasePreviewExtra">
               <div className="purchasePreviewExtraTitle">Retorno do investimento (ERP)</div>
               <div className="purchasePreviewRow">
-                <span>Impacto líquido incremental por rodada</span>
-                <span>{formatMoneySigned(erpReturn?.incrementalNet)}</span>
+                <span>Investimento</span>
+                <span>$ {Number(erpReturn.immediateCost || 0).toLocaleString()}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Equipe atual</span>
+                <span>{staffCount} colaborador{staffCount === 1 ? '' : 'es'}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Faturamento adicional estimado por ciclo</span>
+                <span>{formatMoneySigned(erpReturn.revenueDelta)}</span>
+              </div>
+              <div className="purchasePreviewRow">
+                <span>Despesa adicional estimada por ciclo</span>
+                <span>{formatMoneySigned(erpReturn.expensesDelta)}</span>
+              </div>
+              <div className="purchasePreviewRow purchasePreviewRowStrong">
+                <span>Ganho líquido adicional por ciclo</span>
+                <span>{formatMoneySigned(erpReturn.incrementalNet)}</span>
               </div>
               <div className="purchasePreviewRow purchasePreviewRowStrong">
                 <span>{paybackLabel}</span>
@@ -253,11 +309,11 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
 
         <div style={S.actions}>
           {allowBack && (
-            <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>
+            <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background: '#2a2f3b', color: '#fff' }} onClick={handleBack}>
               Voltar
             </button>
           )}
-          <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background:'#444', color:'#fff' }} onClick={handleClose}>
+          <button type="button" className="erpBigBtn" style={{ ...S.bigBtn, background: '#444', color: '#fff' }} onClick={handleClose}>
             Não comprar
           </button>
           <button
@@ -282,10 +338,10 @@ export default function ERPSystemsModal({ onResolve, currentCash = 0, currentLev
 }
 
 function Row({ label, vA, vB, vC, vD, fmt }) {
-  const f = (n) => fmt ? `$ ${Number(n).toLocaleString()}` : n
+  const f = (n) => (fmt ? `$ ${Number(n).toLocaleString()}` : n)
   return (
     <div style={S.tr}>
-      <div className="erpStickyCell" style={{...S.td, fontWeight:700}}>{label}</div>
+      <div className="erpStickyCell" style={{ ...S.td, fontWeight: 700 }}>{label}</div>
       <div style={S.td}>{f(vA)}</div>
       <div style={S.td}>{f(vB)}</div>
       <div style={S.td}>{f(vC)}</div>
@@ -295,38 +351,30 @@ function Row({ label, vA, vB, vC, vD, fmt }) {
 }
 
 const S = {
-  /* wrap, card, title, table (wrapper) e cards migraram para classes CSS
-     responsivas (.erpWrap, .erpCard, .erpTitle, .erpTableScroll/.erpTable,
-     .erpCards em styles.css) */
-  close: { position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
+  close: { position: 'absolute', right: 10, top: 10, width: 36, height: 36, borderRadius: 10, border: '1px solid rgba(255,255,255,.15)', background: '#2a2f3b', color: '#fff', cursor: 'pointer' },
 
   note: {
-    background:'#2a2f3b',
-    border:'1px solid rgba(255,255,255,.15)',
-    borderRadius:12,
-    padding:'10px 12px',
-    margin:'0 0 10px'
+    background: '#2a2f3b',
+    border: '1px solid rgba(255,255,255,.15)',
+    borderRadius: 12,
+    padding: '10px 12px',
+    margin: '0 0 10px',
   },
 
-  saldo:{ margin:'0 0 10px', padding:'8px 12px', border:'1px dashed rgba(255,255,255,.25)', borderRadius:10 },
-  perStaffNote: { margin:'0 0 10px', fontSize:13, opacity:0.9 },
+  saldo: { margin: '0 0 10px', padding: '8px 12px', border: '1px dashed rgba(255,255,255,.25)', borderRadius: 10 },
+  perStaffNote: { margin: '0 0 10px', fontSize: 13, opacity: 0.9 },
 
-  /* minmax(140px,1fr) na coluna de rótulos + minmax(0,1fr) nas de valores:
-     mantém as colunas alinhadas entre as linhas mesmo na largura mínima
-     (1fr puro tem mínimo implícito = min-content, que variava por linha) */
-  trHead: { display:'grid', gridTemplateColumns:'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background:'#121621' },
-  th: { padding:'10px 12px', fontWeight:800, borderLeft:'1px solid rgba(255,255,255,.06)' },
-  tr: { display:'grid', gridTemplateColumns:'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background:'#0f1320' },
-  td: { padding:'10px 12px', borderTop:'1px solid rgba(255,255,255,.06)', borderLeft:'1px solid rgba(255,255,255,.06)' },
+  trHead: { display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background: '#121621' },
+  th: { padding: '10px 12px', fontWeight: 800, borderLeft: '1px solid rgba(255,255,255,.06)' },
+  tr: { display: 'grid', gridTemplateColumns: 'minmax(140px, 1fr) repeat(4, minmax(0, 1fr))', background: '#0f1320' },
+  td: { padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,.06)', borderLeft: '1px solid rgba(255,255,255,.06)' },
 
-  cardItem:{ background:'#0f1320', border:'1px solid', borderRadius:14, padding:'12px', display:'flex', flexDirection:'column', gap:8 },
-  cardBadge:{ width:'100%', height:6, borderRadius:999, opacity:.9 },
-  pill:{ alignSelf:'flex-start', fontSize:12, fontWeight:900, padding:'4px 8px', borderRadius:999, color:'#111' },
-  lines:{ margin:0, padding:'0 0 0 16px', lineHeight:1.35 },
+  cardItem: { border: '1px solid rgba(255,255,255,.15)', borderRadius: 14, padding: 12, background: '#121621', display: 'grid', gap: 8 },
+  pill: { display: 'inline-block', padding: '4px 8px', borderRadius: 999, fontWeight: 900, fontSize: 12 },
+  cardBadge: { height: 6, borderRadius: 999 },
+  lines: { margin: 0, paddingLeft: 18, lineHeight: 1.45 },
+  buyBtn: { border: 0, borderRadius: 10, padding: '10px 12px', color: '#fff', fontWeight: 800 },
 
-  buyBtn:{ marginTop:'auto', padding:'10px 12px', borderRadius:10, border:'none', fontWeight:900, cursor:'pointer', background:'#2442f9', color:'#fff' },
-
-  actions: { display:'flex', gap:12, justifyContent:'center', marginTop:14, flexWrap:'wrap' },
-  /* min-width migrou para .erpBigBtn (zera no mobile) */
-  bigBtn: { padding:'14px 18px', borderRadius:12, border:'none', color:'#fff', fontWeight:900, cursor:'pointer' },
+  actions: { display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 },
+  bigBtn: { flex: '1 1 140px', border: 0, borderRadius: 12, padding: '12px 14px', fontWeight: 900 },
 }

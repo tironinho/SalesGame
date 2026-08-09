@@ -101,6 +101,37 @@ html, body {
   margin:0;
 }
 
+/* Overlay de preços ERP/SISTEMAS (Board clássico) — preso ao board, sem interação */
+.erpPriceOverlayLayer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:2;
+}
+.erpPriceOverlay{
+  position:absolute;
+  pointer-events:none;
+  box-sizing:border-box;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  /* Cyan original das casas ERP ~ rgb(1,177,234) */
+  background:#01b1ea;
+  color:#fff;
+  font-weight:800;
+  line-height:1.12;
+  letter-spacing:0.01em;
+  padding:1% 2%;
+  overflow:hidden;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.erpPriceOverlayLine{
+  display:block;
+  white-space:nowrap;
+}
+
 /* Peões
    Posição, tamanho, cor (--token-color) e largura do anel vêm inline do
    Board.jsx; aqui fica só o acabamento visual. O translate(-50%,-50%) inline

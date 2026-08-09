@@ -3,7 +3,7 @@ import {
   capacityAndAttendance,
   computeDespesasFor,
   computeFaturamentoFor,
-} from './gameMath'
+} from './gameMath.js'
 
 function snapshotMetrics(player = {}) {
   const cash = Number(player?.cash || 0)

@@ -18,12 +18,24 @@ export const VENDOR_RULES = {
   gestor: { cap: 0, baseFat: 0, incFat: 0, baseDesp: 3000, incDesp: 500 },
 }
 
-// ERP: valores por colaborador (colaboradores + gestores) — mantém exatamente os valores atuais do gameMath.
+// ERP: fonte única — preço de compra + fat/desp por colaborador
+// (vendedoresComuns + insideSales + fieldSales + gestores).
+// NÃO escala com clientes (Mix já faz isso).
+//
+// Rebalanceamento: preços A/B/C/D em hierarquia D < C < B < A.
+// Taxas fat/desp por colaborador preservadas. Starter já possui D
+// (não cobra price no início — só em compra/recovery).
 export const ERP_RULES = {
-  A: { fat: 1000, desp: 400 },
-  B: { fat:  500, desp: 200 },
-  C: { fat:  200, desp: 100 },
-  D: { fat:   70, desp:  50 },
+  A: { price: 2500, fat: 1000, desp: 400 },
+  B: { price: 1200, fat:  500, desp: 200 },
+  C: { price:  400, fat:  200, desp: 100 },
+  D: { price:  200, fat:   70, desp:  50 },
+}
+
+/** Preço de compra do nível ERP (upgrade = preço cheio do alvo). */
+export function getErpPrice(level) {
+  const L = String(level || '').toUpperCase()
+  return Number(ERP_RULES[L]?.price || 0)
 }
 
 // MIX: valores por cliente — mantém exatamente os valores atuais do gameMath.

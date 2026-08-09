@@ -5,9 +5,15 @@ import boardUrl from '/board.jpg'
 import {
   BASE_W, BASE_H, TRACK_LEN, TRACK_POINTS_NORM, scalePoint
 } from '../data/track'
+import {
+  ERP_BOARD_PRICE_OVERLAYS,
+  getErpBoardPriceLines,
+} from '../data/erpBoardOverlays'
 
 import BoardMarkers from './BoardMarkers'
 import TrackRecorder from '../dev/TrackRecorder'
+
+const ERP_PRICE_LINES = getErpBoardPriceLines()
 
 // Fallbacks (caso o pai ainda não envie `me`)
 import { getOrCreateTabPlayerId } from '../auth'
@@ -270,9 +276,33 @@ export default function Board({
   const sy = size.h / BASE_H
   const s  = Math.min(sx, sy)
 
+  // Fonte tipográfica dos overlays escala com o board (não com o viewport).
+  const erpOverlayFontPx = Math.max(5, Math.min(size.w, size.h) * 0.0092)
+
   return (
     <div className="board" ref={boardRef}>
       <img src={boardUrl} alt="Board" className="boardImg" />
+
+      {/* Preços ERP rebalanceados — só visual; não captura clique */}
+      <div className="erpPriceOverlayLayer" aria-hidden="true">
+        {ERP_BOARD_PRICE_OVERLAYS.map((box) => (
+          <div
+            key={box.house}
+            className="erpPriceOverlay"
+            style={{
+              left: `${box.left}%`,
+              top: `${box.top}%`,
+              width: `${box.width}%`,
+              height: `${box.height}%`,
+              fontSize: `${erpOverlayFontPx}px`,
+            }}
+          >
+            {ERP_PRICE_LINES.map((line) => (
+              <span key={line} className="erpPriceOverlayLine">{line}</span>
+            ))}
+          </div>
+        ))}
+      </div>
 
       {/* ====== MODO GRAVAÇÃO ====== */}
       {recordTrack && (
