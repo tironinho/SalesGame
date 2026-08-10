@@ -363,8 +363,9 @@ function GameNetProvider({ roomCode, hostId, children }) {
   }, [enabled, code])
 
   // commit (CAS robusto usando ID em vez de code)
+  // Retorna { ok: true } se o UPDATE venceu o CAS; { ok: false } se falhou/esgotou retries.
   const commit = async (updater) => {
-    if (!enabled || !ready) return
+    if (!enabled || !ready) return { ok: false, skipped: true }
 
     const MAX_ATTEMPTS = 3
     const nowISO = new Date().toISOString()
@@ -380,7 +381,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
           await new Promise(resolve => setTimeout(resolve, 50 * attempt))
           continue
         }
-        return
+        return { ok: false }
       }
 
       if (lookup.status === 'ok') {
@@ -406,7 +407,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
             await new Promise(resolve => setTimeout(resolve, 50 * attempt))
             continue
           } else {
-            return
+            return { ok: false }
           }
         } else if (data) {
           current = data
@@ -422,12 +423,12 @@ function GameNetProvider({ roomCode, hostId, children }) {
               await new Promise(resolve => setTimeout(resolve, 50 * attempt))
               continue
             }
-            return
+            return { ok: false }
           }
         }
       }
 
-      if (!current) return
+      if (!current) return { ok: false }
 
       // Atualiza activeRoomIdRef se necessário
       if (current.id) activeRoomIdRef.current = current.id
@@ -454,7 +455,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
           await new Promise(resolve => setTimeout(resolve, 50 * attempt))
           continue
         }
-        return
+        return { ok: false }
       }
 
       const { data: updated, error: e2 } = await supabase
@@ -477,7 +478,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
         if (attempt > 1) {
           console.log(`[NET] commit succeeded on attempt ${attempt}/${MAX_ATTEMPTS}`)
         }
-        return
+        return { ok: true }
       }
 
       // ✅ CORREÇÃO: Trata conflito de versão, "0 rows", ou "Cannot coerce" como conflito e re-tenta
@@ -542,6 +543,7 @@ function GameNetProvider({ roomCode, hostId, children }) {
     } else {
       console.warn('[NET] commit fallback resync failed: no row found', finalLookup.status)
     }
+    return { ok: false }
   }
 
   const value = useMemo(() => ({ enabled, ready, state, version, stateId, commit }), [enabled, ready, state, version, stateId])

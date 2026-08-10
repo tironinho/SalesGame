@@ -7,15 +7,19 @@ import {
   GAME_OFFLINE_THRESHOLD_MS,
   GAME_PRESENCE_POLL_INTERVAL_MS,
   listLobbyPresence,
-  isPresenceFresh,
-  pickSkipCoordinator,
   startLobbyHeartbeat,
   touchLobbyPlayer,
   attemptHostTransferFromPresence,
 } from '../lib/lobbies.js'
 import {
+  resolveGamePresencePlayerId,
+  isTurnPlayerPresent,
+  resolveTurnSkipAuthority,
+} from './canonicalPresence.js'
+import {
   getSharedSkipInFlight,
-  markSharedSkipKey,
+  markPendingSharedSkipKey,
+  releaseSharedSkipKey,
   setSharedSkipInFlight,
   wasAlreadySkipped,
   clearSharedSkipKeyIfStale,
@@ -31,7 +35,8 @@ function devLog(...args) {
  * @param {object} opts
  * @param {boolean} opts.enabled
  * @param {string|null} opts.lobbyId
- * @param {string|null} opts.myUid
+ * @param {string|null} opts.myUid — assento canônico (NÃO passar tab-id como fallback)
+ * @param {string|null} [opts.lobbyHostId] — lobbies.host_id (fallback de autoridade)
  * @param {array} opts.players
  * @param {string|null} opts.turnPlayerId
  * @param {number} opts.turnSeq
@@ -43,6 +48,7 @@ export function useGamePresenceAutoSkip({
   enabled,
   lobbyId,
   myUid,
+  lobbyHostId = null,
   players,
   turnPlayerId,
   turnSeq,
@@ -56,6 +62,7 @@ export function useGamePresenceAutoSkip({
   const gameOverRef = useRef(gameOver)
   const attemptSkipRef = useRef(attemptSkipTurn)
   const onStatusRef = useRef(onStatus)
+  const lobbyHostIdRef = useRef(lobbyHostId)
   const statusRef = useRef(null)
 
   useEffect(() => { playersRef.current = players }, [players])
@@ -64,6 +71,7 @@ export function useGamePresenceAutoSkip({
   useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
   useEffect(() => { attemptSkipRef.current = attemptSkipTurn }, [attemptSkipTurn])
   useEffect(() => { onStatusRef.current = onStatus }, [onStatus])
+  useEffect(() => { lobbyHostIdRef.current = lobbyHostId }, [lobbyHostId])
 
   const skippedClearTimerRef = useRef(null)
 
@@ -82,26 +90,48 @@ export function useGamePresenceAutoSkip({
     }
   }
 
-  // Heartbeat durante game — imediato + a cada 10s; para no unmount / saída
+  // Heartbeat canônico — SOMENTE seat id no roster (nunca tab-id).
+  // Depende dos ids do roster (não do cash) para rebind sem restart a cada patch.
+  const rosterIdsKey = (Array.isArray(players) ? players : [])
+    .map((p) => String(p?.id ?? ''))
+    .filter(Boolean)
+    .join('|')
+
   useEffect(() => {
     if (!enabled) return
-    if (!lobbyId || !myUid) return
+    if (!lobbyId) return
+
+    const roster = Array.isArray(playersRef.current) ? playersRef.current : []
+    const presenceId = resolveGamePresencePlayerId({
+      seatPlayerId: myUid,
+      tabPlayerId: null,
+      roster,
+    })
+    if (!presenceId) {
+      devLog('[presence] heartbeat skipped: no canonical seat id')
+      return
+    }
 
     const stop = startLobbyHeartbeat({
       lobbyId,
-      playerId: String(myUid),
+      playerId: String(presenceId),
       intervalMs: GAME_HEARTBEAT_INTERVAL_MS,
-      // Se cleanup removeu lobby_players, recria só para assento em rooms.state
       allowRecreateIfSeated: true,
     })
-    devLog('[presence] heartbeat started')
+    // Touch imediato ao alinhar identidade (rebind/hydrate)
+    touchLobbyPlayer({
+      lobbyId,
+      playerId: String(presenceId),
+      allowRecreateIfSeated: true,
+    }).catch(() => {})
+    devLog('[presence] heartbeat started canonical=' + presenceId)
 
     return () => {
       try { stop?.() } catch {}
     }
-  }, [enabled, lobbyId, myUid])
+  }, [enabled, lobbyId, myUid, rosterIdsKey])
 
-  // Observa presença e (só o coordinator) tenta auto-skip
+  // Observa presença e (só a autoridade) tenta auto-skip
   useEffect(() => {
     if (!enabled) {
       setStatus(null)
@@ -119,6 +149,13 @@ export function useGamePresenceAutoSkip({
       }
 
       const roster = Array.isArray(playersRef.current) ? playersRef.current : []
+      const presenceId = resolveGamePresencePlayerId({
+        seatPlayerId: myUid,
+        tabPlayerId: null,
+        roster,
+      })
+      if (!presenceId) return
+
       const curTurnId = turnPlayerIdRef.current != null
         ? String(turnPlayerIdRef.current)
         : ''
@@ -130,12 +167,11 @@ export function useGamePresenceAutoSkip({
       }
       if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
-      // Atualiza meu last_seen antes de decidir ausência (reentrada / poll).
-      // allowRecreateIfSeated: restaura row apagada pelo cleanup só se assentado.
+      // Atualiza last_seen canônico antes de decidir ausência
       try {
         await touchLobbyPlayer({
           lobbyId,
-          playerId: String(myUid),
+          playerId: String(presenceId),
           allowRecreateIfSeated: true,
         })
       } catch {}
@@ -144,30 +180,54 @@ export function useGamePresenceAutoSkip({
       try {
         presence = await listLobbyPresence(lobbyId)
       } catch {
-        // Fail-safe: falha de rede → NÃO skip
         return
       }
       if (cancelled) return
 
       const now = Date.now()
-      const presenceMap = new Map(
-        (presence || []).map((p) => [String(p.playerId), p.lastSeen])
-      )
-      const turnLastSeen = presenceMap.get(curTurnId)
-      const turnPresent = isPresenceFresh(turnLastSeen, now, GAME_OFFLINE_THRESHOLD_MS)
+      const turnPresent = isTurnPlayerPresent({
+        turnPlayerId: curTurnId,
+        presenceList: presence,
+        now,
+        thresholdMs: GAME_OFFLINE_THRESHOLD_MS,
+      })
 
-      devLog('[presence] current turn present=' + (turnPresent ? 'true' : 'false'))
+      // Se EU sou o jogador do turno e acabei de tocar presença canônica → online
+      if (!turnPresent && String(presenceId) === curTurnId) {
+        // Re-lê após touch próprio (evita falso waiting por race de lista)
+        try {
+          presence = await listLobbyPresence(lobbyId)
+        } catch {
+          return
+        }
+        if (cancelled) return
+      }
 
-      const coordinatorId = pickSkipCoordinator(roster, presence, now)
-      const amCoordinator = coordinatorId != null && String(coordinatorId) === String(myUid)
-      devLog('[presence] coordinator=' + (amCoordinator ? 'true' : 'false'))
+      const turnPresent2 = isTurnPlayerPresent({
+        turnPlayerId: curTurnId,
+        presenceList: presence,
+        now: Date.now(),
+        thresholdMs: GAME_OFFLINE_THRESHOLD_MS,
+      })
 
-      // Host transfer (independente do auto-skip): não mexe em rooms.state / turn
+      devLog('[presence] current turn present=' + (turnPresent2 ? 'true' : 'false'))
+
+      const auth = resolveTurnSkipAuthority({
+        rosterPlayers: roster,
+        presenceList: presence,
+        now: Date.now(),
+        myUid: presenceId,
+        lobbyHostId: lobbyHostIdRef.current,
+      })
+      const amCoordinator = auth.authorized === true
+      devLog('[presence] authority=' + auth.reason + ' self=' + (amCoordinator ? 'true' : 'false'))
+
+      // Host transfer (independente do auto-skip)
       try {
         const candidateIds = roster.map((p) => String(p?.id ?? '')).filter(Boolean)
         const ht = await attemptHostTransferFromPresence({
           lobbyId,
-          myUid: String(myUid),
+          myUid: String(presenceId),
           candidateIds,
         })
         if (ht?.transferred) {
@@ -178,11 +238,11 @@ export function useGamePresenceAutoSkip({
           devLog('[host-transfer] no present candidate')
         }
       } catch {
-        // fail-safe: não derruba presença/auto-skip
+        // fail-safe
       }
       if (cancelled) return
 
-      if (turnPresent) {
+      if (turnPresent2) {
         if (statusRef.current === 'waiting') {
           devLog('[auto-skip] cancelled player returned')
         }
@@ -197,11 +257,10 @@ export function useGamePresenceAutoSkip({
       devLog('[auto-skip] waiting')
       setSharedSkipInFlight(true)
       try {
-        // Reconfirma presença imediatamente antes do commit
         try {
           await touchLobbyPlayer({
             lobbyId,
-            playerId: String(myUid),
+            playerId: String(presenceId),
             allowRecreateIfSeated: true,
           })
         } catch {}
@@ -215,7 +274,6 @@ export function useGamePresenceAutoSkip({
         if (cancelled) return
 
         const now2 = Date.now()
-        // turn ainda o mesmo?
         if (String(turnPlayerIdRef.current || '') !== curTurnId) {
           devLog('[auto-skip] cancelled player returned')
           setStatus(null)
@@ -225,19 +283,26 @@ export function useGamePresenceAutoSkip({
         if (gameOverRef.current) return
         if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
-        const map2 = new Map(
-          (presence2 || []).map((p) => [String(p.playerId), p.lastSeen])
-        )
-        if (isPresenceFresh(map2.get(curTurnId), now2, GAME_OFFLINE_THRESHOLD_MS)) {
+        if (isTurnPlayerPresent({
+          turnPlayerId: curTurnId,
+          presenceList: presence2,
+          now: now2,
+          thresholdMs: GAME_OFFLINE_THRESHOLD_MS,
+        })) {
           devLog('[auto-skip] cancelled player returned')
           setStatus(null)
           return
         }
 
-        // Coordinator ainda sou eu?
-        const coord2 = pickSkipCoordinator(roster, presence2, now2)
-        if (!coord2 || String(coord2) !== String(myUid)) {
-          devLog('[presence] coordinator=false')
+        const auth2 = resolveTurnSkipAuthority({
+          rosterPlayers: roster,
+          presenceList: presence2,
+          now: now2,
+          myUid: presenceId,
+          lobbyHostId: lobbyHostIdRef.current,
+        })
+        if (!auth2.authorized) {
+          devLog('[presence] authority=false')
           return
         }
 
@@ -248,11 +313,13 @@ export function useGamePresenceAutoSkip({
           reason: 'AUTO_SKIP_OFFLINE',
         })
         if (ok) {
-          markSharedSkipKey(curTurnId, curTurnSeq)
+          // Pending até CAS confirmar em commitGamePatch
+          markPendingSharedSkipKey(curTurnId, curTurnSeq)
           setStatus('skipped')
-          devLog('[auto-skip] committed')
+          devLog('[auto-skip] local applied (pending CAS)')
         } else {
-          devLog('[auto-skip] CAS lost')
+          releaseSharedSkipKey(curTurnId, curTurnSeq)
+          devLog('[auto-skip] local rejected')
         }
       } finally {
         setSharedSkipInFlight(false)
@@ -268,5 +335,5 @@ export function useGamePresenceAutoSkip({
       cancelled = true
       clearInterval(t)
     }
-  }, [enabled, lobbyId, myUid])
+  }, [enabled, lobbyId, myUid, lobbyHostId])
 }

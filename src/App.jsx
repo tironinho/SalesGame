@@ -48,7 +48,11 @@ import { getOrCreateTabPlayerId, setTabPlayerName, resolvePlayerIdForRoom, setMa
 import { useGameNet } from './net/GameNetProvider.jsx'
 
 // Gerenciamento de salas
-import { leaveRoom, getLobby, onLobbyRealtime } from './lib/lobbies'
+import { leaveRoom, getLobby, onLobbyRealtime, touchLobbyPlayer } from './lib/lobbies'
+import {
+  confirmSharedSkipKey,
+  releaseSharedSkipKey,
+} from './game/sharedTurnSkipGuard.js'
 import { useGamePresenceAutoSkip } from './game/useGamePresenceAutoSkip.js'
 import { useTurnTimerAutoPass } from './game/useTurnTimerAutoPass.js'
 import {
@@ -922,30 +926,43 @@ export default function App() {
   // ✅ CORREÇÃO MULTIPLAYER: Helper para commitar patch/delta (não snapshot completo)
   // Permite fazer merge por ID sem sobrescrever estado completo
   const commitGamePatch = React.useCallback(({ playersDeltaById = {}, statePatch = {} }) => {
-    if (typeof netCommit !== 'function') return
+    const expectTurnId = statePatch?._expectTurnPlayerId
+    const expectTurnSeq = statePatch?._expectTurnSeq
+    const hasSkipExpect = expectTurnId != null || expectTurnSeq != null
+
+    // Sem net: avanço local já aplicado — confirma guard imediatamente.
+    if (typeof netCommit !== 'function') {
+      if (hasSkipExpect) {
+        confirmSharedSkipKey(expectTurnId, expectTurnSeq)
+      }
+      return
+    }
     
     // Calcula versionamento e timestamp
     stateVersionRef.current = stateVersionRef.current + 1
     const currentVersion = stateVersionRef.current
     const now = Date.now()
     
-    defer(() => {
+    defer(async () => {
+      let casLost = false
       try {
-        netCommit(prev => {
+        const commitResult = await netCommit(prev => {
           const prevState = prev || {}
 
         // Auto-skip / TURN guard: só aplica se turno/seq ainda forem os esperados.
         // Fail-safe contra double-skip em retry CAS do provider.
-        const expectTurnId = statePatch?._expectTurnPlayerId
-        const expectTurnSeq = statePatch?._expectTurnSeq
         if (expectTurnId != null || expectTurnSeq != null) {
           const remoteTurnId = prevState.turnPlayerId != null ? String(prevState.turnPlayerId) : ''
           const remoteTurnSeq = Number(prevState.turnSeq) || 0
           if (expectTurnId != null && remoteTurnId !== String(expectTurnId)) {
+            casLost = true
+            releaseSharedSkipKey(expectTurnId, expectTurnSeq)
             if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
             return prevState
           }
           if (expectTurnSeq != null && remoteTurnSeq !== Number(expectTurnSeq)) {
+            casLost = true
+            releaseSharedSkipKey(expectTurnId, expectTurnSeq)
             if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
             return prevState
           }
@@ -1061,7 +1078,20 @@ export default function App() {
         
           return next
         })
+
+        if (hasSkipExpect) {
+          if (casLost || !commitResult?.ok) {
+            releaseSharedSkipKey(expectTurnId, expectTurnSeq)
+            if (import.meta.env.DEV && !casLost) {
+              console.log('[auto-skip] CAS/commit failed — skip key released')
+            }
+          } else {
+            confirmSharedSkipKey(expectTurnId, expectTurnSeq)
+            if (import.meta.env.DEV) console.log('[auto-skip] CAS confirmed')
+          }
+        }
       } catch (e) {
+        if (hasSkipExpect) releaseSharedSkipKey(expectTurnId, expectTurnSeq)
         console.warn('[NET] commitGamePatch failed:', e?.message || e)
       }
     })
@@ -1227,6 +1257,15 @@ export default function App() {
                 playerId: String(seat.myUid),
                 playerName: String(seat.player.name || myName || ''),
               })
+            }
+            // Presença canônica imediata após rebind/hydrate (recreate se row ausente)
+            const presenceLobby = currentLobbyId || roomKey
+            if (presenceLobby) {
+              touchLobbyPlayer({
+                lobbyId: String(presenceLobby),
+                playerId: String(seat.myUid),
+                allowRecreateIfSeated: true,
+              }).catch(() => {})
             }
           } else if (seat.reason === 'identity-not-in-roster') {
             setIdentityMismatch(true)
@@ -2077,10 +2116,19 @@ export default function App() {
 
   // Presença + auto-skip (Etapa 2) — só durante game multiplayer
   const [turnAbsenceStatus, setTurnAbsenceStatus] = useState(null)
+
+  // Host visual durante game — fonte: lobbies.host_id (realtime de lobby já existente)
+  // Declarado antes dos hooks de presença/timer (fallback de autoridade).
+  const [lobbyHostId, setLobbyHostId] = useState(null)
+  const [hostPromotedHint, setHostPromotedHint] = useState(false)
+  const prevLobbyHostIdRef = useRef(null)
+
   useGamePresenceAutoSkip({
     enabled: phase === 'game' && !!net?.enabled && !!net?.ready,
     lobbyId: currentLobbyId,
-    myUid: myUid || meId,
+    // Canônico: sem fallback para sg_tab_player_id/meId na presença do game
+    myUid: myUid || null,
+    lobbyHostId,
     players,
     turnPlayerId,
     turnSeq,
@@ -2089,11 +2137,12 @@ export default function App() {
     onStatus: setTurnAbsenceStatus,
   })
 
-  // Cronômetro autoritativo: mesmo coordinator do offline; CAS compartilhado.
+  // Cronômetro autoritativo: presence-coordinator ou lobby-host-fallback; CAS compartilhado.
   useTurnTimerAutoPass({
     enabled: phase === 'game' && !gameOver && (!!net?.enabled ? !!net?.ready : true),
     lobbyId: currentLobbyId,
-    myUid: myUid || meId,
+    myUid: myUid || null,
+    lobbyHostId,
     players,
     turnPlayerId,
     turnSeq,
@@ -2103,11 +2152,6 @@ export default function App() {
     turnTimeSec,
     attemptSkipTurn: skipAbsentTurn,
   })
-
-  // Host visual durante game — fonte: lobbies.host_id (realtime de lobby já existente)
-  const [lobbyHostId, setLobbyHostId] = useState(null)
-  const [hostPromotedHint, setHostPromotedHint] = useState(false)
-  const prevLobbyHostIdRef = useRef(null)
 
   useEffect(() => {
     if (phase !== 'game' || !currentLobbyId) {
@@ -2358,6 +2402,11 @@ export default function App() {
                 playerId: String(resolvedId),
                 playerName: String(myName || payload?.me?.name || ''),
               })
+              touchLobbyPlayer({
+                lobbyId: roomKey,
+                playerId: String(resolvedId),
+                allowRecreateIfSeated: true,
+              }).catch(() => {})
             }
             setPlayers([], { source: 'RESUME_EXISTING_WAIT' })
             setPhase('game')

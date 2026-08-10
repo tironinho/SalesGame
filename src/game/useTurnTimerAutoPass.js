@@ -1,18 +1,16 @@
-// Auto-pass por tempo esgotado — autoridade = mesmo coordinator do auto-skip offline.
-// Não remove nem reutiliza a lógica de presença; só compartilha o CAS de avanço.
+// Auto-pass por tempo esgotado — autoridade = presence-coordinator ou host-fallback.
+// Não remove a lógica de presença; compartilha o CAS de avanço.
 
 import { useEffect, useRef } from 'react'
-import {
-  listLobbyPresence,
-  pickSkipCoordinator,
-} from '../lib/lobbies.js'
-import {
-  shouldAttemptTimerAutoPass,
-} from './turnTimerLogic.js'
+import { listLobbyPresence } from '../lib/lobbies.js'
+import { resolveTurnSkipAuthority } from './canonicalPresence.js'
+import { shouldAttemptTimerAutoPass } from './turnTimerLogic.js'
 import {
   getLastSharedSkipKey,
   getSharedSkipInFlight,
-  markSharedSkipKey,
+  markPendingSharedSkipKey,
+  confirmSharedSkipKey,
+  releaseSharedSkipKey,
   setSharedSkipInFlight,
   clearSharedSkipKeyIfStale,
   wasAlreadySkipped,
@@ -29,7 +27,8 @@ function devLog(...args) {
  * @param {object} opts
  * @param {boolean} opts.enabled
  * @param {string|null} opts.lobbyId
- * @param {string|null} opts.myUid
+ * @param {string|null} opts.myUid — assento canônico (sem fallback tab-id)
+ * @param {string|null} [opts.lobbyHostId]
  * @param {array} opts.players
  * @param {string|null} opts.turnPlayerId
  * @param {number} opts.turnSeq
@@ -43,6 +42,7 @@ export function useTurnTimerAutoPass({
   enabled,
   lobbyId,
   myUid,
+  lobbyHostId = null,
   players,
   turnPlayerId,
   turnSeq,
@@ -60,6 +60,7 @@ export function useTurnTimerAutoPass({
   const gameOverRef = useRef(gameOver)
   const attemptRef = useRef(attemptSkipTurn)
   const turnTimeSecRef = useRef(turnTimeSec)
+  const lobbyHostIdRef = useRef(lobbyHostId)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
@@ -69,6 +70,7 @@ export function useTurnTimerAutoPass({
   useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
   useEffect(() => { attemptRef.current = attemptSkipTurn }, [attemptSkipTurn])
   useEffect(() => { turnTimeSecRef.current = turnTimeSec }, [turnTimeSec])
+  useEffect(() => { lobbyHostIdRef.current = lobbyHostId }, [lobbyHostId])
 
   useEffect(() => {
     if (!enabled) return undefined
@@ -92,6 +94,7 @@ export function useTurnTimerAutoPass({
       const now = Date.now()
 
       let amCoordinator = false
+      let authReason = 'local'
       if (lobbyId) {
         let presence = []
         try {
@@ -100,9 +103,15 @@ export function useTurnTimerAutoPass({
           return
         }
         if (cancelled) return
-        const coordinatorId = pickSkipCoordinator(roster, presence, now)
-        amCoordinator =
-          coordinatorId != null && String(coordinatorId) === String(myUid)
+        const auth = resolveTurnSkipAuthority({
+          rosterPlayers: roster,
+          presenceList: presence,
+          now,
+          myUid: String(myUid),
+          lobbyHostId: lobbyHostIdRef.current,
+        })
+        amCoordinator = auth.authorized === true
+        authReason = auth.reason
       } else {
         // Sem lobby (modo local): este cliente pode efetivar o auto-pass.
         amCoordinator = true
@@ -124,6 +133,9 @@ export function useTurnTimerAutoPass({
         if (decision.reason === 'turn-locked' && DEV) {
           devLog('[turn-timer] waiting turnLock clear')
         }
+        if (decision.reason === 'not-coordinator' && DEV) {
+          devLog('[turn-timer] not-coordinator reason=' + authReason)
+        }
         return
       }
 
@@ -142,26 +154,37 @@ export function useTurnTimerAutoPass({
             return
           }
           if (cancelled) return
-          const coord2 = pickSkipCoordinator(roster, presence2, Date.now())
-          if (!coord2 || String(coord2) !== String(myUid)) {
-            devLog('[turn-timer] coordinator=false')
+          const auth2 = resolveTurnSkipAuthority({
+            rosterPlayers: roster,
+            presenceList: presence2,
+            now: Date.now(),
+            myUid: String(myUid),
+            lobbyHostId: lobbyHostIdRef.current,
+          })
+          if (!auth2.authorized) {
+            devLog('[turn-timer] authority=false reason=' + auth2.reason)
             return
           }
         }
 
         if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
-        devLog('[turn-timer] attempt turnSeq=' + curTurnSeq)
+        devLog('[turn-timer] attempt turnSeq=' + curTurnSeq + ' via=' + authReason)
         const ok = attemptRef.current?.({
           expectedTurnPlayerId: curTurnId,
           expectedTurnSeq: curTurnSeq,
           reason: 'AUTO_PASS_TIMER',
         })
         if (ok) {
-          markSharedSkipKey(curTurnId, curTurnSeq)
-          devLog('[turn-timer] committed')
+          markPendingSharedSkipKey(curTurnId, curTurnSeq)
+          if (!lobbyId) {
+            // Local: sem CAS remoto — confirma na hora
+            confirmSharedSkipKey(curTurnId, curTurnSeq)
+          }
+          devLog('[turn-timer] local applied (pending CAS)')
         } else {
-          devLog('[turn-timer] CAS lost')
+          releaseSharedSkipKey(curTurnId, curTurnSeq)
+          devLog('[turn-timer] local rejected')
         }
       } finally {
         setSharedSkipInFlight(false)
@@ -177,5 +200,5 @@ export function useTurnTimerAutoPass({
       cancelled = true
       clearInterval(t)
     }
-  }, [enabled, lobbyId, myUid])
+  }, [enabled, lobbyId, myUid, lobbyHostId])
 }
