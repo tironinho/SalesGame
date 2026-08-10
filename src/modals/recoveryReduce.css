@@ -23,6 +23,15 @@
   padding: 0 2px;
 }
 
+.rr-lead {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(233, 236, 241, 0.82);
+}
+
 /* Único scroll da tela (corpo). Colunas MIX/ERP NÃO rolam sozinhas. */
 .rr-scroll {
   flex: 1 1 auto;

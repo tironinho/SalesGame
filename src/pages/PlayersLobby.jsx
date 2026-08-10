@@ -659,6 +659,26 @@ useEffect(() => {
           <p className="playerLobbyRoundNote">Somente o host pode alterar esta configuração.</p>
         </section>
 
+        {/* ===== Objetivo da partida (mesmo texto para host e convidados) ===== */}
+        <section className="playerLobbyPanel">
+          <div className="playerLobbyPanelHeader">
+            <h3 className="playerLobbyPanelTitle"><IconFlag /> Objetivo</h3>
+            <p className="playerLobbyPanelHint">
+              Todos veem a mesma regra de vitória desta sala.
+            </p>
+          </div>
+          <p className="playerLobbyRoundSelection">
+            Rodadas: <b>{roundsValue}</b>
+          </p>
+          <p className="playerLobbyRoundSelection">
+            Tempo por jogada: <b>{turnTimeValue}s</b>
+          </p>
+          <p className="playerLobbyRoundSelection">
+            Objetivo: termine a partida com o maior patrimônio.
+          </p>
+          <p className="playerLobbyRoundNote">Patrimônio = Caixa + Bens.</p>
+        </section>
+
         {/* ===== Painel inferior: status + mensagem + ações ===== */}
         <footer className="playerLobbyFooter">
           <div className="playerLobbyStatusGroup">

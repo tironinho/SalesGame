@@ -70,8 +70,8 @@ export default function RecoveryLoan({
       </div>
 
       <p>
-        Você pode realizar um empréstimo colocando <b>50% dos seus BENS</b> como
-        garantia (pago na próxima “Despesas Operacionais”).
+        Aumenta o caixa agora para evitar falência. Você coloca <b>50% dos seus BENS</b> como
+        garantia (cobrada na próxima “Despesas Operacionais”).
       </p>
 
       <div style={S.infoRow}>

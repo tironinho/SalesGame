@@ -120,7 +120,13 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
           ✕
         </button>
 
-        <h2 className="directBuyTitle">Direto de Compra — escolha uma casa para adquirir:</h2>
+        <h2 className="directBuyTitle">Direto de Compra — escolha um recurso:</h2>
+
+        <p className="directBuyContext">
+          Compra direta de recursos da empresa, fora do movimento normal do tabuleiro.
+          Cada decisão pode alterar caixa, despesa, faturamento ou capacidade — o impacto
+          aparece na tela seguinte antes de confirmar.
+        </p>
 
         <div style={{ marginBottom: 8, opacity: .8, fontSize: 13 }}>
           Saldo atual: <b>${Number(currentCash).toLocaleString()}</b>

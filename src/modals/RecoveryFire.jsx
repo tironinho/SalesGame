@@ -77,6 +77,9 @@ export default function RecoveryFire({ roles = [], onBack, onConfirm }) {
   return (
     <div style={S.body}>
       <div style={S.subHeader}><b style={{fontSize:20}}>DEMITIR FUNCIONÁRIOS</b></div>
+      <p style={{ opacity: 0.9, marginBottom: 12, lineHeight: 1.45 }}>
+        Reduz a equipe e devolve 50% do valor ao caixa. Use para recuperar saldo e evitar falência.
+      </p>
 
       {/* Cabeçalho */}
       <div style={{display:'grid', gridTemplateColumns:'1.2fr 1fr 1.2fr 1fr', gap:8, opacity:.9, fontWeight:700, marginBottom:6}}>

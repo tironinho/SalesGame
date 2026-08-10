@@ -15,6 +15,7 @@ export default function RecoveryMenu({
   return (
     <div style={S.body}>
       <p style={S.lead}>
+        Recuperação financeira: use para recuperar caixa e evitar falência.
         Você está sem dinheiro, {playerName}. Escolha uma das opções:
       </p>
 
@@ -26,13 +27,13 @@ export default function RecoveryMenu({
 
       <ul style={S.bullets}>
         <li>
-          Pedir <b>empréstimo</b> único com 50% de juros garantido por 50% dos seus <b>BENS</b> (limite {`$ ${loanAvailable}`}).
+          <b>Empréstimo:</b> aumenta o caixa agora (limite {`$ ${loanAvailable}`}), com garantia de 50% dos bens e obrigação futura nas despesas. Único por partida.
         </li>
         <li>
-          <b>Reduzir</b> níveis de <b>MIX de Produtos</b> ou <b>ERP/Sistemas</b> e receber 50% do valor pago.
+          <b>Reduzir:</b> baixa níveis de MIX ou ERP e recebe 50% do valor pago de volta ao caixa.
         </li>
         <li>
-          <b>Demitir</b> funcionários e receber 50% do valor total.
+          <b>Demitir:</b> remove colaboradores e recebe 50% do valor — reduz equipe e custos futuros.
         </li>
       </ul>
 

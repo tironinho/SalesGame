@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { computePatrimonio } from '../game/patrimonio.js'
 
 const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
 
@@ -40,7 +41,6 @@ export default function HUD({ totals, players }){
           <div className="line hudMetric"><b>Inside Sales:</b> <span>{totals.insideSales}</span></div>
           <div className="line hudMetric hudMetric--wide"><b>Mix Produtos:</b> <span>{totals.mixProdutos}</span> <b className="hudHelp" title="Valor dos recursos adquiridos que compõem o patrimônio."> Bens:</b> <span>$ {totals.bens}</span></div>
           <div className="line hudMetric hudMetric--wide"><b>ERP/Sistemas:</b> <span>{totals.erpSistemas}</span> <b> Clientes:</b> <span>{totals.clientes}</span></div>
-          <div className="hudMetric hudMetric--wide"><b>Manual Onboarding:</b> </div>
           <div className="hudMetric hudMetric--wide"><b>Azul:</b> <span>{totals.az || 0}</span> &nbsp;
            <b> Amarelo: </b><span>{totals.am || 0}</span> &nbsp;
             <b>Roxo:</b> <span>{totals.rox || 0}</span>
@@ -53,11 +53,24 @@ export default function HUD({ totals, players }){
         </div>
       </div>
       <div className="score">
-        <div className="title">Placar</div>
+        <div className="title hudHelp" title="Patrimônio = Caixa + Bens. Critério de vitória no fim da partida.">
+          Placar
+        </div>
+        <p className="scorePatrimonioNote">Patrimônio = Caixa + Bens</p>
         {players.map(p => (
           <div className="row" key={p.id}>
             <span>{p.name}</span>
-            <span className="hudHelp" title="Dinheiro disponível para compras, despesas e decisões.">{p.cash}</span>
+            <span className="scoreValues">
+              <span className="hudHelp" title="Dinheiro disponível para compras, despesas e decisões.">
+                Caixa {Number(p.cash || 0).toLocaleString()}
+              </span>
+              <span
+                className="hudHelp scorePatrimonio"
+                title="Patrimônio = Caixa + Bens (mesmo critério do pódio final)."
+              >
+                Pat. {computePatrimonio(p).toLocaleString()}
+              </span>
+            </span>
           </div>
         ))}
       </div>

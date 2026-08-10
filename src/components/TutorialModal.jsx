@@ -8,14 +8,16 @@ const STEPS = [
     title: 'Objetivo',
     body: [
       'No SalesGame, você administra a empresa e toma decisões comerciais ao longo da partida.',
-      'O objetivo é terminar com o maior patrimônio. Patrimônio é a soma do caixa com os bens.',
+      'O vencedor é quem terminar com o maior PATRIMÔNIO.',
+      'Patrimônio = Caixa + Bens.',
+      'Em empate de patrimônio, desempata quem tiver maior caixa; se ainda empatar, o desempate é pelo nome.',
     ],
   },
   {
     title: 'Rodadas',
     body: [
       'A duração da partida é configurada pelo host antes do início, entre 1 e 5 rodadas (o padrão é 5).',
-      'A partida termina após a quantidade de rodadas definida para aquela sala.',
+      'A partida termina após o número de rodadas configurado pelo host para aquela sala.',
     ],
   },
   {
@@ -35,9 +37,65 @@ const STEPS = [
   {
     title: 'Final da partida',
     body: [
-      'Ao fim da duração configurada, vence quem tiver o maior patrimônio (Saldo + Bens).',
-      'Em caso de empate no patrimônio, prevalece quem tiver mais saldo; se ainda empatar, o desempate é pelo nome. A partida também pode terminar se restar apenas um jogador ativo.',
+      'Ao fim das rodadas configuradas pelo host, vence quem tiver o maior patrimônio (Caixa + Bens).',
+      'Em empate de patrimônio, prevalece quem tiver mais caixa. A partida também pode terminar se restar apenas um jogador ativo.',
     ],
+  },
+]
+
+/** Glossário curto (1–2 frases) — ajuda contextual, sem alterar regras. */
+export const TUTORIAL_GLOSSARY = [
+  {
+    title: 'Caixa',
+    body: 'Dinheiro disponível para compras, despesas e decisões. Aparece no placar como saldo.',
+  },
+  {
+    title: 'Patrimônio',
+    body: 'Caixa + Bens. É o critério de vitória no fim da partida.',
+  },
+  {
+    title: 'Faturamento',
+    body: 'Valor gerado pelas vendas e recursos da empresa a cada ciclo.',
+  },
+  {
+    title: 'Manutenção',
+    body: 'Custos periódicos para manter vendedores, gestores, sistemas e outros recursos.',
+  },
+  {
+    title: 'Capacidade',
+    body: 'Quantidade de clientes que a equipe consegue atender ao mesmo tempo.',
+  },
+  {
+    title: 'Clientes',
+    body: 'Base atendida pela equipe. Sem capacidade suficiente, o excesso pode ser perdido no faturamento do mês.',
+  },
+  {
+    title: 'ERP',
+    body: 'Sistemas da empresa. Níveis melhores elevam faturamento e despesas conforme o tamanho da equipe.',
+  },
+  {
+    title: 'Vendedor Comum',
+    body: 'Colaborador de linha. Aumenta capacidade e contribui com faturamento e despesas.',
+  },
+  {
+    title: 'Field Sales',
+    body: 'Vendedor externo com maior capacidade por pessoa e impacto operacional próprio.',
+  },
+  {
+    title: 'Inside Sales',
+    body: 'Vendedor interno; costuma atender mais clientes por pessoa com perfil de custo diferente do Field.',
+  },
+  {
+    title: 'Gestor',
+    body: 'Gestor comercial. Não aumenta capacidade; com certificado, impulsiona o time.',
+  },
+  {
+    title: 'Certificados',
+    body: 'Treinamentos (cores) que alteram faturamento e despesas dos vendedores ou habilitam o boost do gestor.',
+  },
+  {
+    title: 'Empréstimo',
+    body: 'Opção da recuperação financeira: aumenta o caixa agora e gera obrigação futura nas despesas.',
   },
 ]
 
@@ -58,18 +116,22 @@ export function markTutorialSeen() {
 }
 
 /**
- * Tutorial inicial em etapas.
+ * Tutorial inicial em etapas + glossário opcional.
  * Isolado do ModalProvider / engine — não altera regras do jogo.
  */
 export default function TutorialModal({ open, onClose }) {
   const [stepIndex, setStepIndex] = useState(0)
+  const [showGlossary, setShowGlossary] = useState(false)
   const total = STEPS.length
   const step = STEPS[stepIndex]
   const isFirst = stepIndex === 0
   const isLast = stepIndex === total - 1
 
   useEffect(() => {
-    if (open) setStepIndex(0)
+    if (open) {
+      setStepIndex(0)
+      setShowGlossary(false)
+    }
   }, [open])
 
   function handleClose() {
@@ -111,9 +173,16 @@ export default function TutorialModal({ open, onClose }) {
         <div className="tutorialHeader">
           <div className="tutorialHeaderText">
             <h2 className="tutorialTitle">Como jogar</h2>
-            <span className="tutorialStepLabel" aria-live="polite">
-              {stepIndex + 1} de {total}
-            </span>
+            {!showGlossary && (
+              <span className="tutorialStepLabel" aria-live="polite">
+                {stepIndex + 1} de {total}
+              </span>
+            )}
+            {showGlossary && (
+              <span className="tutorialStepLabel" aria-live="polite">
+                Glossário
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -126,26 +195,67 @@ export default function TutorialModal({ open, onClose }) {
         </div>
 
         <div className="tutorialBody">
-          <h3 className="tutorialStepTitle">{step.title}</h3>
-          {step.body.map((paragraph) => (
-            <p key={paragraph} className="tutorialStepBody">
-              {paragraph}
-            </p>
-          ))}
+          {showGlossary ? (
+            <>
+              <h3 className="tutorialStepTitle">Conceitos rápidos</h3>
+              <p className="tutorialStepBody">
+                Referência curta. Não muda regras — só explica os termos da partida.
+              </p>
+              {TUTORIAL_GLOSSARY.map((item) => (
+                <div key={item.title} className="tutorialGlossaryItem">
+                  <h4 className="tutorialGlossaryTitle">{item.title}</h4>
+                  <p className="tutorialGlossaryBody">{item.body}</p>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <h3 className="tutorialStepTitle">{step.title}</h3>
+              {step.body.map((paragraph) => (
+                <p key={paragraph} className="tutorialStepBody">
+                  {paragraph}
+                </p>
+              ))}
+            </>
+          )}
         </div>
 
         <div className="tutorialActions">
-          <button
-            type="button"
-            className="tutorialBtnSecondary"
-            onClick={goPrev}
-            disabled={isFirst}
-          >
-            Anterior
-          </button>
-          <button type="button" className="tutorialBtnPrimary" onClick={goNext}>
-            {isLast ? 'Começar a jogar' : 'Próximo'}
-          </button>
+          {showGlossary ? (
+            <button
+              type="button"
+              className="tutorialBtnSecondary"
+              onClick={() => setShowGlossary(false)}
+            >
+              Voltar às etapas
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="tutorialBtnSecondary"
+                onClick={goPrev}
+                disabled={isFirst}
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                className="tutorialBtnGhost"
+                onClick={() => setShowGlossary(true)}
+              >
+                Glossário
+              </button>
+              <button type="button" className="tutorialBtnPrimary" onClick={goNext}>
+                {isLast ? 'Começar a jogar' : 'Próximo'}
+              </button>
+            </>
+          )}
+          {showGlossary && (
+            <button type="button" className="tutorialBtnPrimary" onClick={handleClose}>
+              Começar a jogar
+            </button>
+          )}
         </div>
       </div>
     </ModalBase>

@@ -255,6 +255,9 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
         <div style={S.badge(card.kind)}>{card.kind === 'SORTE' ? 'SORTE' : 'REVÉS'}</div>
         {card.title && <h2 style={S.title}>{card.title}</h2>}
         <p style={S.text}>{resolved.text}</p>
+        <p style={S.hint}>
+          O efeito desta carta é aplicado imediatamente ao confirmar.
+        </p>
 
         <div style={S.footer}>
           <button type="button" style={S.okBtn} onClick={resolve}>OK</button>
@@ -273,7 +276,8 @@ const S = {
     background: kind==='SORTE' ? '#22c55e' : '#ef4444', color:'#111'
   }),
   title:{ margin:'2px 0 6px', fontWeight:900 },
-  text:{ fontSize:18, lineHeight:1.5, opacity:.95, margin:'6px 0 14px' },
+  text:{ fontSize:18, lineHeight:1.5, opacity:.95, margin:'6px 0 8px' },
+  hint:{ fontSize:13, lineHeight:1.4, opacity:.75, margin:'0 0 14px' },
   footer:{ display:'flex', justifyContent:'center' },
   okBtn:{ minWidth:140, padding:'12px 18px', borderRadius:12, border:'none', fontWeight:900, cursor:'pointer', background:'#fff', color:'#111' },
 }

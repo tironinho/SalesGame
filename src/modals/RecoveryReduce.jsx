@@ -172,6 +172,10 @@ export default function RecoveryReduce(props) {
   return (
     <div className="rr-root">
       <h3 className="rr-title">REDUZIR NÍVEL MIX/ERP</h3>
+      <p className="rr-lead">
+        Baixa o nível de Mix ou ERP e recebe 50% do valor de volta ao caixa.
+        Serve para recuperar saldo e evitar falência — sem alterar a regra de crédito.
+      </p>
 
       <div className="rr-scroll">
         <div className="rr-columns">

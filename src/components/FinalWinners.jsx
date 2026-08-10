@@ -1,6 +1,7 @@
 // src/components/FinalWinners.jsx
 import React, { useMemo } from "react";
 import ModalBase from "../modals/ModalBase";
+import { computePatrimonio } from "../game/patrimonio.js";
 
 /**
  * Pódio final (Top 3) como **modal travada** no centro da tela.
@@ -16,7 +17,7 @@ export default function FinalWinners({ players = [], maxRounds, endedRound, onEx
         const isBankrupt = !!player?.bankrupt
         const cash = Number(player?.cash || 0)
         const bens = Number(player?.bens || 0)
-        const patrimonio = isBankrupt ? 0 : (cash + bens)
+        const patrimonio = computePatrimonio(player)
 
         return {
           ...player,
