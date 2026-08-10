@@ -186,10 +186,21 @@ export default function BuyManagerModal({
           <br/>Digite o número de gestores:
         </h2>
 
-        <p className="purchasePreviewHint">
-          O Gestor Comercial aumenta suas despesas mensais e não aumenta diretamente a
-          capacidade de atendimento. Pelas regras atuais, o aumento de faturamento dos
-          vendedores só acontece quando o gestor possui certificação.
+        <div style={styles.certAlert} role="note">
+          <div style={styles.certAlertTitle}>
+            ⚠ Atenção: sem certificado, o Gestor Comercial não aumenta o faturamento da equipe.
+          </div>
+          <div style={styles.certAlertBonus}>
+            Bônus atual: <b>{boostAt(0)}%</b>
+          </div>
+          <div style={styles.certAlertHint}>
+            Treine/certifique o Gestor para ativar a potencialização.
+          </div>
+        </div>
+
+        <p className="purchasePreviewHint" style={{ marginBottom: 10 }}>
+          O Gestor aumenta despesas mensais e não aumenta a capacidade de atendimento.
+          Detalhes por certificação na tabela abaixo.
         </p>
 
         <div style={styles.inlineInfo}>
@@ -240,7 +251,7 @@ export default function BuyManagerModal({
               label="Sem Certificado"
               hire={money(unitHire)}
               expense={money(expenseAt(0))}
-              revenue={`potencializa colaboradores em ${boostAt(0)}%`}
+              revenue={`bônus da equipe: ${boostAt(0)}%`}
             />
             <Row
               label="Com 1 certificado"
@@ -334,6 +345,32 @@ const styles = {
     color:'#fff', cursor:'pointer'
   },
   title: { margin:'6px 0 12px', fontWeight:800, lineHeight:1.3 },
+  certAlert: {
+    margin: '0 0 12px',
+    padding: '10px 12px',
+    borderRadius: 10,
+    background: 'rgba(245, 158, 11, 0.14)',
+    border: '1px solid rgba(245, 158, 11, 0.55)',
+    color: '#FFE8B0',
+    lineHeight: 1.35,
+  },
+  certAlertTitle: {
+    fontWeight: 800,
+    fontSize: 14,
+    color: '#FFD27A',
+    marginBottom: 4,
+  },
+  certAlertBonus: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#FFF3D0',
+    marginBottom: 2,
+  },
+  certAlertHint: {
+    fontSize: 12,
+    opacity: 0.95,
+    color: '#F6E7C1',
+  },
   inlineInfo: {
     display:'flex', justifyContent:'space-between', gap:10,
     margin:'0 0 8px', opacity:.95, fontWeight:700, flexWrap:'wrap'
