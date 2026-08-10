@@ -1814,6 +1814,16 @@ html, body {
 .hudHelp {
   cursor: help;
 }
+.identityMismatchBanner{
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.16);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
 .hud .score .scorePatrimonioNote{
   margin:0;
   padding:6px 10px 0;

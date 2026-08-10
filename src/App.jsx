@@ -56,6 +56,14 @@ import {
   normalizeTurnTime,
 } from './game/turnTimeConfig.js'
 import { computeTurnDeadlineAt } from './game/turnTimerLogic.js'
+import {
+  mergePlayersById,
+  buildPlayersDeltaById,
+  resolveSeatIdentity,
+  resolveMyCash,
+  planRosterApply,
+  shouldApplyIncomingState,
+} from './game/playerStateSync.js'
 
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
@@ -416,7 +424,13 @@ export default function App() {
 
   // ====== “quem sou eu” no array de players
   const isMine = React.useCallback((p) => !!p && String(p.id) === String(myUid), [myUid])
-  const myCash = useMemo(() => (players.find(isMine)?.cash ?? 0), [players, isMine])
+  const [identityMismatch, setIdentityMismatch] = useState(false)
+  const myCashInfo = useMemo(
+    () => resolveMyCash({ myUid, players }),
+    [myUid, players]
+  )
+  // Sem fallback silencioso para 0 quando o assento não está no roster (identidade quebrada).
+  const myCash = myCashInfo.found ? myCashInfo.cash : (identityMismatch ? null : 0)
 
   // ====== bootstrap de contexto (NÃO muda fase automaticamente)
   // ✅ OBJ 1: StartScreen NUNCA deve ser pulada automaticamente.
@@ -955,53 +969,59 @@ export default function App() {
                 : []
 
         const prevPlayers = normalizePlayers(seedPlayersRaw)
-        const byId = new Map(prevPlayers.map(p => [String(p.id), p]))
-        
-        // Aplica deltas por ID (idempotente por actionId)
-        for (const [id, delta] of Object.entries(playersDeltaById)) {
+
+        // Filtra deltas já aplicados (idempotência) ANTES do merge
+        const filteredDeltaById = {}
+        for (const [id, delta] of Object.entries(playersDeltaById || {})) {
           const playerId = String(id)
-          const existing = byId.get(playerId)
-          if (existing) {
-            const actionId = delta?._actionId || statePatch?.actionId || null
-            if (actionId) {
-              const lastActions = (existing.lastActions && typeof existing.lastActions === 'object') ? existing.lastActions : {}
-              if (lastActions[actionId]) {
-                console.warn('[IDEMPOTENCY] ignorando delta já aplicado', { playerId, actionId })
-                continue
-              }
-              // registra actionId com limite (50)
-              const nextActions = { ...lastActions, [actionId]: now }
-              const keys = Object.keys(nextActions)
-              if (keys.length > 50) {
-                keys
-                  .sort((a, b) => Number(nextActions[a] || 0) - Number(nextActions[b] || 0))
-                  .slice(0, keys.length - 50)
-                  .forEach(k => { try { delete nextActions[k] } catch {} })
-              }
-              const { _actionId, ...cleanDelta } = (delta || {})
-              // ✅ OBJ 3: nunca sobrescrever campos com undefined (especialmente pos)
-              const merged = { ...existing }
-              for (const [k, v] of Object.entries(cleanDelta)) {
-                if (v !== undefined) merged[k] = v
-              }
-              byId.set(playerId, applyStarterKit({ ...merged, lastActions: nextActions }))
-            } else {
-              const { _actionId, ...cleanDelta } = (delta || {})
-              const merged = { ...existing }
-              for (const [k, v] of Object.entries(cleanDelta)) {
-                if (v !== undefined) merged[k] = v
-              }
-              byId.set(playerId, applyStarterKit(merged))
-            }
-          } else {
-            // Novo player (não deve acontecer, mas trata)
-            const { _actionId, ...cleanDelta } = (delta || {})
-            byId.set(playerId, applyStarterKit({ id: playerId, ...cleanDelta }))
+          const actionId = delta?._actionId || statePatch?.actionId || null
+          const existing = prevPlayers.find((p) => String(p?.id) === playerId)
+          if (actionId && existing?.lastActions && existing.lastActions[actionId]) {
+            if (DEBUG_LOGS) console.warn('[IDEMPOTENCY] ignorando delta já aplicado', { playerId, actionId })
+            continue
           }
+          filteredDeltaById[playerId] = delta
         }
-        
-        // Reconstrói array ordenado
-        const mergedPlayers = normalizePlayers(Array.from(byId.values()))
+
+        // Merge parcial: cash undefined/null NÃO substitui; outros campos só se presentes
+        let mergedPlayers = normalizePlayers(
+          mergePlayersById(prevPlayers, filteredDeltaById, { createMissing: true })
+        )
+
+        // Registra actionIds aplicados
+        for (const [id, delta] of Object.entries(filteredDeltaById)) {
+          const playerId = String(id)
+          const actionId = delta?._actionId || statePatch?.actionId || null
+          if (!actionId) continue
+          const idx = mergedPlayers.findIndex((p) => String(p?.id) === playerId)
+          if (idx < 0) continue
+          const existing = mergedPlayers[idx]
+          const lastActions =
+            existing.lastActions && typeof existing.lastActions === 'object'
+              ? { ...existing.lastActions }
+              : {}
+          lastActions[actionId] = now
+          const keys = Object.keys(lastActions)
+          if (keys.length > 50) {
+            keys
+              .sort((a, b) => Number(lastActions[a] || 0) - Number(lastActions[b] || 0))
+              .slice(0, keys.length - 50)
+              .forEach((k) => {
+                try { delete lastActions[k] } catch {}
+              })
+          }
+          mergedPlayers[idx] = applyStarterKit({
+            ...existing,
+            lastActions,
+          })
+        }
+
+        // Baseline = roster commitado (evita reenviar cash stale em patches seguintes)
+        try {
+          playersBeforeRef.current = JSON.parse(JSON.stringify(mergedPlayers))
+        } catch {
+          playersBeforeRef.current = mergedPlayers
+        }
         
         // Prepara statePatch completo (inclui versionamento monotônico)
         const {
@@ -1123,28 +1143,22 @@ export default function App() {
     )
     const isStartState = (incomingNetState.kind === 'START') || (incomingNetState.isStartGame === true) || heuristicReset
 
-    const sameStateId = !!incomingStateId && (lastAppliedStateIdRef.current === incomingStateId)
-
     const lastAppliedVer = Number(lastAppliedNetVersionRef.current) || 0
-    const isNumericallyOlder = versionIsNumber && incomingNetVersion < lastAppliedVer
+    const gate = shouldApplyIncomingState({
+      isStart: isStartState,
+      incomingVersion: versionIsNumber ? incomingNetVersion : undefined,
+      lastAppliedVersion: lastAppliedVer,
+      incomingStateId,
+      lastAppliedStateId: lastAppliedStateIdRef.current,
+    })
 
-    // ✅ Gate:
-    // - START sempre aplica
-    // - version maior aplica
-    // - stateId novo só aplica se version NÃO for numericamente mais antiga
-    //   (evita snapshot stale com stateId fresco sobrescrever partida mais nova)
-    const shouldApply =
-      isStartState ||
-      (versionIsNumber && incomingNetVersion > lastAppliedNetVersionRef.current) ||
-      (!!incomingStateId && !sameStateId && (!versionIsNumber || !isNumericallyOlder))
-
-    if (!shouldApply) return false
+    if (!gate.apply) return false
 
     // marca aplicado (não exige monotonicidade estrita; nunca rebaixa version/stateId por snapshot mais antigo)
     if (versionIsNumber) {
       lastAppliedNetVersionRef.current = Math.max(lastAppliedVer, incomingNetVersion)
     }
-    if (!isNumericallyOlder) {
+    if (!(versionIsNumber && incomingNetVersion < lastAppliedVer)) {
       if (incomingStateId) lastAppliedStateIdRef.current = incomingStateId
       else if (isStartState && versionIsNumber) lastAppliedStateIdRef.current = `START:${incomingNetVersion}`
     }
@@ -1154,21 +1168,23 @@ export default function App() {
       setTurnPlayerId(incomingTurnId)
     }
 
-    // --- aplica players ---
-    // Proteção: se já hidratamos / temos roster local válido, NÃO deixar players:[] apagar.
-    // Resume inicial (players=[] local, hydrated=false) ainda aceita o primeiro snapshot com jogadores.
+    // --- aplica players (merge seguro; [] não apaga; parcial não zera ausentes) ---
     if (np) {
       const localRoster =
         (Array.isArray(playersBeforeRef.current) && playersBeforeRef.current.length > 0)
           ? playersBeforeRef.current
-          : null
-      const skipEmptyWipe =
-        np.length === 0 &&
-        (hydratedFromNetRef.current || (localRoster && localRoster.length > 0))
+          : (Array.isArray(players) ? players : [])
 
-      if (skipEmptyWipe) {
+      const plan = planRosterApply({
+        incomingPlayers: np,
+        currentPlayers: localRoster,
+        hydrated: hydratedFromNetRef.current,
+        isStart: isStartState,
+      })
+
+      if (plan.action === 'skip') {
         if (DEBUG_LOGS) {
-          console.warn('[NET] ignorando snapshot com players:[] sobre roster válido', {
+          console.warn('[NET] ignorando snapshot de players:', plan.reason, {
             version: incomingNetVersion,
             stateId: incomingStateId,
             localCount: localRoster?.length ?? 0,
@@ -1176,9 +1192,13 @@ export default function App() {
           })
         }
       } else {
-        const normalizedPlayers = normalizePlayers(np)
+        const normalizedPlayers = normalizePlayers(plan.players)
         setPlayers(normalizedPlayers, { source: 'SNAPSHOT' })
-        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+        try {
+          playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+        } catch {
+          playersBeforeRef.current = normalizedPlayers
+        }
 
         // turnIdx derivado do turnPlayerId (nunca do remoto)
         if (incomingTurnId) {
@@ -1188,20 +1208,35 @@ export default function App() {
           }
         }
 
-        // Reassocia myUid pela identidade persistida da sala (nunca por nome)
+        // Rebind canônico: matchIdentity → myUid (nunca inventa player)
         try {
           const roomKey = currentLobbyId || roomId
           const persisted = roomKey ? getMatchIdentity(roomKey) : null
-          const wantId = persisted?.playerId || myUid || meId
-          const mine = normalizedPlayers.find(p => String(p.id) === String(wantId))
-          if (mine) {
-            setMyUid(String(mine.id))
-            if (roomKey) {
+          const seat = resolveSeatIdentity({
+            identityPlayerId: persisted?.playerId,
+            roster: normalizedPlayers,
+            currentMyUid: myUid || meId,
+          })
+          if (seat.ok && seat.myUid) {
+            setIdentityMismatch(false)
+            if (String(myUid || '') !== String(seat.myUid)) {
+              setMyUid(String(seat.myUid))
+            }
+            if (roomKey && seat.player) {
               setMatchIdentity(roomKey, {
-                playerId: String(mine.id),
-                playerName: String(mine.name || myName || ''),
+                playerId: String(seat.myUid),
+                playerName: String(seat.player.name || myName || ''),
               })
             }
+          } else if (seat.reason === 'identity-not-in-roster') {
+            setIdentityMismatch(true)
+            if (DEBUG_LOGS) {
+              console.warn('[NET] identidade da sala não está no roster — reentrada necessária', {
+                wantId: seat.wantId,
+              })
+            }
+          } else {
+            setIdentityMismatch(false)
           }
         } catch {}
       }
@@ -1471,12 +1506,18 @@ export default function App() {
   }
 
   function broadcastState(nextPlayers, nextTurnIdx, nextRound, gameOverState = gameOver, winnerState = winner, patch = {}) {
-    // ✅ CORREÇÃO: Captura baseline ANTES de qualquer mudança (para merge 3-way)
-    // O baseline é o estado ATUAL de players (antes de ser atualizado para nextPlayers)
-    // Isso permite fazer merge 3-way: baseline -> nextPlayers (local) vs baseline -> prevState.players (remoto)
-    if (!playersBeforeRef.current) {
-      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
-      console.log('[App] broadcastState - baseline capturado (estado atual antes da mudança):', playersBeforeRef.current.length, 'players')
+    // Baseline para diff: último roster commitado (ou estado atual se ainda não houver)
+    const baselineSnapshot = (
+      Array.isArray(playersBeforeRef.current) && playersBeforeRef.current.length > 0
+        ? playersBeforeRef.current
+        : (Array.isArray(players) ? players : [])
+    )
+    if (!playersBeforeRef.current || playersBeforeRef.current.length === 0) {
+      try {
+        playersBeforeRef.current = JSON.parse(JSON.stringify(baselineSnapshot))
+      } catch {
+        playersBeforeRef.current = baselineSnapshot
+      }
     }
     
     // ✅ MELHORIA: Incrementa versão sequencial
@@ -1518,13 +1559,6 @@ export default function App() {
     const safeTurnTimeSec = Object.prototype.hasOwnProperty.call(patch, 'turnTimeSec')
       ? normalizeTurnTime(patch.turnTimeSec)
       : normalizeTurnTime(turnTimeSecRef.current)
-    
-    // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
-    // Se não houver baseline, usa o estado atual como fallback
-    if (!playersBeforeRef.current) {
-      playersBeforeRef.current = JSON.parse(JSON.stringify(players))
-      console.log('[App] broadcastState - baseline capturado (fallback):', playersBeforeRef.current.length, 'players')
-    }
     
     // ✅ CORREÇÃO: Normaliza players antes de broadcast
     const normalizedPlayers = normalizePlayers(nextPlayers)
@@ -1677,26 +1711,23 @@ export default function App() {
         playersDeltaById = {}
         for (const pid of patch.playerDeltaIds) {
           const p = nextById.get(String(pid))
+          const base = (Array.isArray(playersBeforeRef.current) ? playersBeforeRef.current : [])
+            .find((x) => String(x?.id) === String(pid))
           if (p) {
-            playersDeltaById[String(pid)] = {
-              ...p,
-              _actionId: actionId
-            }
+            // Delta parcial (não reenvia o player inteiro)
+            const built = buildPlayersDeltaById(base ? [base] : [], [p], actionId)
+            if (built[String(pid)]) playersDeltaById[String(pid)] = built[String(pid)]
+            else playersDeltaById[String(pid)] = { _actionId: actionId }
           }
         }
       }
 
-      // Fallback seguro: detecta mudanças via baseline (shallow) sem deep compare
+      // Fallback: só campos que mudaram vs baseline (nunca full-player stale)
       if (Object.keys(playersDeltaById).length === 0) {
-        const baselineArr = Array.isArray(playersBeforeRef.current) ? playersBeforeRef.current : (Array.isArray(players) ? players : [])
-        const baseById = new Map(baselineArr.map(p => [String(p?.id), p]))
-        playersDeltaById = {}
-        for (const [pid, p] of nextById.entries()) {
-          const base = baseById.get(pid)
-          if (!base || didPlayerChange(base, p)) {
-            playersDeltaById[pid] = { ...p, _actionId: actionId }
-          }
-        }
+        const baselineArr = Array.isArray(playersBeforeRef.current) && playersBeforeRef.current.length > 0
+          ? playersBeforeRef.current
+          : (Array.isArray(players) ? players : [])
+        playersDeltaById = buildPlayersDeltaById(baselineArr, normalizedPlayers, actionId)
       }
 
       // ✅ evita spam/dedup: se nada mudou e não há patch de estado, não commita/broadcast
@@ -1780,6 +1811,13 @@ export default function App() {
         playersDeltaById,
         statePatch
       })
+
+      // Próximo diff usa o roster que acabamos de publicar (não o stale)
+      try {
+        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+      } catch {
+        playersBeforeRef.current = normalizedPlayers
+      }
       
       if (DEBUG_LOGS) console.log('[App] broadcastState (PATCH) - kind:', patchKind,
         'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
@@ -2533,9 +2571,20 @@ export default function App() {
             gameOver={gameOver}
             paused={!!turnLock}
           />
-          <span className="money">💵 $ {Number(myCash).toLocaleString()}</span>
+          <span className="money">
+            💵 ${' '}
+            {myCash == null
+              ? '—'
+              : Number(myCash).toLocaleString()}
+          </span>
         </div>
       </header>
+      {identityMismatch && (
+        <div className="identityMismatchBanner" role="status">
+          Não foi possível confirmar seu assento nesta partida neste dispositivo.
+          Use “Reentrar” na lista de salas com o mesmo navegador (identidade local).
+        </div>
+      )}
 
       <main className={`content${boardView === 'follow' ? ' content--boardFocus' : ''}`}>
         {/* alternância mobile de visualização do tabuleiro (só exibição;

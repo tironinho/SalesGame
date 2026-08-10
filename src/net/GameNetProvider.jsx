@@ -501,20 +501,23 @@ function GameNetProvider({ roomCode, hostId, children }) {
           activeRoomIdRef.current = fresh.id
           latestKnownUpdatedAtRef.current = fresh.updated_at
 
-          // Re-aplica updater no estado mais recente (faz merge)
+          // CAS retry: reaplicar updater no base fresco (já faz merge parcial de players).
+          // NÃO espalhar localState.players por cima de forma a ressuscitar cash stale —
+          // o retorno do updater já é o estado completo mergeado.
           base = fresh.state || {}
           const localState = typeof updater === 'function' ? (updater(base) || {}) : (updater || {})
 
-          // ✅ CORREÇÃO: Merge monotônico - garante que versão sempre avança
           const freshStateVersion = fresh.state?.stateVersion ?? 0
           const localStateVersion = localState?.stateVersion ?? 0
           const mergedStateVersion = Math.max(freshStateVersion, localStateVersion) + 1
 
-          // Merge: preserva campos do fresh que não foram alterados localmente
           next = {
-            ...base, // Estado remoto como base
-            ...localState, // Aplica mudanças locais
-            stateVersion: mergedStateVersion // ✅ Versão monotônica garantida
+            ...localState,
+            stateVersion: mergedStateVersion,
+          }
+          // Preserva players do updater (já mergeados em cima do fresh base)
+          if (!Array.isArray(next.players) && Array.isArray(base.players)) {
+            next.players = base.players
           }
         }
 
