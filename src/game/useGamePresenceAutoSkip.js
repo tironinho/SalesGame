@@ -13,6 +13,13 @@ import {
   touchLobbyPlayer,
   attemptHostTransferFromPresence,
 } from '../lib/lobbies.js'
+import {
+  getSharedSkipInFlight,
+  markSharedSkipKey,
+  setSharedSkipInFlight,
+  wasAlreadySkipped,
+  clearSharedSkipKeyIfStale,
+} from './sharedTurnSkipGuard.js'
 
 const DEV = !!import.meta.env.DEV
 
@@ -49,8 +56,6 @@ export function useGamePresenceAutoSkip({
   const gameOverRef = useRef(gameOver)
   const attemptSkipRef = useRef(attemptSkipTurn)
   const onStatusRef = useRef(onStatus)
-  const skipInFlightRef = useRef(false)
-  const lastSkippedTurnKeyRef = useRef(null)
   const statusRef = useRef(null)
 
   useEffect(() => { playersRef.current = players }, [players])
@@ -107,7 +112,7 @@ export function useGamePresenceAutoSkip({
     let cancelled = false
 
     const evaluate = async () => {
-      if (cancelled || skipInFlightRef.current) return
+      if (cancelled || getSharedSkipInFlight()) return
       if (gameOverRef.current) {
         setStatus(null)
         return
@@ -118,10 +123,12 @@ export function useGamePresenceAutoSkip({
         ? String(turnPlayerIdRef.current)
         : ''
       const curTurnSeq = Number(turnSeqRef.current) || 0
+      clearSharedSkipKeyIfStale(curTurnId, curTurnSeq)
       if (!curTurnId || roster.length === 0) {
         setStatus(null)
         return
       }
+      if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
       // Atualiza meu last_seen antes de decidir ausência (reentrada / poll).
       // allowRecreateIfSeated: restaura row apagada pelo cleanup só se assentado.
@@ -185,12 +192,10 @@ export function useGamePresenceAutoSkip({
 
       setStatus('waiting')
       if (!amCoordinator) return
-
-      const turnKey = `${curTurnId}|${curTurnSeq}`
-      if (lastSkippedTurnKeyRef.current === turnKey) return
+      if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
       devLog('[auto-skip] waiting')
-      skipInFlightRef.current = true
+      setSharedSkipInFlight(true)
       try {
         // Reconfirma presença imediatamente antes do commit
         try {
@@ -218,6 +223,7 @@ export function useGamePresenceAutoSkip({
         }
         if ((Number(turnSeqRef.current) || 0) !== curTurnSeq) return
         if (gameOverRef.current) return
+        if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
         const map2 = new Map(
           (presence2 || []).map((p) => [String(p.playerId), p.lastSeen])
@@ -239,16 +245,17 @@ export function useGamePresenceAutoSkip({
         const ok = attemptSkipRef.current?.({
           expectedTurnPlayerId: curTurnId,
           expectedTurnSeq: curTurnSeq,
+          reason: 'AUTO_SKIP_OFFLINE',
         })
         if (ok) {
-          lastSkippedTurnKeyRef.current = turnKey
+          markSharedSkipKey(curTurnId, curTurnSeq)
           setStatus('skipped')
           devLog('[auto-skip] committed')
         } else {
           devLog('[auto-skip] CAS lost')
         }
       } finally {
-        skipInFlightRef.current = false
+        setSharedSkipInFlight(false)
       }
     }
 

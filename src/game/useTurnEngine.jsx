@@ -3030,7 +3030,7 @@ export function useTurnEngine({
    * Reutiliza findNextAliveIdx (via planOfflineTurnSkip) + turnSeq + TURN patch.
    * Retorna true se o avanço local foi aplicado (CAS remoto pode ainda falhar).
    */
-  const skipAbsentTurn = React.useCallback(({ expectedTurnPlayerId, expectedTurnSeq } = {}) => {
+  const skipAbsentTurn = React.useCallback(({ expectedTurnPlayerId, expectedTurnSeq, reason } = {}) => {
     if (gameOverRef.current) return false
 
     const expectId = expectedTurnPlayerId != null
@@ -3039,6 +3039,8 @@ export function useTurnEngine({
     const expectSeq = Number.isFinite(Number(expectedTurnSeq))
       ? Number(expectedTurnSeq)
       : (Number(turnSeqRef.current) || 0)
+    const lastAction =
+      reason === 'AUTO_PASS_TIMER' ? 'AUTO_PASS_TIMER' : 'AUTO_SKIP_OFFLINE'
 
     if (!expectId) return false
     if (String(turnPlayerIdRef.current || '') !== expectId) return false
@@ -3083,7 +3085,7 @@ export function useTurnEngine({
       turnPlayerId: plan.nextTurnPlayerId,
       turnSeq: plan.nextTurnSeq,
       lastRollTurnKey: null,
-      lastAction: 'AUTO_SKIP_OFFLINE',
+      lastAction,
       turnLock: false,
       lockOwner: null,
       _expectTurnPlayerId: expectId,
@@ -3091,7 +3093,11 @@ export function useTurnEngine({
     })
 
     try {
-      appendLog?.('Turno avançado: jogador desconectado.')
+      if (lastAction === 'AUTO_PASS_TIMER') {
+        appendLog?.('Turno avançado: tempo esgotado.')
+      } else {
+        appendLog?.('Turno avançado: jogador desconectado.')
+      }
     } catch {}
 
     return true

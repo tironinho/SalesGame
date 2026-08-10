@@ -26,6 +26,13 @@ import {
   MIN_ROUNDS,
   normalizeMaxRounds,
 } from '../game/roundConfig'
+import {
+  DEFAULT_TURN_TIME_SEC,
+  TURN_TIME_PRESETS,
+  normalizeTurnTime,
+} from '../game/turnTimeConfig'
+import { mergeLobbyMatchSettings, readMatchConfigFromRoomState } from '../game/turnTimerLogic'
+import { useGameNet } from '../net/GameNetProvider.jsx'
 
 /* ---------- Ícones SVG inline (decorativos; sem dependência externa) ---------- */
 const svgProps = {
@@ -144,6 +151,13 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS)
+  const [turnTimeSec, setTurnTimeSec] = useState(DEFAULT_TURN_TIME_SEC)
+  const settingsSeededRef = useRef(false)
+
+  const net = useGameNet()
+  const netState = net?.state
+  const netCommit = net?.commit
+  const netReady = !!(net?.enabled && net?.ready)
 
   const triedEnsure   = useRef(false)
   const firstLoad     = useRef(true)
@@ -352,6 +366,7 @@ useEffect(() => {
     firstLoad.current = true
     nameSynced.current = false
     navigatedOnce.current = false
+    settingsSeededRef.current = false
     refreshAll()
     const off = onLobbyRealtime(lobbyId, () => refreshAll())
     // ✅ CORREÇÃO: Polling para garantir navegação em caso de race condition
@@ -367,6 +382,47 @@ useEffect(() => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobbyId])
+
+  // Fonte única: rooms.state.maxRounds + turnTimeSec (mesmo canal da partida).
+  useEffect(() => {
+    if (!netReady || !netState) return
+    const cfg = readMatchConfigFromRoomState(netState)
+    setMaxRounds(cfg.maxRounds)
+    setTurnTimeSec(cfg.turnTimeSec)
+  }, [netReady, netState?.maxRounds, netState?.turnTimeSec, netState?.stateId])
+
+  // Host publica defaults uma vez se a sala ainda não tiver config.
+  useEffect(() => {
+    if (!netReady || !amHost || typeof netCommit !== 'function') return
+    if (settingsSeededRef.current) return
+    const hasRounds = Object.prototype.hasOwnProperty.call(netState || {}, 'maxRounds')
+    const hasTime = Object.prototype.hasOwnProperty.call(netState || {}, 'turnTimeSec')
+    if (hasRounds && hasTime) {
+      settingsSeededRef.current = true
+      return
+    }
+    settingsSeededRef.current = true
+    netCommit((prev) => mergeLobbyMatchSettings(prev, {
+      maxRounds: hasRounds ? prev?.maxRounds : DEFAULT_MAX_ROUNDS,
+      turnTimeSec: hasTime ? prev?.turnTimeSec : DEFAULT_TURN_TIME_SEC,
+    }))
+  }, [netReady, amHost, netCommit, netState])
+
+  function publishMatchSettings(next) {
+    const cfg = {
+      maxRounds: normalizeMaxRounds(
+        next.maxRounds != null ? next.maxRounds : maxRounds
+      ),
+      turnTimeSec: normalizeTurnTime(
+        next.turnTimeSec != null ? next.turnTimeSec : turnTimeSec
+      ),
+    }
+    setMaxRounds(cfg.maxRounds)
+    setTurnTimeSec(cfg.turnTimeSec)
+    if (typeof netCommit === 'function') {
+      netCommit((prev) => mergeLobbyMatchSettings(prev, cfg))
+    }
+  }
 
   // Toggle otimista
   async function setReadyUI(next) {
@@ -416,6 +472,7 @@ useEffect(() => {
         players: normalized,
         me: { id: meId, name: meName },
         maxRounds: normalizeMaxRounds(maxRounds),
+        turnTimeSec: normalizeTurnTime(turnTimeSec),
         resumeExistingMatch: false,
       })
     } catch (e) {
@@ -433,6 +490,7 @@ useEffect(() => {
     : 0
   const maxPlayers = Number(lobby?.max_players) || null
   const roundsValue = normalizeMaxRounds(maxRounds)
+  const turnTimeValue = normalizeTurnTime(turnTimeSec)
   const roomName = String(lobby?.name || '').trim() || '…'
 
   return (
@@ -547,19 +605,55 @@ useEffect(() => {
                     type="button"
                     className={`playerLobbyRoundBtn${maxRounds === n ? ' playerLobbyRoundBtn--active' : ''}`}
                     aria-pressed={maxRounds === n}
-                    onClick={() => setMaxRounds(normalizeMaxRounds(n))}
+                    onClick={() => publishMatchSettings({ maxRounds: n })}
                   >
                     {n}
                   </button>
                 ))}
               </div>
               <p className="playerLobbyRoundSelection">
-                <b>{roundsValue}</b> {roundsValue === 1 ? 'rodada selecionada' : 'rodadas selecionadas'}
+                Rodadas: <b>{roundsValue}</b>
               </p>
             </>
           ) : (
             <p className="playerLobbyRoundSelection">
-              A duração da partida é definida pelo host (padrão: {DEFAULT_MAX_ROUNDS} rodadas).
+              Rodadas: <b>{roundsValue}</b>
+            </p>
+          )}
+          <p className="playerLobbyRoundNote">Somente o host pode alterar esta configuração.</p>
+        </section>
+
+        {/* ===== Tempo por jogada ===== */}
+        <section className="playerLobbyPanel">
+          <div className="playerLobbyPanelHeader">
+            <h3 className="playerLobbyPanelTitle"><IconFlag /> Tempo por jogada</h3>
+            <p className="playerLobbyPanelHint">
+              Contagem regressiva de cada turno ({TURN_TIME_PRESETS[0]}–{TURN_TIME_PRESETS[TURN_TIME_PRESETS.length - 1]}s; padrão {DEFAULT_TURN_TIME_SEC}s).
+            </p>
+          </div>
+
+          {amHost ? (
+            <>
+              <div className="playerLobbyRounds" role="group" aria-label="Tempo por jogada">
+                {TURN_TIME_PRESETS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`playerLobbyRoundBtn${turnTimeSec === n ? ' playerLobbyRoundBtn--active' : ''}`}
+                    aria-pressed={turnTimeSec === n}
+                    onClick={() => publishMatchSettings({ turnTimeSec: n })}
+                  >
+                    {n}s
+                  </button>
+                ))}
+              </div>
+              <p className="playerLobbyRoundSelection">
+                Tempo por jogada: <b>{turnTimeValue}s</b>
+              </p>
+            </>
+          ) : (
+            <p className="playerLobbyRoundSelection">
+              Tempo por jogada: <b>{turnTimeValue}s</b>
             </p>
           )}
           <p className="playerLobbyRoundNote">Somente o host pode alterar esta configuração.</p>

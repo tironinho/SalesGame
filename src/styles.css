@@ -2799,6 +2799,63 @@ html, body {
   color: #8b93a7;
 }
 
+/* --- cronômetro de turno --- */
+.turnTimer{
+  min-width: 88px;
+  padding: 4px 10px 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.28);
+  text-align: center;
+  line-height: 1.15;
+}
+.turnTimerLabel{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.65);
+}
+.turnTimerValue{
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.turnTimerTrack{
+  margin-top: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  overflow: hidden;
+}
+.turnTimerFill{
+  height: 100%;
+  border-radius: inherit;
+  background: #6d5dfc;
+  transition: width .2s linear;
+}
+.turnTimer--urgent{
+  border-color: rgba(255, 120, 90, .55);
+}
+.turnTimer--urgent .turnTimerValue{ color: #ffb4a2; }
+.turnTimer--urgent .turnTimerFill{ background: #ff7a59; }
+.turnTimer--paused{
+  opacity: .85;
+}
+.turnTimerPauseHint{
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,.55);
+}
+.topbarSecondary{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 /* --- painel inferior: status, mensagem e ações --- */
 .playerLobbyFooter{
   display: flex;

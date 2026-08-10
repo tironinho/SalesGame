@@ -12,6 +12,7 @@ import Controls from './components/panel/Controls.jsx'
 import DiceResult from './components/DiceResult.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
 import TutorialModal from './components/TutorialModal.jsx'
+import TurnTimer from './components/TurnTimer.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
 import DebugPanel from './components/DebugPanel.jsx'
 import { ModalProvider } from './modals/ModalContext.jsx'
@@ -49,6 +50,12 @@ import { useGameNet } from './net/GameNetProvider.jsx'
 // Gerenciamento de salas
 import { leaveRoom, getLobby, onLobbyRealtime } from './lib/lobbies'
 import { useGamePresenceAutoSkip } from './game/useGamePresenceAutoSkip.js'
+import { useTurnTimerAutoPass } from './game/useTurnTimerAutoPass.js'
+import {
+  DEFAULT_TURN_TIME_SEC,
+  normalizeTurnTime,
+} from './game/turnTimeConfig.js'
+import { computeTurnDeadlineAt } from './game/turnTimerLogic.js'
 
 // Tamanho da pista
 import { TRACK_LEN } from './data/track'
@@ -291,6 +298,14 @@ export default function App() {
   const [maxRounds, setMaxRounds] = useState(DEFAULT_MAX_ROUNDS)
   const maxRoundsRef = useRef(maxRounds)
   useEffect(() => { maxRoundsRef.current = maxRounds }, [maxRounds])
+
+  const [turnTimeSec, setTurnTimeSec] = useState(DEFAULT_TURN_TIME_SEC)
+  const turnTimeSecRef = useRef(turnTimeSec)
+  useEffect(() => { turnTimeSecRef.current = turnTimeSec }, [turnTimeSec])
+
+  const [turnDeadlineAt, setTurnDeadlineAt] = useState(null)
+  const turnDeadlineAtRef = useRef(turnDeadlineAt)
+  useEffect(() => { turnDeadlineAtRef.current = turnDeadlineAt }, [turnDeadlineAt])
   const [turnIdx, setTurnIdx] = useState(0)
   const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
@@ -482,6 +497,13 @@ export default function App() {
           } else {
             setMaxRounds(DEFAULT_MAX_ROUNDS)
           }
+          if (Object.prototype.hasOwnProperty.call(d, 'turnTimeSec')) {
+            setTurnTimeSec(normalizeTurnTime(d.turnTimeSec))
+          } else {
+            setTurnTimeSec(DEFAULT_TURN_TIME_SEC)
+          }
+          const startDeadline = computeTurnDeadlineAt(Date.now(), turnTimeSecRef.current)
+          setTurnDeadlineAt(startDeadline)
           setTurnSeq(0)
           setLastRollTurnKey(null)
           setLastRollUI(null)
@@ -608,6 +630,13 @@ export default function App() {
 
           if (Object.prototype.hasOwnProperty.call(d, 'maxRounds')) {
             setMaxRounds(normalizeMaxRounds(d.maxRounds))
+          }
+          if (Object.prototype.hasOwnProperty.call(d, 'turnTimeSec')) {
+            setTurnTimeSec(normalizeTurnTime(d.turnTimeSec))
+          }
+          if (Object.prototype.hasOwnProperty.call(d, 'turnDeadlineAt')) {
+            const dln = Number(d.turnDeadlineAt)
+            if (Number.isFinite(dln)) setTurnDeadlineAt(dln)
           }
           
           // ✅ CORREÇÃO: Merge inteligente - preserva propriedades locais do jogador local
@@ -1202,6 +1231,27 @@ export default function App() {
       setMaxRounds(DEFAULT_MAX_ROUNDS)
     }
 
+    if (Object.prototype.hasOwnProperty.call(incomingNetState, 'turnTimeSec')) {
+      setTurnTimeSec(normalizeTurnTime(incomingNetState.turnTimeSec))
+    } else if (isStartState) {
+      setTurnTimeSec(DEFAULT_TURN_TIME_SEC)
+    }
+
+    if (Object.prototype.hasOwnProperty.call(incomingNetState, 'turnDeadlineAt')) {
+      const d = Number(incomingNetState.turnDeadlineAt)
+      if (Number.isFinite(d)) setTurnDeadlineAt(d)
+      else if (incomingNetState.turnDeadlineAt == null) setTurnDeadlineAt(null)
+    } else if (isStartState) {
+      setTurnDeadlineAt(
+        computeTurnDeadlineAt(
+          Date.now(),
+          Object.prototype.hasOwnProperty.call(incomingNetState, 'turnTimeSec')
+            ? normalizeTurnTime(incomingNetState.turnTimeSec)
+            : turnTimeSecRef.current
+        )
+      )
+    }
+
     // --- roundFlags ---
     if (incomingNetState.roundFlags !== undefined) {
       if (Array.isArray(incomingNetState.roundFlags)) setRoundFlags(incomingNetState.roundFlags)
@@ -1464,6 +1514,10 @@ export default function App() {
     const safeMaxRounds = Object.prototype.hasOwnProperty.call(patch, 'maxRounds')
       ? normalizeMaxRounds(patch.maxRounds)
       : normalizeMaxRounds(maxRoundsRef.current)
+
+    const safeTurnTimeSec = Object.prototype.hasOwnProperty.call(patch, 'turnTimeSec')
+      ? normalizeTurnTime(patch.turnTimeSec)
+      : normalizeTurnTime(turnTimeSecRef.current)
     
     // ✅ CORREÇÃO: O baseline já foi capturado via useEffect quando players mudou
     // Se não houver baseline, usa o estado atual como fallback
@@ -1520,6 +1574,29 @@ export default function App() {
       patch.kind ||
       (patch.turnPlayerId !== undefined ? 'TURN' : 'PLAYER_DELTA')
 
+    // Deadline autoritativo: novo turno / START gera novo deadline; demais patches preservam.
+    const turnIdentityChanged = !!(
+      patch.isStartGame ||
+      patchKind === 'TURN' ||
+      (patch.turnPlayerId !== undefined && String(patch.turnPlayerId) !== String(turnPlayerId)) ||
+      (patch.turnSeq !== undefined && Number(patch.turnSeq) !== Number(turnSeq))
+    )
+    let nextTurnDeadlineAt = turnDeadlineAtRef.current
+    if (patch.turnDeadlineAt !== undefined) {
+      nextTurnDeadlineAt = patch.turnDeadlineAt == null ? null : Number(patch.turnDeadlineAt)
+    } else if (patchKind === 'ENDGAME' || finalGameOver) {
+      nextTurnDeadlineAt = null
+    } else if (turnIdentityChanged) {
+      nextTurnDeadlineAt = computeTurnDeadlineAt(Date.now(), safeTurnTimeSec)
+    }
+    if (Number.isFinite(Number(nextTurnDeadlineAt))) {
+      setTurnDeadlineAt(Number(nextTurnDeadlineAt))
+      turnDeadlineAtRef.current = Number(nextTurnDeadlineAt)
+    } else if (nextTurnDeadlineAt == null && (patchKind === 'ENDGAME' || finalGameOver)) {
+      setTurnDeadlineAt(null)
+      turnDeadlineAtRef.current = null
+    }
+
     // ✅ actionId (idempotência): gera se não vier do chamador
     const mkId = () => {
       try {
@@ -1571,6 +1648,8 @@ export default function App() {
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         maxRounds: safeMaxRounds,
+        turnTimeSec: safeTurnTimeSec,
+        turnDeadlineAt: nextTurnDeadlineAt,
         roundFlags: nextRoundFlags,
         turnSeq: 0,
         lastRollTurnKey: null,
@@ -1642,6 +1721,8 @@ export default function App() {
               turnPlayerId: nextTurnPlayerId,
               round: safeRound,
               maxRounds: safeMaxRounds,
+              turnTimeSec: safeTurnTimeSec,
+              turnDeadlineAt: nextTurnDeadlineAt,
               roundFlags: nextRoundFlags,
               // ✅ TURN não inclui gameOver/winner (só ENDGAME)
             }
@@ -1652,6 +1733,8 @@ export default function App() {
               winner: finalWinner,
               round: safeRound,
               maxRounds: safeMaxRounds,
+              turnTimeSec: safeTurnTimeSec,
+              turnDeadlineAt: null,
             }
           : {}),
         ...(patchKind === 'LOCK'
@@ -1731,9 +1814,10 @@ export default function App() {
     })
   }
 
-  function broadcastStart(nextPlayers, configuredMaxRounds = maxRoundsRef.current) {
+  function broadcastStart(nextPlayers, configuredMaxRounds = maxRoundsRef.current, configuredTurnTimeSec = turnTimeSecRef.current) {
     let normalized = normalizePlayers(nextPlayers)
     const startMaxRounds = normalizeMaxRounds(configuredMaxRounds)
+    const startTurnTimeSec = normalizeTurnTime(configuredTurnTimeSec)
 
     // HOST (quem clicou iniciar) joga primeiro:
     const hostIdx = normalized.findIndex(p => String(p?.id) === String(myUid))
@@ -1753,12 +1837,19 @@ export default function App() {
     clearRollingTimeout()
     setMaxRounds(startMaxRounds)
     maxRoundsRef.current = startMaxRounds
+    setTurnTimeSec(startTurnTimeSec)
+    turnTimeSecRef.current = startTurnTimeSec
+    const startDeadline = computeTurnDeadlineAt(Date.now(), startTurnTimeSec)
+    setTurnDeadlineAt(startDeadline)
+    turnDeadlineAtRef.current = startDeadline
 
     // rede
     broadcastState(normalized, 0, 1, false, null, {
       turnPlayerId: firstPlayerId,
       round: 1,
       maxRounds: startMaxRounds,
+      turnTimeSec: startTurnTimeSec,
+      turnDeadlineAt: startDeadline,
       gameOver: false,
       winner: null,
       roundFlags: Array(normalized.length).fill(false),
@@ -1774,6 +1865,7 @@ export default function App() {
           type: 'START',
           players: normalized,
           maxRounds: startMaxRounds,
+          turnTimeSec: startTurnTimeSec,
           source: meId,
         })
       } catch (e) { console.warn('[App] broadcastStart failed:', e) }
@@ -1957,6 +2049,21 @@ export default function App() {
     gameOver,
     attemptSkipTurn: skipAbsentTurn,
     onStatus: setTurnAbsenceStatus,
+  })
+
+  // Cronômetro autoritativo: mesmo coordinator do offline; CAS compartilhado.
+  useTurnTimerAutoPass({
+    enabled: phase === 'game' && !gameOver && (!!net?.enabled ? !!net?.ready : true),
+    lobbyId: currentLobbyId,
+    myUid: myUid || meId,
+    players,
+    turnPlayerId,
+    turnSeq,
+    turnDeadlineAt,
+    turnLock,
+    gameOver,
+    turnTimeSec,
+    attemptSkipTurn: skipAbsentTurn,
   })
 
   // Host visual durante game — fonte: lobbies.host_id (realtime de lobby já existente)
@@ -2314,10 +2421,18 @@ export default function App() {
             setMaxRounds(DEFAULT_MAX_ROUNDS)
             maxRoundsRef.current = DEFAULT_MAX_ROUNDS
           }
+          if (Object.prototype.hasOwnProperty.call(payload || {}, 'turnTimeSec')) {
+            const nextTime = normalizeTurnTime(payload.turnTimeSec)
+            setTurnTimeSec(nextTime)
+            turnTimeSecRef.current = nextTime
+          } else {
+            setTurnTimeSec(DEFAULT_TURN_TIME_SEC)
+            turnTimeSecRef.current = DEFAULT_TURN_TIME_SEC
+          }
           setRoundFlags(new Array(normalized.length).fill(false))
           setGameOver(false); setWinner(null)
           
-          console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null, maxRounds=', maxRoundsRef.current)
+          console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null, maxRounds=', maxRoundsRef.current, 'turnTimeSec=', turnTimeSecRef.current)
           setMeHud(h => {
             const mine = normalized.find(isMine)
             return {
@@ -2329,7 +2444,7 @@ export default function App() {
             }
           })
           setLog(['Jogo iniciado!'])
-          broadcastStart(normalized, maxRoundsRef.current)
+          broadcastStart(normalized, maxRoundsRef.current, turnTimeSecRef.current)
           setPhase('game')
         }}
         />
@@ -2409,6 +2524,15 @@ export default function App() {
 
         <div className="status topbarSecondary">
           <span>Rodada: {round}/{maxRounds}</span>
+          <TurnTimer
+            turnDeadlineAt={turnDeadlineAt}
+            turnTimeSec={turnTimeSec}
+            turnPlayerId={turnPlayerId}
+            turnSeq={turnSeq}
+            turnLock={turnLock}
+            gameOver={gameOver}
+            paused={!!turnLock}
+          />
           <span className="money">💵 $ {Number(myCash).toLocaleString()}</span>
         </div>
       </header>
@@ -2552,7 +2676,7 @@ export default function App() {
                 setTurnLockBroadcast(false)
 
                 // ✅ reinicia sincronizando para todos (resolve desync / estado preso)
-                broadcastStart(freshPlayers, maxRoundsRef.current)
+                broadcastStart(freshPlayers, maxRoundsRef.current, turnTimeSecRef.current)
 
                 setLog(['Novo jogo iniciado!'])
               }}
