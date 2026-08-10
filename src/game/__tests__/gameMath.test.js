@@ -135,7 +135,7 @@ describe('Game Math Validation', () => {
       })
       const { cap, inAtt } = capacityAndAttendance(player)
       
-      // Vendedores Comuns: 2*2 + Field Sales: 1*5 + Inside Sales: 1*5 = 4+5+5 = 14
+      // Vendedores Comuns: 2*2 + Field Sales: 1*4 + Inside Sales: 1*6 = 4+4+6 = 14
       expect(cap).toBe(14)
       expect(inAtt).toBe(1) // min(clients, cap) = min(1, 14) = 1
     })

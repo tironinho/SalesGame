@@ -15,15 +15,15 @@ import { previewPurchaseImpact } from '../game/purchasePreview.js'
  *      • { action:'BUY', qty, unitHire, unitExpense, totalHire, totalExpense,
  *          cashDelta, expenseDelta, revenueDelta, role:'FIELD', total, cost }
  *      • { action:'SKIP' }
- *  - unitHire?: number     (custo de contratação por vendedor — padrão 3000)
- *  - unitExpense?: number  (despesa mensal por vendedor — padrão 2000, “s/ certificado”)
+ *  - unitHire?: number     (custo de contratação por vendedor — padrão VENDOR_RULES.field.hire)
+ *  - unitExpense?: number  (despesa mensal por vendedor — padrão VENDOR_RULES.field.baseDesp)
  *  - attendsUpTo?: number  (qtd. clientes atendidos por vendedor — infográfico)
  *  - currentCash?: number  (saldo atual do jogador para validar compra)
  *  - currentPlayer?: object (snapshot somente leitura para preview)
  */
 export default function BuyFieldSalesModal({
   onResolve,
-  unitHire = 3000,
+  unitHire = VENDOR_RULES.field.hire,
   unitExpense = VENDOR_RULES.field.baseDesp,
   attendsUpTo = VENDOR_RULES.field.cap,
   currentCash = 0,

@@ -30,7 +30,7 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
   const { pushModal, awaitTop } = useModal()
 
   // Valores base (conforme regra centralizada; contratação é CAPEX e não faz parte do gameMath)
-  const unitHire = 3000
+  const unitHire = VENDOR_RULES.inside.hire
   const baseExpense = VENDOR_RULES.inside.baseDesp
   const baseRevenue = VENDOR_RULES.inside.baseFat
   const attendsUpTo = VENDOR_RULES.inside.cap

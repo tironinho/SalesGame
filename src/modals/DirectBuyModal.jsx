@@ -1,6 +1,6 @@
 // src/modals/DirectBuyModal.jsx
 import React, { useEffect, useRef } from 'react'
-import { ERP_RULES } from '../game/gameRules.js'
+import { ERP_RULES, VENDOR_RULES } from '../game/gameRules.js'
 
 /**
  * Modal “roteador de compras”.
@@ -57,13 +57,19 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'inside',
       title: 'Inside Sales',
-      lines: ['Contratação: $3000', 'Manutenção: $2000'],
+      lines: [
+        `Contratação: $${VENDOR_RULES.inside.hire}`,
+        `Manutenção: $${VENDOR_RULES.inside.baseDesp}`,
+      ],
       onBuy: open('INSIDE'),
     },
     {
       key: 'field',
       title: 'Field Sales',
-      lines: ['Contratação: $3000', 'Manutenção: $2000'],
+      lines: [
+        `Contratação: $${VENDOR_RULES.field.hire}`,
+        `Manutenção: $${VENDOR_RULES.field.baseDesp}`,
+      ],
       onBuy: open('FIELD'),
     },
     {
