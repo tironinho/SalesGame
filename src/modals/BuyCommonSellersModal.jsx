@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { VENDOR_RULES } from '../game/gameRules'
+import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildCommonSellersPurchaseDeltas } from '../game/commonSellersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
@@ -54,8 +54,22 @@ export default function BuyCommonSellersModal({
   const revenuePerSeller = VENDOR_RULES.comum.baseFat
 
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
-  const expenseAt = (certs) => VENDOR_RULES.comum.baseDesp + VENDOR_RULES.comum.incDesp * Math.max(0, certs)
-  const revenueAt = (certs) => VENDOR_RULES.comum.baseFat + VENDOR_RULES.comum.incFat * Math.max(0, certs)
+  const baseExpense = VENDOR_RULES.comum.baseDesp
+  const baseRevenue = VENDOR_RULES.comum.baseFat
+  const certRows = [
+    { id: 'personalizado', label: 'Azul (personalizado)' },
+    { id: 'fieldsales', label: 'Amarelo (Field Sales Collab)' },
+    { id: 'imersaomultiplier', label: 'Roxo (Imersões)' },
+  ].map((row) => {
+    const d = certDeltaForVendor('comum', row.id)
+    const fx = CERT_EFFECTS[row.id]
+    return {
+      ...row,
+      expense: d.desp === 0 ? '+$ 0 despesa' : `+${money(d.desp)} despesa`,
+      revenue: `+${money(d.fat)} fat / cliente-cap`,
+      note: `${Math.round((fx?.multFat || 0) * 100)}% fat · ${Math.round((fx?.multDesp || 0) * 100)}% desp`,
+    }
+  })
 
   const qtyNum = useMemo(() => {
     const n = Math.floor(Number(qty))
@@ -272,10 +286,14 @@ export default function BuyCommonSellersModal({
               <div className="vcTh">Despesa</div>
               <div className="vcTh">Faturamento</div>
             </div>
-            <Row label="S/ Certificado"     hire={money(unitHire)} expense={money(expenseAt(0))} revenue={money(revenueAt(0))} />
-            <Row label="Com 1 certificado"  hire="-"               expense={money(expenseAt(1))} revenue={money(revenueAt(1))} />
-            <Row label="Com 2 certificados" hire="-"               expense={money(expenseAt(2))} revenue={money(revenueAt(2))} />
-            <Row label="Com 3 certificados" hire="-"               expense={money(expenseAt(3))} revenue={money(revenueAt(3))} />
+            <div style={{ opacity: 0.9, marginBottom: 8, fontSize: 13 }}>
+              Base s/ certificado: despesa <b>{money(baseExpense)}</b> · fat <b>{money(baseRevenue)}</b> / cliente-cap.
+              Cada cor tem efeito diferente (acumulam). Capacidade não muda.
+            </div>
+            <Row label="S/ Certificado" hire={money(unitHire)} expense={money(baseExpense)} revenue={money(baseRevenue)} />
+            {certRows.map((row) => (
+              <Row key={row.id} label={row.label} hire={row.note} expense={row.expense} revenue={row.revenue} />
+            ))}
           </div>
         </div>
 

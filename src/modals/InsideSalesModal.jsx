@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { VENDOR_RULES } from '../game/gameRules'
+import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildInsideSalesPurchaseDeltas } from '../game/insideSalesPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
@@ -38,6 +38,22 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
   const expenseAt = (certs) => VENDOR_RULES.inside.baseDesp + VENDOR_RULES.inside.incDesp * Math.max(0, certs)
   const revenueAt = (certs) => VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * Math.max(0, certs)
+  const certCards = [
+    { id: 'personalizado', title: 'Azul', bg: '#1d4ed8', pill: 'AZUL' },
+    { id: 'fieldsales', title: 'Amarelo', bg: '#f1c40f', pill: 'AMARELO', dark: true },
+    { id: 'imersaomultiplier', title: 'Roxo', bg: '#8b5cf6', pill: 'ROXO', dark: true },
+  ].map((card) => {
+    const d = certDeltaForVendor('inside', card.id)
+    const fx = CERT_EFFECTS[card.id]
+    return {
+      ...card,
+      lines: [
+        `${Math.round((fx?.multFat || 0) * 100)}% fat · ${Math.round((fx?.multDesp || 0) * 100)}% desp`,
+        d.desp === 0 ? 'Despesa: +$ 0' : `Despesa: +${money(d.desp)}`,
+        `Faturamento: +${money(d.fat)} / cliente-cap`,
+      ],
+    }
+  })
 
   const qtyNum = useMemo(() => {
     const n = Number(qty)
@@ -143,8 +159,9 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
         <p className="purchasePreviewHint">
           O Inside Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
           gera faturamento pelas regras atuais da equipe e adiciona despesas mensais.
-          Treinamentos aumentam seu faturamento e suas despesas. Gestores certificados
-          podem potencializar o faturamento dos vendedores.
+          Cada cor de certificado tem efeito financeiro diferente (não são equivalentes).
+          Capacidade não muda com treinamento. Gestores certificados podem potencializar
+          o faturamento dos vendedores.
         </p>
 
         {/* Aviso (texto do manual) */}
@@ -183,7 +200,7 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
           </div>
         </div>
 
-        {/* Cards coloridos ilustrativos (certificações) */}
+        {/* Cards por COR (efeitos acumulam; não são níveis 1/2/3 genéricos) */}
         <div className="isCards">
           <Card
             title="Sem certificado"
@@ -192,42 +209,19 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
             lines={[
               `Contratação: $ ${unitHire.toLocaleString()}`,
               `Despesa: ${money(expenseAt(0))}`,
-              `Faturamento: ${money(revenueAt(0))}`
+              `Faturamento: ${money(revenueAt(0))}`,
             ]}
           />
-          <Card
-            title="1 certificado"
-            bg="#f1c40f"
-            pill="NÍVEL 1"
-            dark
-            lines={[
-              'Contratação: —',
-              `Despesa: ${money(expenseAt(1))}`,
-              `Faturamento: ${money(revenueAt(1))}`
-            ]}
-          />
-          <Card
-            title="2 certificados"
-            bg="#a78bfa"
-            pill="NÍVEL 2"
-            dark
-            lines={[
-              'Contratação: —',
-              `Despesa: ${money(expenseAt(2))}`,
-              `Faturamento: ${money(revenueAt(2))}`
-            ]}
-          />
-          <Card
-            title="3 certificados"
-            bg="#8b5cf6"
-            pill="NÍVEL 3"
-            dark
-            lines={[
-              'Contratação: —',
-              `Despesa: ${money(expenseAt(3))}`,
-              `Faturamento: ${money(revenueAt(3))}`
-            ]}
-          />
+          {certCards.map((card) => (
+            <Card
+              key={card.id}
+              title={card.title}
+              bg={card.bg}
+              pill={card.pill}
+              dark={card.dark}
+              lines={card.lines}
+            />
+          ))}
         </div>
 
         <PurchaseImpactPreview impact={purchaseImpact} />

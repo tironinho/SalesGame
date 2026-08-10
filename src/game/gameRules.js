@@ -50,8 +50,53 @@ export const MIX_RULES = {
 
 // Boost do Gestor por quantidade de certificados do tipo 'gestor'.
 // Regra exigida: índice 0 deve ser 0 (0 certificados => 0%).
+// P2-A2: boost do Gestor NÃO usa CERT_EFFECTS (só quantidade).
 export const MANAGER_BOOST_BY_CERT = [0, 0.20, 0.30, 0.40, 0.60]
 
 // Quantos colaboradores um Gestor cobre (regra usada no cálculo de cobertura).
 export const MANAGER_MANAGES_UP_TO = 7
+
+/**
+ * Efeitos econômicos por ID de certificado (P2-A2).
+ * Aplicam-se a Comum / Field / Inside via soma dos multiplicadores × incFat/incDesp do tipo.
+ * NÃO alteram capacidade. NÃO alteram o boost do Gestor.
+ *
+ * IDs = valores em trainingsByVendor[type]:
+ *  - personalizado      → Azul
+ *  - fieldsales         → Amarelo
+ *  - imersaomultiplier  → Roxo
+ */
+export const CERT_EFFECTS = {
+  personalizado:     { multFat: 1.0, multDesp: 1.0, color: 'azul',    label: 'Azul' },
+  fieldsales:        { multFat: 1.0, multDesp: 0.0, color: 'amarelo', label: 'Amarelo' },
+  imersaomultiplier: { multFat: 1.2, multDesp: 1.5, color: 'roxo',    label: 'Roxo' },
+}
+
+/** Soma dos multiplicadores dos IDs únicos (Set). IDs desconhecidos = 1.0/1.0 (compat). */
+export function sumCertMultipliers(certIds = []) {
+  let multFatSum = 0
+  let multDespSum = 0
+  for (const id of new Set(certIds || [])) {
+    const effect = CERT_EFFECTS[id]
+    if (effect) {
+      multFatSum += Number(effect.multFat || 0)
+      multDespSum += Number(effect.multDesp || 0)
+    } else if (id) {
+      multFatSum += 1
+      multDespSum += 1
+    }
+  }
+  return { multFatSum, multDespSum }
+}
+
+/** Incrementos absolutos de fat/desp de um certificado para um tipo de vendedor. */
+export function certDeltaForVendor(vendorType, certId) {
+  const rules = VENDOR_RULES[vendorType]
+  const effect = CERT_EFFECTS[certId]
+  if (!rules || !effect) return { fat: 0, desp: 0 }
+  return {
+    fat: Number(rules.incFat || 0) * Number(effect.multFat || 0),
+    desp: Number(rules.incDesp || 0) * Number(effect.multDesp || 0),
+  }
+}
 

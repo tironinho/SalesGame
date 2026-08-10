@@ -7,6 +7,7 @@ import {
   MIX_RULES,
   MANAGER_BOOST_BY_CERT,
   MANAGER_MANAGES_UP_TO,
+  sumCertMultipliers,
 } from './gameRules.js'
 
 // Back-compat: alguns testes/dev-tools podem importar estas constantes do gameMath.
@@ -53,6 +54,27 @@ export const hasYellow = (p) => Number(p?.am  || 0) > 0; // certificado amarelo
 export const hasPurple = (p) => Number(p?.rox || 0) > 0; // certificado roxo
 export const countManagerCerts = (p) => certCount(p, 'gestor');
 
+/** Multiplicadores somados dos certificados de um tipo (P2-A2 — por ID). */
+export function certMultSumsForType(player = {}, type) {
+  return sumCertMultipliers(player?.trainingsByVendor?.[type] || [])
+}
+
+/** Rate (fat por slot de capacidade) de Comum/Field/Inside com efeitos por cor. */
+export function vendorRateForType(player = {}, type) {
+  const rules = VENDOR_RULES[type]
+  if (!rules) return 0
+  const { multFatSum } = certMultSumsForType(player, type)
+  return Number(rules.baseFat || 0) + Number(rules.incFat || 0) * multFatSum
+}
+
+/** Despesa unitária (1 colaborador) de Comum/Field/Inside com efeitos por cor. */
+export function vendorUnitDespForType(player = {}, type) {
+  const rules = VENDOR_RULES[type]
+  if (!rules) return 0
+  const { multDespSum } = certMultSumsForType(player, type)
+  return Number(rules.baseDesp || 0) + Number(rules.incDesp || 0) * multDespSum
+}
+
 // ======= Cálculos principais =======
 export function capacityAndAttendance(player = {}) {
   // ✅ CORREÇÃO: Garante que valores negativos não afetem o cálculo
@@ -94,9 +116,6 @@ export function computeFaturamentoFor(player = {}) {
   const qField  = num(player.fieldSales);
   const qGestor = num(player.gestores ?? player.gestoresComerciais ?? player.managers);
 
-  const cComum  = certCount(player, 'comum');
-  const cInside = certCount(player, 'inside');
-  const cField  = certCount(player, 'field');
   const cGestor = certCount(player, 'gestor');
 
   const dynamicRevenue = Math.max(0, num(player.revenue));
@@ -106,10 +125,10 @@ export function computeFaturamentoFor(player = {}) {
   // Regras 1, 2 e 4: sem atendimento efetivo, não há faturamento de vendas
   if (cap <= 0 || inAtt <= 0) return dynamicRevenue;
 
-  // Receita por cliente atendido
-  const rateComum  = VENDOR_RULES.comum.baseFat + VENDOR_RULES.comum.incFat * cComum;
-  const rateInside = VENDOR_RULES.inside.baseFat + VENDOR_RULES.inside.incFat * cInside;
-  const rateField  = VENDOR_RULES.field.baseFat + VENDOR_RULES.field.incFat * cField;
+  // Receita por cliente atendido (P2-A2: soma por ID/cor — não só certCount)
+  const rateComum  = vendorRateForType(player, 'comum');
+  const rateInside = vendorRateForType(player, 'inside');
+  const rateField  = vendorRateForType(player, 'field');
 
   // Capacidade por tipo
   const capComum  = qComum * VENDOR_RULES.comum.cap;
@@ -158,24 +177,15 @@ export function computeDespesasFor(player = {}) {
   const qClientes = num(player.clients);
   const qColabs = qComum + qInside + qField + qGestor;
 
-  const cComum  = certCount(player, 'comum');
-  const cInside = certCount(player, 'inside');
-  const cField  = certCount(player, 'field');
+  // Gestor: despesa continua por QUANTIDADE (não usa CERT_EFFECTS).
   const cGestor = certCount(player, 'gestor');
 
   const mixLevel = String(player.mixProdutos || 'D').toUpperCase();
   const erpLevel = String(player.erpLevel || player.erpSistemas || 'D').toUpperCase();
 
-  const dComum =
-    (VENDOR_RULES.comum.baseDesp * qComum) +
-    (VENDOR_RULES.comum.incDesp * cComum * qComum);
-
-  const dInside =
-    (VENDOR_RULES.inside.baseDesp * qInside) +
-    (VENDOR_RULES.inside.incDesp * cInside * qInside);
-  const dField =
-    (VENDOR_RULES.field.baseDesp * qField) +
-    (VENDOR_RULES.field.incDesp * cField * qField);
+  const dComum  = vendorUnitDespForType(player, 'comum')  * qComum;
+  const dInside = vendorUnitDespForType(player, 'inside') * qInside;
+  const dField  = vendorUnitDespForType(player, 'field')  * qField;
 
   const dGestor =
     (VENDOR_RULES.gestor.baseDesp * qGestor) +

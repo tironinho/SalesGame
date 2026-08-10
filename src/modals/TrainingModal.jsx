@@ -1,7 +1,7 @@
 // src/modals/TrainingModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { MANAGER_BOOST_BY_CERT } from '../game/gameRules'
+import { CERT_EFFECTS, MANAGER_BOOST_BY_CERT } from '../game/gameRules'
 import { previewTrainingPurchaseImpact } from '../game/trainingPurchase.js'
 
 /**
@@ -282,13 +282,13 @@ export default function TrainingModal({
         <h2 style={S.title}>Escolha os vendedores e treinamentos que deseja comprar:</h2>
 
         <p className="purchasePreviewHint">
-          Cada certificação aumenta os resultados conforme o tipo de profissional treinado.
-          As cores também podem ser utilizadas em cartas de Sorte ou Revés.
-          Treinamentos não aumentam a capacidade de atendimento e não contratam novos profissionais.
+          Cada cor tem efeito financeiro diferente no profissional treinado (exceto Gestor,
+          cujo boost depende só da quantidade). Treinamentos não aumentam a capacidade
+          de atendimento e não contratam novos profissionais. Cores também entram em Sorte/Revés.
         </p>
         <p className="purchasePreviewHint">
-          As três certificações possuem o mesmo peso financeiro dentro de um mesmo tipo de profissional.
-          A cor diferencia condições e eventos do jogo.
+          Azul: 100% fat / 100% desp · Amarelo: 100% fat / 0% desp · Roxo: 120% fat / 150% desp
+          (sobre o incremento do tipo). Preço: $500 cada.
         </p>
 
         <div style={S.saldo}>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
@@ -382,6 +382,13 @@ export default function TrainingModal({
                       </div>
                       <div style={{whiteSpace:'pre-line', fontWeight:800, marginBottom:8}}>{p.label}</div>
                       <div className="trainingAppliedLine">{appliedLine}</div>
+                      <div style={{ fontSize: 12, opacity: 0.95, marginBottom: 6 }}>
+                        {(() => {
+                          const fx = CERT_EFFECTS[p.id]
+                          if (!fx) return null
+                          return `Efeito: ${Math.round(fx.multFat * 100)}% fat · ${Math.round(fx.multDesp * 100)}% desp`
+                        })()}
+                      </div>
                       <div style={{fontSize:22, fontWeight:900}}>$ {p.price.toLocaleString()}</div>
                     </button>
                   )

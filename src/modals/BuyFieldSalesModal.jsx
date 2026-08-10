@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { VENDOR_RULES } from '../game/gameRules'
+import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildFieldSalesPurchaseDeltas } from '../game/fieldSalesPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 
@@ -90,8 +90,22 @@ export default function BuyFieldSalesModal({
   ])
 
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
-  const expenseAt = (certs) => VENDOR_RULES.field.baseDesp + VENDOR_RULES.field.incDesp * Math.max(0, certs)
-  const revenueAt = (certs) => VENDOR_RULES.field.baseFat + VENDOR_RULES.field.incFat * Math.max(0, certs)
+  const baseExpense = VENDOR_RULES.field.baseDesp
+  const baseRevenue = VENDOR_RULES.field.baseFat
+  const certRows = [
+    { id: 'personalizado', label: 'Azul (personalizado)' },
+    { id: 'fieldsales', label: 'Amarelo (Field Sales Collab)' },
+    { id: 'imersaomultiplier', label: 'Roxo (Imersões)' },
+  ].map((row) => {
+    const d = certDeltaForVendor('field', row.id)
+    const fx = CERT_EFFECTS[row.id]
+    return {
+      ...row,
+      expense: d.desp === 0 ? '+$ 0 despesa' : `+${money(d.desp)} despesa`,
+      revenue: `+${money(d.fat)} fat / cliente-cap`,
+      note: `${Math.round((fx?.multFat || 0) * 100)}% fat · ${Math.round((fx?.multDesp || 0) * 100)}% desp`,
+    }
+  })
 
   const setBoundedQty = (val) => {
     const n = Math.floor(Number(val) || 0)
@@ -186,8 +200,8 @@ export default function BuyFieldSalesModal({
 
         <p className="purchasePreviewHint">
           O Field Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
-          gera faturamento e adiciona uma despesa mensal. Treinamentos aumentam seu
-          faturamento e suas despesas. Gestores certificados podem potencializar o
+          gera faturamento e adiciona uma despesa mensal. Cada cor de certificado tem
+          efeito financeiro diferente. Gestores certificados podem potencializar o
           faturamento dos vendedores.
         </p>
 
@@ -230,17 +244,21 @@ export default function BuyFieldSalesModal({
             Cada vendedor atende até <b>{attendsUpTo}</b> clientes.
           </div>
 
+          <div style={{ opacity: 0.9, marginBottom: 8, fontSize: 13 }}>
+            Base s/ certificado: despesa <b>{money(baseExpense)}</b> · fat <b>{money(baseRevenue)}</b> / cliente-cap.
+            Cada cor adiciona um efeito diferente (acumulam). Capacidade não muda.
+          </div>
           <div className="fsTable">
             <div className="fsTrHead">
               <div className="fsTh">Certificação</div>
-              <div className="fsTh">Contratação</div>
+              <div className="fsTh">Efeito</div>
               <div className="fsTh">Despesa</div>
               <div className="fsTh">Faturamento</div>
             </div>
-            <Row label="S/ Certificado"     hire={money(unitHire)} expense={money(expenseAt(0))} revenue={money(revenueAt(0))} />
-            <Row label="Com 1 certificado"  hire="-"               expense={money(expenseAt(1))} revenue={money(revenueAt(1))} />
-            <Row label="Com 2 certificados" hire="-"               expense={money(expenseAt(2))} revenue={money(revenueAt(2))} />
-            <Row label="Com 3 certificados" hire="-"               expense={money(expenseAt(3))} revenue={money(revenueAt(3))} />
+            <Row label="S/ Certificado" hire="base" expense={money(baseExpense)} revenue={money(baseRevenue)} />
+            {certRows.map((row) => (
+              <Row key={row.id} label={row.label} hire={row.note} expense={row.expense} revenue={row.revenue} />
+            ))}
           </div>
         </div>
 
