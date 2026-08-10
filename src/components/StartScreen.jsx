@@ -8,7 +8,6 @@ import TutorialModal, { hasSeenTutorial } from './TutorialModal.jsx'
 import bgImg from '/dynamic-data-visualization-3d.jpg'
 import logoGame from '/SalesGame_Logo-removebg-preview.png'
 import logoMultiplier from '/Multiplier-Copia.png'
-import coachPng from '/WhatsApp_Image_2025-06-24_at_16.47.00-removebg-preview.png'
 
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
@@ -99,9 +98,6 @@ export default function StartScreen({ onEnter }) {
           <img className="startBrandLogo" src={logoMultiplier} alt="Multiplier" />
         </div>
       </div>
-
-      {/* personagem à direita */}
-      <img className="startCoach" src={coachPng} alt="" draggable="false" />
 
       <TutorialModal
         open={tutorialOpen}

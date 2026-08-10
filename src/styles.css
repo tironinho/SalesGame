@@ -595,7 +595,7 @@ html, body {
 
 .startFooter{
   position:relative; z-index:1; display:flex; align-items:flex-end; justify-content:space-between;
-  gap:16px; padding:10px 16px 16px; min-height:72px;
+  gap:16px; padding:12px 20px 18px; min-height:72px;
 }
 .startLinks{ font-size:18px; line-height:1.25; text-shadow:0 2px 10px rgba(0,0,0,.55); }
 .startBrand{ display:flex; align-items:center; justify-content:flex-end; }
@@ -603,22 +603,14 @@ html, body {
   height:132px; width:auto; filter: drop-shadow(0 8px 18px rgba(0,0,0,.5));
 }
 
-.startCoach{
-  position:absolute; right:28px; bottom:0;
-  height:min(58vh, 520px); width:auto; pointer-events:none; user-select:none;
-  filter: drop-shadow(0 24px 50px rgba(0,0,0,.55));
-}
-
 /* responsivo */
 @media (max-width: 860px){
-  .startCoach{ height:min(36vh, 360px); right:8px; opacity:.95; }
   .startBrandLogo{ height:34px; }
   .startLinks{ font-size:16px; }
   .startHint{ font-size:14px; }
   .startSummary p{ font-size:13px; }
 }
 @media (max-width: 560px){
-  .startCoach{ display:none; }
   .startLinks{ font-size:14px; word-break:break-word; min-width:0; }
   /* rodapé: permite quebra de linha para logo e URL não disputarem a mesma linha */
   .startFooter{ flex-wrap:wrap; align-items:center; row-gap:8px; }
