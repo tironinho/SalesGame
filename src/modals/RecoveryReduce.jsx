@@ -1,6 +1,6 @@
 // src/modals/RecoveryReduce.jsx
 import React, { useEffect, useMemo, useState } from 'react'
-import S from './recoveryStyles'
+import './recoveryReduce.css'
 
 /**
  * Props:
@@ -108,34 +108,39 @@ export default function RecoveryReduce(props) {
     const disabled = isLevelD || !isOwned || soldKeys.has(card.key) || card.alreadyReduced || confirming
     const pal = GROUP_PALETTE[card.group] || GROUP_PALETTE.MIX
 
-    const cardStyle = {
-      ...S.option,
-      position: 'relative',
-      borderRadius: 14,
-      background: disabled ? 'rgba(148,163,184,.12)' : pal.soft,
-      border: isSel ? `2.5px solid ${pal.accent}` : `1px solid rgba(148,163,184,.25)`,
-      boxShadow: isSel ? `0 0 0 2px ${pal.ring}, 0 10px 24px ${pal.glow}` : 'none',
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? .35 : 1,
-      transition: 'transform .06s ease-out, box-shadow .12s ease-out, border-color .12s',
-    }
+    const statusLabel = isLevelD
+      ? 'básico'
+      : !isOwned
+      ? 'zerado'
+      : soldKeys.has(card.key)
+      ? 'vendido'
+      : card.alreadyReduced
+      ? 'já reduzido'
+      : 'adquirido'
 
-    const labelStyle = { fontWeight: 900, fontSize: 16, marginBottom: 8, color: disabled ? '#CBD5E1' : '#E5F9FF' }
-    const creditStyle = { fontWeight: 700, marginTop: 2, color: disabled ? '#A1A1AA' : '#FFFFFF' }
-    const pillStyle = {
-      position: 'absolute', top: 8, right: 8, fontSize: 11, padding: '3px 8px', borderRadius: 999,
-      background: disabled ? 'rgba(148,163,184,.22)' : pal.pillBg,
-      color: disabled ? '#E5E7EB' : pal.pillFg, border: `1px solid ${disabled ? 'rgba(148,163,184,.35)' : pal.ring}`,
-      letterSpacing: .2
-    }
+    const className = [
+      'rr-card',
+      isSel ? 'is-selected' : '',
+      disabled ? 'is-disabled' : '',
+      isOwned ? 'is-owned' : '',
+    ].filter(Boolean).join(' ')
 
     return (
       <button
         key={card.key}
+        type="button"
+        className={className}
         onClick={() => toggle(card)}
         disabled={disabled}
         aria-pressed={isSel}
-        style={cardStyle}
+        style={{
+          '--rr-accent': pal.accent,
+          '--rr-soft': pal.soft,
+          '--rr-ring': pal.ring,
+          '--rr-glow': pal.glow,
+          '--rr-pill-bg': pal.pillBg,
+          '--rr-pill-fg': pal.pillFg,
+        }}
         title={
           isLevelD
             ? 'Nível D é o básico e não pode ser reduzido.'
@@ -147,81 +152,91 @@ export default function RecoveryReduce(props) {
             ? 'Este nível já foi reduzido anteriormente. Compre o nível novamente para poder reduzir.'
             : ''
         }
-        onMouseDown={(e) => !disabled && (e.currentTarget.style.transform = 'translateY(1px)')}
-        onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+        onMouseDown={(e) => !disabled && e.currentTarget.classList.add('is-pressed')}
+        onMouseUp={(e) => e.currentTarget.classList.remove('is-pressed')}
+        onMouseLeave={(e) => e.currentTarget.classList.remove('is-pressed')}
       >
-        <span style={pillStyle}>
-          {isLevelD 
-            ? 'básico' 
-            : !isOwned
-            ? 'zerado'
-            : soldKeys.has(card.key) 
-            ? 'vendido' 
-            : card.alreadyReduced
-            ? 'já reduzido'
-            : 'adquirido'}
-        </span>
-
-        <div style={labelStyle}>{card.label}</div>
-        <div style={{ color: disabled ? '#A1A1AA' : '#BFEFFF' }}>Crédito ao reduzir:</div>
-        <div style={creditStyle}>${card.credit.toLocaleString?.() ?? card.credit}</div>
+        <span className="rr-badge">{statusLabel}</span>
+        <div className="rr-card-title">{card.label}</div>
+        <div className="rr-card-spacer" aria-hidden="true" />
+        <div className="rr-card-credit">
+          <div className="rr-card-credit-label">Crédito ao reduzir:</div>
+          <div className="rr-card-credit-value">
+            ${card.credit.toLocaleString?.() ?? card.credit}
+          </div>
+        </div>
       </button>
     )
   }
 
   return (
-    <div style={S.body}>
-      <div style={S.subHeader}><b style={{fontSize:20}}>REDUZIR NÍVEL MIX/ERP</b></div>
+    <div className="rr-root">
+      <h3 className="rr-title">REDUZIR NÍVEL MIX/ERP</h3>
 
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
-        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(255,255,255,0.05)'}}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>MIX PRODUTOS</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12 }}>
-            {mixCards.map(renderCard)}
-          </div>
-        </div>
+      <div className="rr-scroll">
+        <div className="rr-columns">
+          <section className="rr-group" aria-label="MIX PRODUTOS">
+            <h4 className="rr-group-title">MIX PRODUTOS</h4>
+            <div className="rr-levels">
+              {mixCards.map(renderCard)}
+            </div>
+          </section>
 
-        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(255,255,255,0.05)'}}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>ERP/SISTEMAS</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 12 }}>
-            {erpCards.map(renderCard)}
-          </div>
+          <section className="rr-group" aria-label="ERP/SISTEMAS">
+            <h4 className="rr-group-title">ERP/SISTEMAS</h4>
+            <div className="rr-levels">
+              {erpCards.map(renderCard)}
+            </div>
+          </section>
         </div>
       </div>
 
-      <div style={{ marginTop: 10, display:'flex', justifyContent:'space-between', alignItems:'center', opacity:.92 }}>
-        <div>Selecionados: <b>{selected.length}</b>  —  Total: <b>${total.toLocaleString()}</b></div>
-        <div style={{ fontSize: 12, opacity:.7 }}>Só é possível selecionar níveis adquiridos.</div>
-      </div>
+      <div className="rr-footer">
+        <div className="rr-summary">
+          <div>
+            Selecionados: <b>{selected.length}</b>
+            {'  —  '}
+            Total: <b>${total.toLocaleString()}</b>
+          </div>
+          <div className="rr-summary-hint">Só é possível selecionar níveis adquiridos.</div>
+        </div>
 
-      <div style={S.rowBtns}>
-        <button style={S.back} onClick={onBack} disabled={confirming}>← Voltar</button>
-        <button
-          style={{...S.cta, background:'#F59E0B', color:'#101010', fontWeight:900, opacity:selected.length && !confirming ? 1 : .55}}
-          onClick={() => {
-            if (!selected.length || confirming) return
-            setConfirming(true)
+        <div className="rr-actions">
+          <button
+            type="button"
+            className="rr-btn-back"
+            onClick={onBack}
+            disabled={confirming}
+          >
+            ← Voltar
+          </button>
+          <button
+            type="button"
+            className="rr-btn-reduce"
+            onClick={() => {
+              if (!selected.length || confirming) return
+              setConfirming(true)
 
-            // bloqueio otimista: marca como vendidos e limpa seleção
-            setSoldKeys(prev => {
-              const next = new Set(prev)
-              selected.forEach(c => next.add(c.key))
-              return next
-            })
+              // bloqueio otimista: marca como vendidos e limpa seleção
+              setSoldKeys(prev => {
+                const next = new Set(prev)
+                selected.forEach(c => next.add(c.key))
+                return next
+              })
 
-            const payload = { items: selected.map(c => ({ ...c, selected: true })), total }
-            LOG('confirm payload =>', payload)
-            onConfirm?.(payload)
+              const payload = { items: selected.map(c => ({ ...c, selected: true })), total }
+              LOG('confirm payload =>', payload)
+              onConfirm?.(payload)
 
-            // limpa seleção visual
-            setSelected([])
-            setConfirming(false)
-          }}
-          disabled={!selected.length || confirming}
-        >
-          REDUZIR
-        </button>
+              // limpa seleção visual
+              setSelected([])
+              setConfirming(false)
+            }}
+            disabled={!selected.length || confirming}
+          >
+            REDUZIR
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -1,0 +1,353 @@
+/* Estilos exclusivos da tela RecoveryReduce (Reduzir Nível MIX/ERP).
+   Não altera regras — só apresentação. */
+
+.rr-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Cabe sob o header do modal (card max 90vh) sem forçar scroll duplo */
+  max-height: calc(90vh - 68px);
+  min-height: 0;
+  padding: 14px 16px 16px;
+  box-sizing: border-box;
+  overflow: hidden; /* scroll só em .rr-scroll, se necessário */
+}
+
+.rr-title {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  padding: 0 2px;
+}
+
+/* Único scroll da tela (corpo). Colunas MIX/ERP NÃO rolam sozinhas. */
+.rr-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 2px 12px;
+  box-sizing: border-box;
+}
+
+.rr-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start; /* evita esticar coluna e criar “caixa” com scroll */
+  min-width: 0;
+}
+
+.rr-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: 0;
+  max-height: none;
+  height: auto;
+  overflow: visible; /* sem barra interna na coluna */
+  box-sizing: border-box;
+}
+
+.rr-group-title {
+  margin: 0;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e9ecf1;
+  padding: 0 2px;
+}
+
+.rr-levels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  overflow: visible;
+  min-width: 0;
+}
+
+.rr-card {
+  --rr-accent: #06b6d4;
+  --rr-soft: rgba(6, 182, 212, 0.14);
+  --rr-ring: rgba(6, 182, 212, 0.45);
+  --rr-glow: rgba(6, 182, 212, 0.35);
+  --rr-pill-bg: rgba(6, 182, 212, 0.18);
+  --rr-pill-fg: #9ff1ff;
+
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  /* Compacto o suficiente para 2×2 + rodapé caberem no desktop típico */
+  min-height: 112px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 8px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  text-align: center;
+  background: var(--rr-soft);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow: visible;
+  transition: transform 0.06s ease-out, box-shadow 0.12s ease-out, border-color 0.12s;
+}
+
+.rr-card:focus-visible {
+  outline: 2px solid var(--rr-accent);
+  outline-offset: 2px;
+}
+
+.rr-card.is-selected {
+  border: 2.5px solid var(--rr-accent);
+  box-shadow: 0 0 0 2px var(--rr-ring), 0 10px 24px var(--rr-glow);
+}
+
+.rr-card.is-disabled {
+  background: rgba(148, 163, 184, 0.12);
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.rr-card.is-owned:not(.is-disabled) {
+  opacity: 1;
+}
+
+.rr-card.is-pressed {
+  transform: translateY(1px);
+}
+
+.rr-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--rr-pill-bg);
+  color: var(--rr-pill-fg);
+  border: 1px solid var(--rr-ring);
+  white-space: nowrap;
+}
+
+.rr-card.is-disabled .rr-badge {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e5e7eb;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.rr-card-title {
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0;
+  font-weight: 900;
+  font-size: 15px;
+  line-height: 1.2;
+  color: #e5f9ff;
+  text-align: center;
+}
+
+.rr-card.is-disabled .rr-card-title {
+  color: #cbd5e1;
+}
+
+.rr-card-spacer {
+  flex: 1 1 auto;
+  min-height: 2px;
+  width: 100%;
+}
+
+.rr-card-credit {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.rr-card-credit-label {
+  font-size: 11px;
+  line-height: 1.25;
+  color: #bfefff;
+}
+
+.rr-card.is-disabled .rr-card-credit-label {
+  color: #a1a1aa;
+}
+
+.rr-card-credit-value {
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.2;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-card.is-disabled .rr-card-credit-value {
+  color: #a1a1aa;
+}
+
+/* Rodapé fixo abaixo das colunas (fora da área de scroll) */
+.rr-footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 14px 2px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #15161a;
+}
+
+.rr-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 16px;
+  opacity: 0.95;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 0 2px;
+}
+
+.rr-summary-hint {
+  font-size: 12px;
+  opacity: 0.75;
+  line-height: 1.35;
+}
+
+.rr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.rr-btn-back {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: #e9ecf1;
+  cursor: pointer;
+  font: inherit;
+}
+
+.rr-btn-back:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rr-btn-reduce {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #f59e0b;
+  color: #101010;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  font: inherit;
+}
+
+.rr-btn-reduce:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Desktop alto: respira um pouco mais sem forçar scroll */
+@media (min-width: 721px) and (min-height: 820px) {
+  .rr-card {
+    min-height: 120px;
+    padding: 12px 10px;
+    gap: 7px;
+  }
+
+  .rr-card-title {
+    font-size: 16px;
+  }
+
+  .rr-card-credit-label {
+    font-size: 12px;
+  }
+
+  .rr-card-credit-value {
+    font-size: 15px;
+  }
+
+  .rr-levels {
+    gap: 12px;
+  }
+
+  .rr-group {
+    padding: 14px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .rr-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .rr-root {
+    max-height: calc(90vh - 64px);
+  }
+
+  .rr-scroll {
+    padding-bottom: 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .rr-levels {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .rr-card {
+    min-height: 108px;
+    padding: 9px 7px;
+  }
+
+  .rr-card-title {
+    font-size: 14px;
+  }
+
+  .rr-actions {
+    justify-content: stretch;
+  }
+
+  .rr-btn-back,
+  .rr-btn-reduce {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
