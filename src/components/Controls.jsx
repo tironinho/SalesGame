@@ -15,6 +15,7 @@ export default function Controls({
   lockOwner = null,
   modalLocks = 0,
   gameOver = false,
+  section = 'all',
 }) {
 
   // AJUSTE: bloqueia tudo se o jogador atual estiver falido
@@ -82,27 +83,36 @@ export default function Controls({
     onAction?.({ type: 'BANKRUPT_MODAL' })
   }
 
+  const showSecondary = section === 'all' || section === 'secondary'
+  const showPrimary = section === 'all' || section === 'primary'
+
   return (
     <div className={`controls ${!canRoll ? 'is-wait' : ''} ${isBankrupt ? 'is-bankrupt' : ''}`}>
-      <button className="btn primary" onClick={onRecoveryClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
-        RECUPERAÇÃO FINANCEIRA
-      </button>
-
-      <button className="btn dark" onClick={onBankruptClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
-        DECLARAR FALÊNCIA
-      </button>
-
-      <div className="turnBox">
-        <div>Vez de: <b>{current?.name}</b></div>
-        <button
-          className="btn go"
-          onClick={roll}
-          disabled={!canRoll}
-          aria-disabled={!canRoll}
-        >
-          Rolar Dado &amp; Andar
+      {showSecondary && (
+        <button className="btn primary" onClick={onRecoveryClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
+          RECUPERAÇÃO FINANCEIRA
         </button>
-      </div>
+      )}
+
+      {showSecondary && (
+        <button className="btn dark" onClick={onBankruptClick} disabled={isBankrupt} aria-disabled={isBankrupt}>
+          DECLARAR FALÊNCIA
+        </button>
+      )}
+
+      {showPrimary && (
+        <div className="turnBox">
+          <div>Vez de: <b>{current?.name}</b></div>
+          <button
+            className="btn go"
+            onClick={roll}
+            disabled={!canRoll}
+            aria-disabled={!canRoll}
+          >
+            Rolar Dado &amp; Andar
+          </button>
+        </div>
+      )}
     </div>
   )
 }

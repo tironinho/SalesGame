@@ -2253,6 +2253,19 @@ export default function App() {
     : 'Aguarde o próximo jogador.'
   const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus && !hostPromotedHint
 
+  const onControlsAction = (act) => {
+    // Estado visual “Rolando…” — não altera a ação nem as regras
+    if (act?.type === 'ROLL' && controlsCanRoll) {
+      setIsRollingUI(true)
+      clearRollingTimeout()
+      rollingTimeoutRef.current = setTimeout(() => {
+        setIsRollingUI(false)
+        rollingTimeoutRef.current = null
+      }, 2800)
+    }
+    onAction(act)
+  }
+
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
     if (!DEBUG_LOGS) return
@@ -2660,30 +2673,12 @@ export default function App() {
         <aside className="side">
           <HUD totals={totals} players={players} />
 
-          {/* CONTROLES FIXOS NO RODAPÉ DA SIDEBAR */}
+          <div className="sideSecondary">
           <div className="controlsSticky">
             <DiceResult lastRoll={lastRollUI} isRolling={isRollingUI} />
-            <div
-              className={`nextStepHint${nextStepIsMyTurn ? ' nextStepHintMyTurn' : ''}`}
-              role="status"
-              aria-live="polite"
-            >
-              {nextStepHint}
-            </div>
             <Controls
-              onAction={(act) => {
-                // Estado visual “Rolando…” — não altera a ação nem as regras
-                if (act?.type === 'ROLL' && controlsCanRoll) {
-                  setIsRollingUI(true)
-                  clearRollingTimeout()
-                  rollingTimeoutRef.current = setTimeout(() => {
-                    setIsRollingUI(false)
-                    rollingTimeoutRef.current = null
-                  }, 2800)
-                }
-                // Encaminha para o motor de turnos
-                onAction(act)
-              }}
+              section="secondary"
+              onAction={onControlsAction}
               current={current}
               isMyTurn={isMyTurn}
               myUid={myUid}
@@ -2780,6 +2775,29 @@ export default function App() {
               }}
             />
           )}
+          </div>
+
+          <div className="turnPrimaryActions">
+            <div
+              className={`nextStepHint${nextStepIsMyTurn ? ' nextStepHintMyTurn' : ''}`}
+              role="status"
+              aria-live="polite"
+            >
+              {nextStepHint}
+            </div>
+            <Controls
+              section="primary"
+              onAction={onControlsAction}
+              current={current}
+              isMyTurn={isMyTurn}
+              myUid={myUid}
+              turnPlayerId={turnPlayerId}
+              turnLock={turnLock}
+              lockOwner={lockOwner}
+              modalLocks={modalLocks}
+              gameOver={gameOver}
+            />
+          </div>
         </aside>
       </main>
 
