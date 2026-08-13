@@ -69,8 +69,12 @@ import {
   shouldApplyIncomingState,
 } from './game/playerStateSync.js'
 
-// Tamanho da pista
-import { TRACK_LEN } from './data/track'
+// Versão do tabuleiro (persistida no JSON da partida)
+import {
+  getNewGameBoardVersion,
+  haveCompatibleBoardVersions,
+  resolveBoardVersion,
+} from './data/boardVersions.js'
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './game/roundConfig'
 
 // -------------------------------------------------------------
@@ -194,6 +198,9 @@ export default function App() {
   const [phase, setPhase] = useState('start') // 'start' | 'lobbies' | 'playersLobby' | 'game'
   const [currentLobbyId, setCurrentLobbyId] = useState(null)
   const [roomId, setRoomId] = useState(null)
+  const [boardVersion, setBoardVersion] = useState(getNewGameBoardVersion)
+  const boardVersionRef = useRef(boardVersion)
+  useEffect(() => { boardVersionRef.current = boardVersion }, [boardVersion])
 
   // ====== identidade por aba
   const meId = useMemo(() => getOrCreateTabPlayerId(), [])
@@ -490,6 +497,13 @@ export default function App() {
             console.log('[INIT_GUARD] init skipped: phase=start (BC START ignored)')
             return
           }
+          let incomingBoardVersion
+          try {
+            incomingBoardVersion = resolveBoardVersion(d.boardVersion)
+          } catch (error) {
+            console.error('[BOARD_VERSION] BC START rejeitado:', error)
+            return
+          }
           const mapped = Array.isArray(d.players) ? d.players.map(applyStarterKit) : []
           if (!mapped.length) return
 
@@ -503,6 +517,8 @@ export default function App() {
           } catch {}
 
           setPlayers(normalized, { source: 'BC_START' })
+          setBoardVersion(incomingBoardVersion)
+          boardVersionRef.current = incomingBoardVersion
           setTurnIdx(0)
           // ✅ CORREÇÃO: Define turnPlayerId no start (fonte autoritativa)
           const firstPlayerId = normalized[0]?.id ? String(normalized[0].id) : null
@@ -547,6 +563,21 @@ export default function App() {
           // O Supabase (netState) é a fonte autoritativa para multiplayer em rede
           if (net?.enabled) {
             console.log('[App] SYNC ignorado - net enabled, usando Supabase como autoridade única')
+            return
+          }
+
+          let incomingBoardVersion
+          try {
+            incomingBoardVersion = resolveBoardVersion(d.boardVersion)
+          } catch (error) {
+            console.error('[BOARD_VERSION] BC SYNC rejeitado:', error)
+            return
+          }
+          if (!haveCompatibleBoardVersions(boardVersionRef.current, incomingBoardVersion)) {
+            console.error('[BOARD_VERSION] BC SYNC rejeitado: versões diferentes na mesma partida', {
+              local: boardVersionRef.current,
+              incoming: incomingBoardVersion,
+            })
             return
           }
           
@@ -948,6 +979,18 @@ export default function App() {
       try {
         const commitResult = await netCommit(prev => {
           const prevState = prev || {}
+          const localBoardVersion = resolveBoardVersion(boardVersionRef.current)
+          const hasRemoteMatch = Array.isArray(prevState.players) && prevState.players.length > 0
+          if (
+            hasRemoteMatch &&
+            !haveCompatibleBoardVersions(prevState.boardVersion, localBoardVersion)
+          ) {
+            console.error('[BOARD_VERSION] patch bloqueado: sala usa outro mapa', {
+              local: localBoardVersion,
+              remote: resolveBoardVersion(prevState.boardVersion),
+            })
+            return prevState
+          }
 
         // Auto-skip / TURN guard: só aplica se turno/seq ainda forem os esperados.
         // Fail-safe contra double-skip em retry CAS do provider.
@@ -1048,6 +1091,7 @@ export default function App() {
         } = statePatch || {}
         const finalStatePatch = {
           ...publicStatePatch,
+          boardVersion: localBoardVersion,
           stateVersion: safeVersion, // ✅ CORREÇÃO: Versão monotônica garantida
           updatedAt: now,
           updatedBy: myUid
@@ -1173,6 +1217,25 @@ export default function App() {
     )
     const isStartState = (incomingNetState.kind === 'START') || (incomingNetState.isStartGame === true) || heuristicReset
 
+    let incomingBoardVersion
+    try {
+      incomingBoardVersion = resolveBoardVersion(incomingNetState.boardVersion)
+    } catch (error) {
+      console.error('[BOARD_VERSION] snapshot rejeitado:', error)
+      return false
+    }
+    if (
+      hydratedFromNetRef.current &&
+      !isStartState &&
+      !haveCompatibleBoardVersions(boardVersionRef.current, incomingBoardVersion)
+    ) {
+      console.error('[BOARD_VERSION] snapshot rejeitado: versões diferentes na mesma partida', {
+        local: boardVersionRef.current,
+        incoming: incomingBoardVersion,
+      })
+      return false
+    }
+
     const lastAppliedVer = Number(lastAppliedNetVersionRef.current) || 0
     const gate = shouldApplyIncomingState({
       isStart: isStartState,
@@ -1183,6 +1246,9 @@ export default function App() {
     })
 
     if (!gate.apply) return false
+
+    setBoardVersion(incomingBoardVersion)
+    boardVersionRef.current = incomingBoardVersion
 
     // marca aplicado (não exige monotonicidade estrita; nunca rebaixa version/stateId por snapshot mais antigo)
     if (versionIsNumber) {
@@ -1446,6 +1512,21 @@ export default function App() {
         await netCommit(prev => {
           const prevState = prev || {}
           const nextPartial = nextStatePartial || {}
+          const nextBoardVersion = resolveBoardVersion(
+            nextPartial.boardVersion ?? boardVersionRef.current
+          )
+          const hasRemoteMatch = Array.isArray(prevState.players) && prevState.players.length > 0
+          if (
+            nextPartial.kind !== 'START' &&
+            hasRemoteMatch &&
+            !haveCompatibleBoardVersions(prevState.boardVersion, nextBoardVersion)
+          ) {
+            console.error('[BOARD_VERSION] commit bloqueado: sala usa outro mapa', {
+              local: nextBoardVersion,
+              remote: resolveBoardVersion(prevState.boardVersion),
+            })
+            return prevState
+          }
           
           // ✅ CORREÇÃO: Merge 3-way para players (evita sobrescrever com snapshot stale)
           if (nextPartial.players && Array.isArray(nextPartial.players)) {
@@ -1512,6 +1593,7 @@ export default function App() {
             const next = {
               ...prevState,
               ...nextPartial,
+              boardVersion: nextBoardVersion,
               players: orderedPlayers.length > 0 ? orderedPlayers : nextPlayers,
               stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
             }
@@ -1530,6 +1612,7 @@ export default function App() {
           const next = {
             ...prevState,
             ...nextPartial,
+            boardVersion: nextBoardVersion,
             stateVersion: safeVersion // ✅ CORREÇÃO: Versão monotônica garantida
           }
           // ✅ TURNO: turnIdx não é mais persistido
@@ -1562,6 +1645,9 @@ export default function App() {
     // ✅ MELHORIA: Incrementa versão sequencial
     stateVersionRef.current = stateVersionRef.current + 1
     const currentVersion = stateVersionRef.current
+    const safeBoardVersion = resolveBoardVersion(
+      patch.boardVersion ?? boardVersionRef.current
+    )
     
     // ✅ CORREÇÃO: Usa patch para obter valores atualizados (evita stale closure)
     const nextRoundFlags = patch.roundFlags !== undefined ? patch.roundFlags : roundFlags
@@ -1689,6 +1775,7 @@ export default function App() {
 
     lastLocalStateRef.current = {
       players: normalizedPlayers,
+      boardVersion: safeBoardVersion,
       turnIdx: derivedTurnIdxForLocal,
       turnPlayerId: safeTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId seguro (monotônico)
       round: safeRound,
@@ -1718,6 +1805,7 @@ export default function App() {
       console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
       commitRemoteState({
         players: normalizedPlayers,
+        boardVersion: safeBoardVersion,
         turnPlayerId: safeTurnPlayerId,
         round: safeRound,
         maxRounds: safeMaxRounds,
@@ -1782,6 +1870,7 @@ export default function App() {
       // Apenas ENDGAME (patchKind === 'ENDGAME') inclui gameOver/winner
       const statePatch = {
         kind: patchKind,
+        boardVersion: safeBoardVersion,
         actionId,
         stateId,
         // ✅ REMOVIDO: gameOver/winner de patches comuns (vazava estado antigo)
@@ -1867,6 +1956,7 @@ export default function App() {
       try {
         const syncPayload = {
           type: 'SYNC',
+          boardVersion: safeBoardVersion,
           version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
           players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
           round: safeRound,
@@ -1893,6 +1983,9 @@ export default function App() {
 
   function broadcastStart(nextPlayers, configuredMaxRounds = maxRoundsRef.current, configuredTurnTimeSec = turnTimeSecRef.current) {
     let normalized = normalizePlayers(nextPlayers)
+    const startBoardVersion = getNewGameBoardVersion()
+    setBoardVersion(startBoardVersion)
+    boardVersionRef.current = startBoardVersion
     const startMaxRounds = normalizeMaxRounds(configuredMaxRounds)
     const startTurnTimeSec = normalizeTurnTime(configuredTurnTimeSec)
 
@@ -1922,6 +2015,7 @@ export default function App() {
 
     // rede
     broadcastState(normalized, 0, 1, false, null, {
+      boardVersion: startBoardVersion,
       turnPlayerId: firstPlayerId,
       round: 1,
       maxRounds: startMaxRounds,
@@ -1940,6 +2034,7 @@ export default function App() {
       try {
         bcRef.current?.postMessage?.({
           type: 'START',
+          boardVersion: startBoardVersion,
           players: normalized,
           maxRounds: startMaxRounds,
           turnTimeSec: startTurnTimeSec,
@@ -2112,6 +2207,7 @@ export default function App() {
     turnSeq,
     setTurnSeq,
     maxRounds,
+    boardVersion,
   })
 
   // Presença + auto-skip (Etapa 2) — só durante game multiplayer
@@ -2667,6 +2763,9 @@ export default function App() {
             players={players}
             turnIdx={turnIdx}
             onMeHud={setMeHud}
+            boardVersion={boardVersion}
+            me={players.find(isMine) || null}
+            matchId={currentLobbyId || roomId}
           />
         </div>
 
