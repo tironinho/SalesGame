@@ -17,9 +17,11 @@ test('crédito Tironi Tech aponta para o site oficial', () => {
   assert.match(credit, /noopener noreferrer/)
   assert.match(start, /TironiCredit/)
   assert.match(app, /shouldAutoOpenTutorial/)
-  assert.match(app, /markTutorialSessionShown/)
   assert.match(app, /TironiCredit/)
   assert.match(lobby, /TironiCredit/)
+  // Sessão do tour: marcada ao fechar (tutorialStorage via TutorialModal), não no App
+  const modal = readFileSync(join(root, 'src/components/TutorialModal.jsx'), 'utf8')
+  assert.match(modal, /markTutorialSessionShown|markTutorialSeen/)
 })
 
 test('crédito Tironi no tabuleiro usa rodapé flutuante (não some fora da viewport)', () => {

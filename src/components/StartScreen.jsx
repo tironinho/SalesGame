@@ -83,13 +83,13 @@ export default function StartScreen({ onEnter }) {
             className="startBtnSecondary"
             onClick={() => setTutorialOpen(true)}
           >
-            Tour / Como jogar
+            Como jogar
           </button>
         </div>
       </div>
 
-      {/* rodapé: crédito Tironi Tech */}
-      <div className="startFooter">
+      {/* rodapé: só Tironi Tech (sem Multiplier) */}
+      <div className="startFooter startFooter--solo">
         <div className="startBrand">
           <TironiCredit compact />
         </div>
@@ -98,6 +98,7 @@ export default function StartScreen({ onEnter }) {
       <TutorialModal
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
+        markSessionOnClose={false}
       />
     </div>
   )

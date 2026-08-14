@@ -10,8 +10,7 @@ import {
   markTutorialSeen,
 } from '../tutorialStorage.js'
 
-test('tutorial auto-open: sessão limpa abre; após mark não reabre na mesma sessão', () => {
-  // jsdom/node sem storage real — polyfill mínimo
+function installStorage() {
   const store = new Map()
   const session = new Map()
   globalThis.localStorage = {
@@ -24,23 +23,39 @@ test('tutorial auto-open: sessão limpa abre; após mark não reabre na mesma se
     setItem: (k, v) => { session.set(k, String(v)) },
     removeItem: (k) => { session.delete(k) },
   }
+  return { store, session }
+}
 
-  assert.equal(shouldAutoOpenTutorial(), true)
-  // Abrir NÃO marca sessão — só fechar/pular
-  assert.equal(sessionStorage.getItem(TUTORIAL_SESSION_KEY), null)
-  markTutorialSessionShown()
-  assert.equal(sessionStorage.getItem(TUTORIAL_SESSION_KEY), '1')
-  assert.equal(hasShownTutorialThisSession(), true)
-  assert.equal(shouldAutoOpenTutorial(), false)
+test('tutorial auto-open: sessão limpa abre; após mark não reabre na mesma partida', () => {
+  const { session } = installStorage()
+  const match = 'lobby-abc'
+
+  assert.equal(shouldAutoOpenTutorial(match), true)
+  assert.equal(sessionStorage.getItem(`${TUTORIAL_SESSION_KEY}:${match}`), null)
+  markTutorialSessionShown(match)
+  assert.equal(sessionStorage.getItem(`${TUTORIAL_SESSION_KEY}:${match}`), '1')
+  assert.equal(hasShownTutorialThisSession(match), true)
+  assert.equal(shouldAutoOpenTutorial(match), false)
   assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), null)
+  // Outra partida na mesma aba ainda pode abrir
+  assert.equal(shouldAutoOpenTutorial('lobby-xyz'), true)
 
   session.clear()
-  assert.equal(shouldAutoOpenTutorial(), true)
-  markTutorialSeen()
+  assert.equal(shouldAutoOpenTutorial(match), true)
+  markTutorialSeen({ matchKey: match })
   assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), '1')
-  assert.equal(shouldAutoOpenTutorial(), false)
+  assert.equal(shouldAutoOpenTutorial(match), false)
 
   // Nova sessão (session limpa) → abre de novo mesmo com localStorage marcado
   session.clear()
-  assert.equal(shouldAutoOpenTutorial(), true)
+  assert.equal(shouldAutoOpenTutorial(match), true)
+})
+
+test('StartScreen não bloqueia auto-open do tabuleiro (markSession=false)', () => {
+  installStorage()
+  const match = 'lobby-board'
+  assert.equal(shouldAutoOpenTutorial(match), true)
+  markTutorialSeen({ markSession: false })
+  assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), '1')
+  assert.equal(shouldAutoOpenTutorial(match), true)
 })

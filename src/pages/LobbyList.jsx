@@ -525,6 +525,10 @@ export default function LobbyList({ onEnterRoom, playerName }) {
             </div>
           </div>
         )}
+
+        <div className="lobbyTironiCredit">
+          <TironiCredit compact />
+        </div>
       </div>
 
       {createModalOpen && (
@@ -611,11 +615,6 @@ export default function LobbyList({ onEnterRoom, playerName }) {
           </div>
         </div>
       )}
-
-        <div className="lobbyTironiCredit">
-          <TironiCredit compact />
-        </div>
-      </div>
     </div>
   )
 }

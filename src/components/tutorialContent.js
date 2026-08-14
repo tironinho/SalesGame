@@ -1,6 +1,6 @@
 /**
- * Conteúdo do tour guiado — alinhado ao Manual e às regras do motor (gameRules).
- * Tabelas numéricas: ver tutorialGlossary.js (fonte única do glossário).
+ * Conteúdo do tour “Como jogar” — linguagem bem didática e detalhada.
+ * Tabelas numéricas: tutorialGlossary.js (fonte alinhada ao motor).
  * Não altera regras: só copy educacional.
  */
 
@@ -12,12 +12,13 @@ export { TOUR_GLOSSARY }
 const money = (n) => `$ ${Number(n || 0).toLocaleString('pt-BR')}`
 
 export const TOUR_WELCOME = {
-  title: 'Bem-vindo ao Sales Game',
-  subtitle: 'Tour guiado + glossário de valores',
+  title: 'Sales Game: vamos aprender juntos!',
+  subtitle: 'Explicação bem devagar, detalhe por detalhe',
   body: [
-    'Em poucos minutos você entende o objetivo, as casas, o painel (HUD), a recuperação financeira e a falência.',
-    'O glossário traz as tabelas oficiais de contratação, Mix, ERP, certificados, faturamento e despesas.',
-    'Pode seguir o tour completo ou pular — o botão “Como jogar” reabre tudo quando quiser.',
+    'Imagine que você ganhou uma lojinha de brinquedos… só que aqui a lojinha é uma empresa de vendas.',
+    'Você vai cuidar de quatro coisas: o DINHEIRO (caixa), as COISAS da empresa (bens), as PESSOAS que vendem e os CLIENTES.',
+    'Neste tour a gente explica tudo bem devagar: o que fazer no seu turno, o que cada casa faz, como o dinheiro entra e sai, e o caderninho de valores (glossário).',
+    'Pode seguir até o fim ou pular — o botão “Como jogar” abre de novo quando quiser.',
   ],
 }
 
@@ -25,109 +26,121 @@ export const TOUR_WELCOME = {
 export const TOUR_STEPS = [
   {
     id: 'objetivo',
-    title: 'Objetivo e vitória',
+    title: 'Qual é o objetivo do jogo?',
     icon: '🏆',
     body: [
-      'Você administra uma operação comercial: equipe, clientes, mix, ERP e caixa.',
-      'O vencedor é quem terminar com o maior PATRIMÔNIO.',
-      'Patrimônio = Caixa + Bens.',
-      'Em empate de patrimônio, desempata quem tiver maior caixa; se ainda empatar, pelo nome.',
+      'Pense assim: no final da partida, quem “ganhou” não é quem andou mais casas — é quem ficou mais RICO de verdade.',
+      'A gente mede isso com o PATRIMÔNIO. Patrimônio é a soma de duas coisas:',
+      '1) CAIXA = o dinheiro solto que você tem agora (como notas na carteira).',
+      '2) BENS = o valor das coisas que a empresa comprou (equipe, sistemas, mix, clientes etc. — como brinquedos caros que você já pagou).',
+      'Continha mágica: Patrimônio = Caixa + Bens.',
+      'Se dois jogadores empatam no patrimônio, ganha quem tem MAIS CAIXA. Se ainda empatar, decide pelo nome.',
     ],
-    highlight: 'Vitória = maior (Caixa + Bens) ao fim das rodadas.',
+    highlight: 'Ganha quem terminar com o maior Patrimônio (Caixa + Bens).',
   },
   {
     id: 'rodadas',
-    title: 'Rodadas e duração',
+    title: 'O que é uma rodada?',
     icon: '🔁',
     body: [
-      'O host escolhe a duração da partida entre 1 e 5 rodadas (padrão: 5).',
-      'Cada volta no tabuleiro passa pelo Faturamento do Mês e pelas Despesas — isso fecha o ciclo da rodada.',
-      'A partida termina após o número de rodadas configurado, ou se restar apenas um jogador ativo.',
-      `Início típico: Caixa ${money(MANUAL_CONSTANTS.startCash)}, Bens ${money(MANUAL_CONSTANTS.startBens)}, Mix D, ERP D, 1 Vendedor Comum e 1 cliente.`,
+      'Uma RODADA é como um “mês” da sua empresa.',
+      'O dono da sala (host) escolhe quantos meses o jogo vai ter: de 1 até 5. O padrão é 5.',
+      'Em cada volta no tabuleiro você passa por duas casas muito importantes: Faturamento (dinheiro ENTRANDO) e Despesas (dinheiro SAINDO).',
+      'Quando todos os jogadores vivos completam esse ciclo do mês, a rodada avança.',
+      `No começo você já recebe um kit de presente: Caixa ${money(MANUAL_CONSTANTS.startCash)}, Bens ${money(MANUAL_CONSTANTS.startBens)}, Mix nível D, ERP nível D, 1 Vendedor Comum e 1 cliente.`,
     ],
-    highlight: 'Mais rodadas = mais tempo para investir e recuperar.',
+    highlight: 'Mais rodadas = mais tempo para investir e crescer.',
   },
   {
     id: 'turno',
-    title: 'Seu turno',
+    title: 'Como funciona o SEU turno?',
     icon: '🎲',
     body: [
-      'Na sua vez, toque em “Rolar Dado & Andar”.',
-      'O peão anda as casas sorteadas; resolva o que a casa pedir (comprar, pagar, carta etc.).',
-      'Depois aguarde os outros jogadores — cada um joga na sua vez.',
-      'No mobile, use “Ver resumo / placar” para abrir o painel completo de estatísticas.',
+      'Quando for a sua vez, aparece o botão “Rolar Dado & Andar”.',
+      'Passo 1: toque no botão. O dado escolhe um número de 1 a 6.',
+      'Passo 2: seu peãozinho anda exatamente essas casas no tabuleiro.',
+      'Passo 3: a casa onde você parou (ou as casas que você atravessou) pode abrir uma janelinha pedindo uma decisão — comprar, pagar, ler uma carta…',
+      'Passo 4: resolva com calma. Quando terminar, é a vez do próximo amigo.',
+      'No celular deitado, se o painel estiver apertado, use “Ver resumo / placar” para ver seus números grandes.',
     ],
+    highlight: 'Um turno = rolar → andar → resolver a casa → passar a vez.',
   },
   {
     id: 'casas',
-    title: 'Casas do tabuleiro',
+    title: 'As casas do tabuleiro (cada uma tem um trabalho)',
     icon: '🗺️',
     body: [
-      'Toque numa casa no tabuleiro a qualquer momento para ver o que ela faz.',
-      'Escolha um tipo abaixo para o resumo. Valores exatos estão no glossário do tour.',
+      'O tabuleiro é um caminho em volta. Cada casa é um “lugarzinho” com uma missão diferente.',
+      'Toque nos botões coloridos abaixo para ver o que cada tipo de casa faz.',
+      'Os números exatinhos (preços) estão também no glossário, mais à frente — como um caderninho de consulta.',
     ],
     interactive: 'tiles',
   },
   {
     id: 'ciclo',
-    title: 'Faturamento e despesas',
+    title: 'Dinheiro entrando e saindo (o ciclo do mês)',
     icon: '💰',
     body: [
-      'Faturamento do Mês: recebe a venda do ciclo (equipe × clientes em atendimento × mix × ERP). Cruzar esta casa fecha a volta.',
-      'Despesas Operacionais: paga a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são cobrados aqui.',
-      'Se os clientes forem mais que a capacidade da equipe, o excesso não gera receita naquele ciclo (mas continua na carteira e gera despesa).',
+      'Imagine um cofre: no Faturamento o cofre RECEBE; nas Despesas o cofre PAGA as contas.',
+      'FATURAMENTO DO MÊS: é o dinheiro das vendas. Ele depende da sua equipe, de quantos clientes conseguem ser atendidos, do Mix e do ERP.',
+      'DESPESAS OPERACIONAIS: é a manutenção — pagar salários, manter Mix/ERP e cuidar da carteira de clientes. Se você pegou empréstimo, a cobrança também aparece aqui.',
+      'Atenção especial: se você tem MAIS clientes do que a equipe consegue atender, os clientes “a mais” não geram venda naquele mês (ficam ociosos). Mas eles ainda podem gerar DESPESA de carteira — por isso capacidade é importante!',
     ],
-    highlight: 'Capacidade insuficiente = clientes ociosos sem receita.',
+    highlight: 'Capacidade da equipe ≥ clientes = todo mundo trabalhando e gerando venda.',
   },
   {
     id: 'glossario',
-    title: 'Glossário — valores do jogo',
+    title: 'Caderninho de valores (glossário)',
     icon: '📘',
     body: [
-      'Tabelas oficiais usadas pelo motor: contratação, Mix, ERP, certificados, clientes, faturamento e despesas.',
-      'Consulte sempre que for decidir um investimento.',
+      'Aqui está o “manualzinho de preços” do jogo — igual o motor usa de verdade.',
+      'Role a lista com calma. Cada tabelinha responde: quanto custa comprar? quanto fatura? quanto gasta por mês?',
+      'Não precisa decorar tudo de uma vez. Volte aqui sempre que for decidir um investimento.',
     ],
     interactive: 'glossary',
   },
   {
     id: 'hud',
-    title: 'Painel (HUD) e placar',
+    title: 'O painel (HUD): seu painel de controle',
     icon: '📊',
     body: [
-      'O painel mostra a saúde da sua empresa. No celular landscape, abra pelo botão “Ver resumo / placar”.',
+      'O painel é como o painel de um foguete: mostra se a empresa está bem ou apertada.',
+      'Toque nos cartões abaixo para entender cada grupo de informações.',
     ],
     interactive: 'hud',
   },
   {
     id: 'recuperacao',
-    title: 'Recuperação financeira',
+    title: 'E se o dinheiro acabar? (Recuperação)',
     icon: '🛠️',
     body: [
-      'Use quando o caixa apertar — ou abra pelo botão “Recuperação Financeira”.',
-      'Objetivo: recuperar saldo e evitar falência. Escolha uma opção abaixo:',
+      'Às vezes a conta não fecha — acontece! O jogo te dá ferramentas de emergência.',
+      'Abra “Recuperação Financeira” e escolha COM CUIDADO (cada opção tem um preço ou uma consequência).',
+      'Veja as opções abaixo, bem explicadinhas:',
     ],
     interactive: 'recovery',
   },
   {
     id: 'falencia',
-    title: 'Falência',
+    title: 'Falência: o botão de “não aguento mais”',
     icon: '⚠️',
     body: [
-      'Se não houver como pagar obrigações e a recuperação não resolver, você pode declarar falência.',
-      'Jogador falido sai da disputa ativa (não joga mais turnos de compra).',
-      'Com vários jogadores, a partida pode continuar; com um só, a falência encerra a partida.',
-      'Declarar falência também aparece na recuperação financeira e no botão “Declarar Falência”.',
+      'Falência é o último recurso — como dizer “minha empresa não consegue continuar”.',
+      'Se você declara falência, sai da disputa ativa: não joga mais turnos de compra.',
+      'Se ainda existem outros jogadores vivos, a partida pode seguir sem você.',
+      'Se você era o único jogador ativo, a partida termina.',
+      'Dica de ouro: tente recuperar antes. Falência é o fim da sua corrida pelo patrimônio.',
     ],
-    highlight: 'Falência = sair do jogo ativo. Prefira recuperar antes.',
+    highlight: 'Prefira recuperar. Falência = sair do jogo ativo.',
   },
   {
     id: 'pronto',
-    title: 'Pronto para jogar',
+    title: 'Agora é com você!',
     icon: '🚀',
     body: [
-      'Resumo: invista com inteligência, mantenha capacidade ≥ clientes, pague despesas e maximize patrimônio.',
-      'Reabra este tour (e o glossário) a qualquer momento em “Como jogar”.',
-      'Boa sorte — venda valor e entregue resultados!',
+      'Resumo de herói: cuide do caixa, mantenha equipe suficiente para os clientes, invista com inteligência e maximize o patrimônio.',
+      'Lembre: Caixa + Bens = Patrimônio. É isso que decide o vencedor.',
+      'Qualquer dúvida, abra de novo em “Como jogar”. Boa sorte e boas vendas!',
     ],
   },
 ]
@@ -136,107 +149,107 @@ export const TOUR_TILES = [
   {
     key: 'CLIENTS',
     title: 'Carteira de Clientes',
-    body: `Aquisição ${money(MANUAL_CONSTANTS.clientPrice)}/cliente. Despesa de carteira ${money(MANUAL_CONSTANTS.clientPortfolioDesp)}/cliente no ciclo. Sem capacidade, o excedente não fatura.`,
+    body: `Aqui você CONSEGUE clientes novos (como fazer amiguinhos para a loja). Cada cliente custa ${money(MANUAL_CONSTANTS.clientPrice)}. Todo ciclo existe uma “mensalidade” da carteira de ${money(MANUAL_CONSTANTS.clientPortfolioDesp)} por cliente. Se a equipe não der conta de atender todo mundo, o excedente não fatura naquele mês.`,
   },
   {
     key: 'COMMON',
     title: 'Vendedor Comum',
-    body: `Capacidade ${VENDOR_RULES.comum.cap}. Contratação ${money(MANUAL_CONSTANTS.commonHire)}; desp. base ${money(VENDOR_RULES.comum.baseDesp)}; fat base ${money(VENDOR_RULES.comum.baseFat)}.`,
+    body: `É o “faz-tudo” da equipe. Atende até ${VENDOR_RULES.comum.cap} clientes. Contratar custa ${money(MANUAL_CONSTANTS.commonHire)}. Todo mês gasta cerca de ${money(VENDOR_RULES.comum.baseDesp)} de manutenção base e ajuda a faturar (base ${money(VENDOR_RULES.comum.baseFat)}). Treinamentos deixam ele ainda melhor.`,
   },
   {
     key: 'FIELD',
     title: 'Field Sales',
-    body: `Capacidade ${VENDOR_RULES.field.cap}. Contratação ${money(VENDOR_RULES.field.hire)}; desp. base ${money(VENDOR_RULES.field.baseDesp)}; fat base ${money(VENDOR_RULES.field.baseFat)}.`,
+    body: `Vendedor de rua / externo: vende com ticket maior. Capacidade ${VENDOR_RULES.field.cap} (atende até ${VENDOR_RULES.field.cap} clientes). Contratação ${money(VENDOR_RULES.field.hire)}; desp. base ${money(VENDOR_RULES.field.baseDesp)}; fat base ${money(VENDOR_RULES.field.baseFat)}. Bom quando você quer faturar forte por pessoa.`,
   },
   {
     key: 'INSIDE',
     title: 'Inside Sales',
-    body: `Capacidade ${VENDOR_RULES.inside.cap}. Contratação ${money(VENDOR_RULES.inside.hire)}; desp. base ${money(VENDOR_RULES.inside.baseDesp)}; fat base ${money(VENDOR_RULES.inside.baseFat)}.`,
+    body: `Vendedor de escritório / telefone: atende mais gente. Capacidade ${VENDOR_RULES.inside.cap} (atende até ${VENDOR_RULES.inside.cap} clientes). Contratação ${money(VENDOR_RULES.inside.hire)}; desp. base ${money(VENDOR_RULES.inside.baseDesp)}; fat base ${money(VENDOR_RULES.inside.baseFat)}. Ótimo para volume de atendimento.`,
   },
   {
     key: 'MANAGER',
     title: 'Gestor Comercial',
-    body: `Contratação ${money(MANUAL_CONSTANTS.managerHire)}; desp. base ${money(VENDOR_RULES.gestor.baseDesp)}. Não atende clientes; impulsiona o time conforme certificados (ver glossário).`,
+    body: `O chefe do time! Não atende cliente diretamente, mas impulsiona o faturamento da equipe conforme os certificados. Contratação ${money(MANUAL_CONSTANTS.managerHire)}; desp. base ${money(VENDOR_RULES.gestor.baseDesp)}. Veja a tabelinha de boost no glossário.`,
   },
   {
     key: 'ERP',
     title: 'ERP / Sistemas',
-    body: `Níveis A–D. Ex.: D compra ${money(ERP_RULES.D.price)} (fat ${money(ERP_RULES.D.fat)} / desp ${money(ERP_RULES.D.desp)} por colab.). Tabelas no glossário.`,
+    body: `É o “computador inteligente” da empresa (níveis A–D, um de cada vez). Custa para comprar e depois gera fat/desp POR COLABORADOR. Exemplo nível D: compra ${money(ERP_RULES.D.price)}, fat ${money(ERP_RULES.D.fat)} e desp ${money(ERP_RULES.D.desp)} por pessoa da equipe. Tabelas completas no glossário.`,
   },
   {
     key: 'MIX',
     title: 'Mix de Produtos',
-    body: `Níveis A–D. Ex.: D compra ${money(MIX_PURCHASE_PRICES.D)} (fat ${money(MIX_RULES.D.fatPerClient)} / desp ${money(MIX_RULES.D.despPerClient)} por cliente). Tabelas no glossário.`,
+    body: `É a “prateleira” de produtos (níveis A–D). Quanto mais rica a prateleira, mais cada cliente pode faturar — e também mais custa manter. Exemplo D: compra ${money(MIX_PURCHASE_PRICES.D)}, fat ${money(MIX_RULES.D.fatPerClient)} e desp ${money(MIX_RULES.D.despPerClient)} por cliente. Detalhes no glossário.`,
   },
   {
     key: 'TRAINING',
     title: 'Treinamento',
-    body: `Certificados Azul / Amarelo / Roxo a ${money(MANUAL_CONSTANTS.trainingPrice)} cada. Alteram fat/desp da equipe (e boost do gestor). Detalhes no glossário.`,
+    body: `Aqui você compra “medalhinhas” (certificados) Azul, Amarelo ou Roxo por ${money(MANUAL_CONSTANTS.trainingPrice)} cada. Elas melhoram o desempenho dos vendedores e o efeito do gestor. É como mandar o time para um cursinho.`,
   },
   {
     key: 'DIRECT_BUY',
     title: 'Direito de Compra',
-    body: 'Escolha exatamente um investimento livre agora (equipe, mix, ERP, treinamento ou clientes) — preços iguais às casas específicas.',
+    body: 'Uma chance especial: escolha EXATAMENTE UM investimento livre agora (equipe, mix, ERP, treinamento ou clientes). Os preços são os mesmos das casas específicas — não é promoção, é liberdade de escolher.',
   },
   {
     key: 'LUCK',
     title: 'Sorte & Revés',
-    body: 'Compre a carta do topo: ganho/isenção (sorte) ou multa/perda/queda de produtividade (revés).',
+    body: 'Puxe a carta do topo! Pode ser uma surpresa boa (sorte: ganhar dinheiro ou ficar isento de algo) ou uma surpresa chata (revés: multa, perda ou queda de produtividade). É a casa da emoção.',
   },
   {
     key: 'REVENUE',
     title: 'Faturamento do Mês',
-    body: 'Receba a venda do ciclo (equipe + Mix + ERP). Fórmulas e tabelas no glossário.',
+    body: 'Aqui o dinheiro das vendas ENTRA no caixa. A conta junta equipe + Mix + ERP (só entram os clientes que a equipe consegue atender). Cruzar esta casa marca o fechamento da volta/mês.',
   },
   {
     key: 'EXPENSES',
     title: 'Despesas Operacionais',
-    body: 'Pague a manutenção do mês (equipe, Mix, ERP, carteira). Empréstimos também são quitados aqui.',
+    body: 'Aqui o dinheiro SAI para pagar as contas do mês: equipe, Mix, ERP e carteira de clientes. Empréstimo pendente também é cobrado aqui. Sem caixa suficiente, prepare a recuperação!',
   },
 ]
 
 export const TOUR_HUD = [
   {
     title: 'Financeiro',
-    body: 'Faturamento (entrada do ciclo), Manutenção (custos), Empréstimos e Bens (ativos / garantia).',
+    body: 'É a parte do “quanto eu tenho de dinheiro?”. Mostra o Caixa (notas na carteira), o que entrou no mês (faturamento), o que sai de manutenção, se tem empréstimo e o valor dos Bens (suas “coisas”, que também servem de garantia).',
   },
   {
     title: 'Estrutura comercial',
-    body: 'Contagem de Vendedores Comuns, Field Sales, Inside Sales e Gestores.',
+    body: 'Conta as pessoas do time: Vendedores Comuns, Field Sales, Inside Sales e Gestores. Mais gente = mais clientes você consegue atender… mas também mais salário todo mês.',
   },
   {
     title: 'Infraestrutura',
-    body: 'Nível atual de Mix de Produtos e ERP/Sistemas (A–D).',
+    body: 'Mostra o nível do Mix (prateleira de produtos) e do ERP (computador/sistema). Começa em D (simples) e pode subir até A (mais forte e mais caro de comprar e manter).',
   },
   {
     title: 'Certificações',
-    body: 'Quantidade de certificados Azul, Amarelo e Roxo obtidos em Treinamento.',
+    body: 'São as medalhinhas Azul, Amarelo e Roxo que o time ganha no Treinamento. Cada cor muda um pouquinho o quanto a pessoa vende e quanto custa mantê-la.',
   },
   {
     title: 'Operação',
-    body: 'Clientes, Capacidade da equipe e quantos estão Em Atendimento.',
+    body: 'Aqui você vê: quantos clientes tem, qual a capacidade total da equipe e quantos estão “Em Atendimento” (sempre o menor entre clientes e capacidade — ninguém atende o que não cabe!).',
   },
   {
     title: 'Placar',
-    body: 'Caixa e Patrimônio (Caixa + Bens) de cada jogador — critério de vitória.',
+    body: 'É o placar da corrida entre amigos: Caixa e Patrimônio de cada um. No final da partida, quem tiver o maior Patrimônio (Caixa + Bens) é o campeão!',
   },
 ]
 
 export const TOUR_RECOVERY = [
   {
     title: 'Empréstimo',
-    body: `Aumenta o caixa agora (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% dos seus Bens). Único por partida; cobrado nas Despesas.`,
+    body: `Peça dinheiro emprestado agora (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% dos seus Bens como garantia). Só pode 1 vez na partida. Depois a cobrança aparece nas Despesas — como devolver o lanche que pediu emprestado.`,
   },
   {
-    title: 'Reduzir',
-    body: `Baixa níveis de Mix ou ERP e recebe ~${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor pago de volta ao caixa.`,
+    title: 'Reduzir Mix/ERP',
+    body: `Abaixa o nível da prateleira (Mix) ou do sistema (ERP) e recebe de volta cerca de ${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor. Você fica “mais simples”, mas ganha caixa imediato.`,
   },
   {
     title: 'Demitir',
-    body: `Remove colaboradores e recebe ~${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor de contratação — reduz equipe e custos futuros.`,
+    body: `Manda embora colaboradores e recebe cerca de ${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor de contratação. Cuidado: a capacidade cai e pode sobrar cliente sem atendimento.`,
   },
   {
     title: 'Declarar falência',
-    body: 'Último recurso: você sai da disputa ativa se não houver como continuar.',
+    body: 'Último botão de emergência: você sai da disputa ativa. Use só se realmente não houver como continuar.',
   },
 ]

@@ -84,3 +84,11 @@ test('TutorialModal permite pular, seguir e renderiza glossário', () => {
   assert.match(modal, /interactive === 'recovery'/)
   assert.match(modal, /TOUR_GLOSSARY/)
 })
+
+test('tour usa linguagem didática e detalhada', () => {
+  assert.match(TOUR_WELCOME.body.join(' '), /lojinha|empresa|passo a passo|devagar/i)
+  const objetivo = TOUR_STEPS.find((s) => s.id === 'objetivo')
+  assert.match(objetivo.body.join(' '), /CAIXA|BENS|Patrimônio/i)
+  const glossario = TOUR_GLOSSARY.find((s) => s.id === 'faturamento')
+  assert.ok(glossario.bullets.some((b) => /1\)|passo/i.test(b)))
+})

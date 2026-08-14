@@ -2225,8 +2225,9 @@ export default function App() {
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
-  // ====== tutorial "Como jogar" — auto-open 1× por sessão ao entrar no tabuleiro
+  // ====== tutorial "Como jogar" — auto-open 1× por partida ao entrar no tabuleiro
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  const tutorialAutoOpenedRef = useRef('')
   // Dica progressiva (1× por tipo de casa / sessão) — só UI local
   const [progressiveTip, setProgressiveTip] = useState(null)
   const progressiveTipTimerRef = useRef(null)
@@ -2234,19 +2235,40 @@ export default function App() {
   // Não depender da referência de `players` (sync contínuo cancelava o timeout)
   const gameRosterReady =
     phase === 'game' && Array.isArray(players) && players.length > 0
+  const tutorialMatchKey = String(currentLobbyId || '')
 
   useEffect(() => {
-    if (!gameRosterReady) return undefined
-    if (!shouldAutoOpenTutorial()) return undefined
+    if (!gameRosterReady || !tutorialMatchKey) return undefined
+
+    if (!shouldAutoOpenTutorial(tutorialMatchKey)) {
+      console.log('[tutorial] skip auto-open — já fechado nesta partida', tutorialMatchKey)
+      return undefined
+    }
+    if (tutorialAutoOpenedRef.current === tutorialMatchKey) {
+      console.log('[tutorial] skip auto-open — já disparado nesta montagem', tutorialMatchKey)
+      return undefined
+    }
 
     const t = window.setTimeout(() => {
-      if (!shouldAutoOpenTutorial()) return
-      console.log('[tutorial] auto-open no tabuleiro')
+      if (!shouldAutoOpenTutorial(tutorialMatchKey)) {
+        console.log('[tutorial] skip auto-open no timeout — sessão marcada', tutorialMatchKey)
+        return
+      }
+      tutorialAutoOpenedRef.current = tutorialMatchKey
+      console.log('[tutorial] auto-open no tabuleiro', tutorialMatchKey)
       setTutorialOpen(true)
-    }, 400)
+    }, 700)
 
     return () => window.clearTimeout(t)
-  }, [gameRosterReady])
+  }, [gameRosterReady, tutorialMatchKey])
+
+  // Saiu do tabuleiro → permite auto-open de novo na próxima partida
+  useEffect(() => {
+    if (phase === 'game') return undefined
+    tutorialAutoOpenedRef.current = ''
+    setTutorialOpen(false)
+    return undefined
+  }, [phase])
 
   const handleTileVisit = React.useCallback((kind) => {
     const tip = consumeTileTip(kind)
@@ -3101,10 +3123,12 @@ export default function App() {
         />
       )}
 
-      {/* Fora do OrientationGuard + z-index acima do gate de girar/tela cheia */}
+      {/* Fora do OrientationGuard + portal no body (z-index acima do gate) */}
       <TutorialModal
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
+        matchKey={tutorialMatchKey}
+        markSessionOnClose
       />
     </>
   )

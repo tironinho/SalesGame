@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import ModalBase from '../modals/ModalBase'
 import {
   TUTORIAL_STORAGE_KEY,
@@ -33,8 +34,17 @@ export { TOUR_STEPS, TOUR_TILES, TOUR_HUD, TOUR_RECOVERY, TOUR_GLOSSARY }
 /**
  * Tour guiado interativo na entrada (e reabertura via “Como jogar”).
  * Isolado do ModalProvider / engine — não altera regras.
+ *
+ * @param {{ open: boolean, onClose?: () => void, matchKey?: string, markSessionOnClose?: boolean }} props
+ * markSessionOnClose=false na StartScreen (não bloqueia auto-open do tabuleiro).
+ * matchKey = lobbyId no tabuleiro (1 auto-open por partida/aba).
  */
-export default function TutorialModal({ open, onClose }) {
+export default function TutorialModal({
+  open,
+  onClose,
+  matchKey = '',
+  markSessionOnClose = true,
+}) {
   const [phase, setPhase] = useState('welcome') // 'welcome' | 'tour'
   const [stepIndex, setStepIndex] = useState(0)
   const [selectedTile, setSelectedTile] = useState(TOUR_TILES[0]?.key || null)
@@ -51,7 +61,7 @@ export default function TutorialModal({ open, onClose }) {
   }, [open])
 
   function handleClose() {
-    markTutorialSeen()
+    markTutorialSeen({ markSession: markSessionOnClose, matchKey })
     onClose?.()
   }
 
@@ -91,7 +101,7 @@ export default function TutorialModal({ open, onClose }) {
 
   const selectedTileData = TOUR_TILES.find((t) => t.key === selectedTile) || TOUR_TILES[0]
 
-  return (
+  const modal = (
     <ModalBase onClose={handleClose} zIndex={2147483010}>
       <div className="tutorialModal tutorialModal--tour">
         <div className="tutorialHeader">
@@ -141,11 +151,11 @@ export default function TutorialModal({ open, onClose }) {
                 </p>
               ))}
               <ul className="tutorialWelcomeList">
-                <li>Objetivo e vitória (Caixa + Bens)</li>
-                <li>Casas do tabuleiro</li>
-                <li>Glossário com valores (compra, fat, desp)</li>
-                <li>HUD / placar</li>
-                <li>Recuperação financeira e falência</li>
+                <li>O que é patrimônio (Caixa + Bens) — e quem ganha</li>
+                <li>Rodadas, turno e o dado (passo a passo)</li>
+                <li>Cada casa do tabuleiro, bem explicadinha</li>
+                <li>Caderninho de valores (glossário completo com tabelas)</li>
+                <li>Painel (HUD), placar, recuperação e falência</li>
               </ul>
             </>
           ) : (
@@ -297,4 +307,7 @@ export default function TutorialModal({ open, onClose }) {
       </div>
     </ModalBase>
   )
+
+  if (typeof document === 'undefined' || !document.body) return modal
+  return createPortal(modal, document.body)
 }
