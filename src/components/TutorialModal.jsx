@@ -1,7 +1,22 @@
 import React, { useEffect, useState } from 'react'
 import ModalBase from '../modals/ModalBase'
+import {
+  TUTORIAL_STORAGE_KEY,
+  TUTORIAL_SESSION_KEY,
+  hasSeenTutorial,
+  hasShownTutorialThisSession,
+  shouldAutoOpenTutorial,
+  markTutorialSeen,
+} from './tutorialStorage.js'
 
-export const TUTORIAL_STORAGE_KEY = 'salesgame_tutorial_seen_v1'
+export {
+  TUTORIAL_STORAGE_KEY,
+  TUTORIAL_SESSION_KEY,
+  hasSeenTutorial,
+  hasShownTutorialThisSession,
+  shouldAutoOpenTutorial,
+  markTutorialSeen,
+}
 
 const STEPS = [
   {
@@ -98,22 +113,6 @@ export const TUTORIAL_GLOSSARY = [
     body: 'Opção da recuperação financeira: aumenta o caixa agora e gera obrigação futura nas despesas.',
   },
 ]
-
-export function hasSeenTutorial() {
-  try {
-    return localStorage.getItem(TUTORIAL_STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-export function markTutorialSeen() {
-  try {
-    localStorage.setItem(TUTORIAL_STORAGE_KEY, '1')
-  } catch {
-    // ignore quota / private mode
-  }
-}
 
 /**
  * Tutorial inicial em etapas + glossário opcional.

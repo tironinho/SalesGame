@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import {
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
-import TutorialModal, { hasSeenTutorial } from './TutorialModal.jsx'
+import TutorialModal, { shouldAutoOpenTutorial } from './TutorialModal.jsx'
 
 // ajuste os paths dos assets conforme você salvou
 import bgImg from '/dynamic-data-visualization-3d.jpg'
@@ -12,7 +12,8 @@ import logoMultiplier from '/Multiplier-Copia.png'
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
   const [name, setName] = useState("")
-  const [tutorialOpen, setTutorialOpen] = useState(() => !hasSeenTutorial())
+  // Auto-open 1× por sessão de aba (não depende do “já vi” antigo do localStorage)
+  const [tutorialOpen, setTutorialOpen] = useState(() => shouldAutoOpenTutorial())
   const inputRef = useRef(null)
 
   // Desktop: foca o nome. Mobile/touch: NÃO autofocar — Safari dá zoom em inputs.

@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, MANAGER_BOOST_BY_CERT } from '../game/gameRules'
 import { previewTrainingPurchaseImpact } from '../game/trainingPurchase.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * TABELA DE TREINAMENTOS
@@ -280,6 +281,8 @@ export default function TrainingModal({
         <button ref={closeRef} type="button" style={S.close} onClick={handleClose} aria-label="Fechar">✕</button>
 
         <h2 style={S.title}>Escolha os vendedores e treinamentos que deseja comprar:</h2>
+
+        <TileContextHint kind="TRAINING" />
 
         <p className="purchasePreviewHint">
           Cada cor tem efeito financeiro diferente no profissional treinado (exceto Gestor,

@@ -6,6 +6,7 @@ import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { MANAGER_BOOST_BY_CERT, MANAGER_MANAGES_UP_TO, VENDOR_RULES } from '../game/gameRules'
 import { buildManagerPurchaseDeltas } from '../game/managersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal para compra de Gestor Comercial.
@@ -185,6 +186,8 @@ export default function BuyManagerModal({
           Você pode escolher quantos <b>Gestores</b> quer comprar,
           <br/>Digite o número de gestores:
         </h2>
+
+        <TileContextHint kind="MANAGER" />
 
         <div style={styles.certAlert} role="note">
           <div style={styles.certAlertTitle}>

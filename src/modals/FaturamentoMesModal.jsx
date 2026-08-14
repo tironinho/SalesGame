@@ -1,6 +1,7 @@
 // src/modals/FaturamentoMesModal.jsx
 import React from "react";
 import ModalBase from "./ModalBase";
+import TileContextHint from "./TileContextHint.jsx";
 
 /**
  * Fecha usando `onResolve`, que é injetado pelo ModalProvider
@@ -36,6 +37,7 @@ export default function FaturamentoMesModal({ value = 0, onResolve }) {
         >
           FATURAMENTO DO MÊS
         </div>
+        <TileContextHint kind="REVENUE" />
         <div style={{ opacity: 0.9, marginBottom: 16 }}>
           Será creditado o valor do Faturamento ao seu Saldo
         </div>

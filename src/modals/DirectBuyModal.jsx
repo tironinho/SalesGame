@@ -1,6 +1,7 @@
 // src/modals/DirectBuyModal.jsx
 import React, { useEffect, useRef } from 'react'
 import { ERP_RULES, VENDOR_RULES } from '../game/gameRules.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal “roteador de compras”.
@@ -122,8 +123,9 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
 
         <h2 className="directBuyTitle">Direto de Compra — escolha um recurso:</h2>
 
+        <TileContextHint kind="DIRECT_BUY" />
+
         <p className="directBuyContext">
-          Compra direta de recursos da empresa, fora do movimento normal do tabuleiro.
           Cada decisão pode alterar caixa, despesa, faturamento ou capacidade — o impacto
           aparece na tela seguinte antes de confirmar.
         </p>

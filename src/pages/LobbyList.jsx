@@ -110,6 +110,8 @@ function LobbySkeletonCard() {
 export default function LobbyList({ onEnterRoom, playerName }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
+  /** lobbyIds que passaram canResumeLockedMatch (identidade + snapshot). */
+  const [resumableIds, setResumableIds] = useState(() => new Set())
 
   // Estados locais do modal "Criar sala" — apenas formulário de interface;
   // nada disso vai para Supabase, realtime ou multiplayer.
@@ -157,6 +159,38 @@ export default function LobbyList({ onEnterRoom, playerName }) {
     const off = onLobbiesRealtime(() => refresh())
     return off
   }, [])
+
+  // Valida quais salas locked dá para retomar (identidade local + rooms.state).
+  useEffect(() => {
+    let cancelled = false
+
+    async function probeResumable() {
+      const locked = (rows || []).filter((r) => String(r.status || 'open') !== 'open')
+      if (!locked.length) {
+        if (!cancelled) setResumableIds(new Set())
+        return
+      }
+
+      const next = new Set()
+      await Promise.all(
+        locked.map(async (r) => {
+          const playerId = getMatchIdentity(r.id)?.playerId
+          if (!playerId) return
+          try {
+            const { ok } = await canResumeLockedMatch(r.id, playerId)
+            if (ok) next.add(String(r.id))
+          } catch {
+            // rede/snapshot: mantém sem destaque; clique ainda revalida
+          }
+        })
+      )
+
+      if (!cancelled) setResumableIds(next)
+    }
+
+    probeResumable()
+    return () => { cancelled = true }
+  }, [rows])
 
   // Abre o modal de criação com o mesmo nome padrão do antigo prompt.
   // A criação em si acontece em confirmCreateLobby.
@@ -303,6 +337,18 @@ export default function LobbyList({ onEnterRoom, playerName }) {
 
   const showSkeleton = loading && rows.length === 0
   const showEmpty = !loading && rows.length === 0
+  const resumableCount = resumableIds.size
+
+  const displayRows = (() => {
+    if (!rows.length || !resumableCount) return rows
+    const resumable = []
+    const rest = []
+    for (const r of rows) {
+      if (resumableIds.has(String(r.id))) resumable.push(r)
+      else rest.push(r)
+    }
+    return [...resumable, ...rest]
+  })()
 
   return (
     <div className="lobbyPage">
@@ -334,6 +380,21 @@ export default function LobbyList({ onEnterRoom, playerName }) {
           </div>
         </header>
 
+        {resumableCount > 0 && (
+          <div className="lobbyResumeBanner" role="status">
+            <div className="lobbyResumeBannerText">
+              <strong>
+                {resumableCount === 1
+                  ? 'Você tem 1 partida para retomar'
+                  : `Você tem ${resumableCount} partidas para retomar`}
+              </strong>
+              <span>
+                {' '}Use <b>Retomar partida</b> no card destacado — sua identidade nesta sala foi reconhecida.
+              </span>
+            </div>
+          </div>
+        )}
+
         {showEmpty ? (
           <div className="lobbyEmpty">
             <span className="lobbyEmptyIcon" aria-hidden="true"><IconGamepad /></span>
@@ -351,19 +412,21 @@ export default function LobbyList({ onEnterRoom, playerName }) {
             <div className="lobbyGrid">
               {showSkeleton
                 ? [0, 1, 2, 3].map(i => <LobbySkeletonCard key={i} />)
-                : rows.map(r => {
+                : displayRows.map(r => {
                     const isFull = (r.players ?? 0) >= (r.max ?? 4)
                     const isOpen = (r.status ?? 'open') === 'open'
                     // Reentrada: se há identidade local desta room, o botão fica clicável
                     // (validação real contra rooms.state ocorre no clique — localStorage sozinho não basta).
                     const identity = !isOpen ? getMatchIdentity(r.id) : null
                     const hasLocalMatchIdentity = !!identity?.playerId
+                    const canResume = !isOpen && resumableIds.has(String(r.id))
                     const disabled = isFull || (!isOpen && !hasLocalMatchIdentity)
 
                     if (import.meta.env.DEV && !isOpen) {
                       // Diagnóstico do card locked — sem UUID completo / sem snapshot financeiro
                       console.log('[resume-card] locked=true', {
                         identity: hasLocalMatchIdentity,
+                        canResume,
                         full: isFull,
                         status: String(r.status || ''),
                         idSuffix: String(r.id || '').slice(-8),
@@ -395,7 +458,9 @@ export default function LobbyList({ onEnterRoom, playerName }) {
 
                     // texto do botão conforme estado (apresentação; ação inalterada)
                     const joinLabel = !disabled
-                      ? (!isOpen && hasLocalMatchIdentity ? 'Reentrar na partida' : 'Entrar agora')
+                      ? (canResume
+                          ? 'Retomar partida'
+                          : (!isOpen && hasLocalMatchIdentity ? 'Reentrar na partida' : 'Entrar agora'))
                       : isPlaying
                       ? 'Partida em andamento'
                       : rawStatus === 'locked'
@@ -405,13 +470,21 @@ export default function LobbyList({ onEnterRoom, playerName }) {
                       : 'Sala indisponível'
 
                     return (
-                      <div key={r.id} className={`lobbyCard lobbyCard--${st.key}`}>
+                      <div
+                        key={r.id}
+                        className={`lobbyCard lobbyCard--${st.key}${canResume ? ' lobbyCard--resume' : ''}`}
+                      >
                         <div className="lobbyCardTop">
                           <span className="lobbyCardAvatar" aria-hidden="true">{initial}</span>
                           <div className="lobbyCardInfo">
                             <div className="lobbyCardName" title={roomName}>{roomName}</div>
+                            {canResume && (
+                              <div className="lobbyCardResumeNote">Sua partida — pode retomar</div>
+                            )}
                           </div>
-                          <span className={`lobbyBadge lobbyBadge--${st.key}`}>{st.label}</span>
+                          <span className={`lobbyBadge lobbyBadge--${st.key}${canResume ? ' lobbyBadge--resume' : ''}`}>
+                            {canResume ? 'Retomar' : st.label}
+                          </span>
                         </div>
 
                         <div className="lobbyCardBody">
@@ -437,10 +510,10 @@ export default function LobbyList({ onEnterRoom, playerName }) {
 
                         <button
                           type="button"
-                          className="lobbyJoinBtn"
+                          className={`lobbyJoinBtn${canResume ? ' lobbyJoinBtn--resume' : ''}`}
                           disabled={disabled}
                           onClick={() => handleJoin(r.id, rawStatus)}
-                          title={!disabled ? (isOpen ? 'Entrar na sala' : 'Reentrar na partida') : joinLabel}
+                          title={!disabled ? (canResume ? 'Retomar partida' : (isOpen ? 'Entrar na sala' : 'Reentrar na partida')) : joinLabel}
                         >
                           {!disabled && <IconEnter />}
                           {joinLabel}

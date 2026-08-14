@@ -60,8 +60,11 @@ import { mkCashMeta } from '../debug/cashMeta'
 // - Objetivo: migrar por etapas, reduzindo risco no multiplayer.
 import { reduceGame } from './engine/gameReducer'
 import { runEvents } from './engine/gameEffects'
-
-const ENGINE_V2 = false
+import {
+  isEngineV2Enabled,
+  isEngineV2CutoverEnabled,
+  shouldRunEngineV2Shadow,
+} from './engineFlag.js'
 
 function findNextActiveIndex(players, fromIdx) {
   const n = players?.length || 0
@@ -153,6 +156,7 @@ export function useTurnEngine({
   setTurnSeq,
   maxRounds: maxRoundsProp,
   boardVersion,
+  onTileVisit = null,
 }) {
   const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
   const MAX_ROUNDS = normalizeMaxRounds(maxRoundsProp, DEFAULT_MAX_ROUNDS)
@@ -1420,6 +1424,17 @@ export function useTurnEngine({
     const landedTileType = getTileType(landedOneBased, resolvedBoardVersion)
     const crossedStart1 = crossedTile(oldPos, newPos, 0)
     const crossedExpenses23 = crossedTile(oldPos, newPos, expensesIndex)
+
+    // Dicas progressivas (HUD) — só para o jogador local, sem sync
+    try {
+      if (typeof onTileVisit === 'function' && String(ownerId) === String(myUid)) {
+        if (crossedStart1) onTileVisit('REVENUE')
+        if (crossedExpenses23) onTileVisit('EXPENSES')
+        if (landedTileType && landedTileType !== 'NONE' && landedTileType !== 'UNKNOWN') {
+          onTileVisit(landedTileType)
+        }
+      }
+    } catch {}
 
     // ================== Regras por casas (modais) ==================
 
@@ -3185,15 +3200,14 @@ export function useTurnEngine({
         }))
       } catch {}
 
-      // ===== ENGINE V2 (DESLIGADO por padrão) =====
-      // Nesta etapa, o V2 ainda é conservador e não substitui toda a lógica de modais/commit.
-      // A migração real será feita por "events" em `runEvents` (effects).
-      if (ENGINE_V2) {
+      // ===== ENGINE V2 (feature flag; shadow por padrão) =====
+      // Cutover completo ainda incompleto (effects/modais). Shadow observa reduceGame
+      // e SEMPRE cai no legado para não quebrar jogabilidade.
+      if (isEngineV2Enabled()) {
         try {
           const snapshot = {
             players,
             turnIdx,
-            // turnPlayerId é fonte autoritativa no App; aqui usamos current?.id como fallback conservador
             turnPlayerId: String(current?.id ?? players?.[turnIdx]?.id ?? ''),
             turnLock: !!turnLock,
             lockOwner,
@@ -3203,15 +3217,28 @@ export function useTurnEngine({
             boardVersion: resolvedBoardVersion,
             trackLen,
           })
-          if (nextState?.players) setPlayers(nextState.players)
-          // efeitos noop seguros nesta etapa (não abre modal nem commita)
           runEvents(events, { logger: console })
+
+          if (isEngineV2CutoverEnabled()) {
+            // Cutover experimental: aplica só posição do reducer e ainda chama legado
+            // para modais/turno — evitar double-move: NÃO aplicar nextState.players.
+            console.warn(
+              '[ENGINE_V2] cutover pedido, mas wiring de modais incompleto — shadow+legado.',
+              { events: (events || []).map((e) => e?.type), moved: !!nextState?.players }
+            )
+          } else if (shouldRunEngineV2Shadow() && DEBUG_LOGS) {
+            const legacyPos = Number(players?.[turnIdx]?.pos || 0)
+            const v2Pos = Number(nextState?.players?.[turnIdx]?.pos)
+            console.log('[ENGINE_V2][shadow]', {
+              steps: act.steps,
+              legacyPosHint: legacyPos,
+              v2Pos,
+              events: (events || []).map((e) => e?.type),
+            })
+          }
         } catch (e) {
-          console.error('[ENGINE_V2] erro, caindo no fallback legacy:', e)
-          // fallback legacy
-      try { advanceAndMaybeLap(act.steps, act.cashDelta, act.note) } catch {}
+          console.error('[ENGINE_V2] erro no shadow (ignorado):', e)
         }
-        return
       }
 
       // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock
@@ -3802,6 +3829,7 @@ export function useTurnEngine({
     commitLocalPlayers, commitLocalMeta,
     decideEndgameAfterBankruptcy,
     resolvedBoardVersion, trackLen,
+    onTileVisit,
   ])
 
   // ====== auto-unlock removido ======

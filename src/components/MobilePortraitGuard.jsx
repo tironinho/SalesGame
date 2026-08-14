@@ -1,10 +1,13 @@
 // src/components/MobilePortraitGuard.jsx
 // Overlay temporário: mobile landscape pede portrait.
-// Visibilidade só via CSS — o jogo por baixo permanece montado.
+// + tenta Screen Orientation API (web) — sem Expo.
+// Visibilidade do overlay só via CSS — o jogo por baixo permanece montado.
 
 import { useEffect } from 'react'
+import { lockPreferredPortrait } from '../utils/screenOrientation.js'
 
 const GUARD_MQ = '(max-width: 960px) and (orientation: landscape) and (pointer: coarse)'
+const MOBILE_MQ = '(max-width: 960px) and (pointer: coarse)'
 
 function blurActiveField () {
   const el = document.activeElement
@@ -16,6 +19,25 @@ function blurActiveField () {
 }
 
 export default function MobilePortraitGuard () {
+  // Preferência portrait no mobile (falha silenciosa no iOS Safari).
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const mq = window.matchMedia(MOBILE_MQ)
+
+    const tryLock = () => {
+      if (!mq.matches) return
+      lockPreferredPortrait().catch(() => {})
+    }
+
+    tryLock()
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', tryLock)
+      return () => mq.removeEventListener('change', tryLock)
+    }
+    mq.addListener(tryLock)
+    return () => mq.removeListener(tryLock)
+  }, [])
+
   // Ao entrar no landscape (guard visível), blur 1x se um campo estiver focado
   // — Safari pode manter zoom criado pelo foco ao girar.
   useEffect(() => {

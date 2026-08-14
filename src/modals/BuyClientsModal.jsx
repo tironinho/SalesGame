@@ -5,6 +5,7 @@ import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { buildClientsPurchaseDeltas } from '../game/clientsPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal para compra de clientes.
@@ -158,6 +159,8 @@ export default function BuyClientsModal({
           Você pode escolher quantos clientes quer comprar,
           <br />Digite o número de clientes:
         </h2>
+
+        <TileContextHint kind="CLIENTS" />
 
         <p style={styles.warn}>
           <b>Mas cuidado com a capacidade de atendimento da sua equipe!</b><br />

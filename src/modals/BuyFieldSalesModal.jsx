@@ -6,6 +6,7 @@ import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildFieldSalesPurchaseDeltas } from '../game/fieldSalesPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal de compra de Field Sales (Representantes Comerciais)
@@ -197,6 +198,8 @@ export default function BuyFieldSalesModal({
           Você pode escolher quantos <b>Field Sales</b> quer comprar,
           <br/>Digite o número de vendedores:
         </h2>
+
+        <TileContextHint kind="FIELD" />
 
         <p className="purchasePreviewHint">
           O Field Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,

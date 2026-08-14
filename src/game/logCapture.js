@@ -28,7 +28,6 @@ class LogCapture {
       '[leaveRoom]',
       '[GameNet]',
       '[useTurnEngine]',
-      '[useGameSync]'
     ]
   }
 

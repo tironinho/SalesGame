@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node scripts/run-mjs-tests.js",
     "test:check": "node scripts/run-tests.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
-    "firebase": "^12.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

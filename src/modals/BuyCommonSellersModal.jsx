@@ -6,6 +6,7 @@ import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildCommonSellersPurchaseDeltas } from '../game/commonSellersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal de compra de Vendedores Comuns (faz tudo)
@@ -232,6 +233,8 @@ export default function BuyCommonSellersModal({
           Você pode escolher quantos <b>Vendedores Comuns</b> quer comprar,
           <br/>Digite o número de vendedores:
         </h2>
+
+        <TileContextHint kind="COMMON" />
 
         <p className="purchasePreviewHint">
           O Vendedor Comum aumenta a capacidade de atendimento em {attendsUpTo} clientes, gera

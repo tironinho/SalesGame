@@ -11,6 +11,7 @@ import {
 } from '../game/erpPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from '../game/roundConfig'
+import TileContextHint from './TileContextHint.jsx'
 
 const LEVEL_META = {
   A: { color: '#1d4ed8', pill: 'NÍVEL A' },
@@ -172,6 +173,8 @@ export default function ERPSystemsModal({
 
         <h2 className="erpTitle">Escolha o nível de <b>ERP / Sistemas</b>:</h2>
 
+        <TileContextHint kind="ERP" />
+
         <div style={S.note}>
           <div style={{ fontWeight: 900, marginBottom: 4 }}>ERP / SISTEMAS</div>
           <div>
@@ -290,9 +293,18 @@ export default function ERPSystemsModal({
                 <span>Ganho líquido adicional por ciclo</span>
                 <span>{formatMoneySigned(erpReturn.incrementalNet)}</span>
               </div>
+              <div className="purchasePreviewRow">
+                <span>Projeção em {safeHorizon} rodada(s) (equipe atual)</span>
+                <span>{formatMoneySigned(erpReturn.horizonNet)}</span>
+              </div>
               <div className="purchasePreviewRow purchasePreviewRowStrong">
                 <span>{paybackLabel}</span>
               </div>
+              {erpReturn.guidance && (
+                <div className="purchasePreviewGuidance" role="note">
+                  {erpReturn.guidance}
+                </div>
+              )}
               {staffCount <= 0 && (
                 <div className="purchasePreviewAlert">
                   Sem colaboradores, o ERP não gera faturamento nem despesa operacional neste momento.
@@ -300,7 +312,7 @@ export default function ERPSystemsModal({
               )}
               {erpReturn && !erpReturn.paysBackWithinHorizon && erpReturn.status !== 'no_cost' && (
                 <div className="purchasePreviewAlert">
-                  Este investimento não se recupera no horizonte atual de {safeHorizon} rodada(s).
+                  Este investimento não se recupera no horizonte atual de {safeHorizon} rodada(s) com a equipe atual.
                 </div>
               )}
             </div>

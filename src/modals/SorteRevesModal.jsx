@@ -1,5 +1,6 @@
 // src/modals/SorteRevesModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * Modal "Sorte & Revés"
@@ -253,6 +254,7 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
         <button ref={closeRef} style={S.close} onClick={cancel} aria-label="Fechar">✕</button>
 
         <div style={S.badge(card.kind)}>{card.kind === 'SORTE' ? 'SORTE' : 'REVÉS'}</div>
+        <TileContextHint kind="LUCK" />
         {card.title && <h2 style={S.title}>{card.title}</h2>}
         <p style={S.text}>{resolved.text}</p>
         <p style={S.hint}>

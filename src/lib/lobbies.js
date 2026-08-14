@@ -2,6 +2,12 @@
 // ✅ CORREÇÃO: Usa o client Supabase unificado
 import { supabase } from './supabaseClient.js'
 import { createUuidV4 } from './uuid.js'
+import {
+  planEmptyLobbyDeletion,
+  canSafelyDeleteLobby,
+  roomStatePlayerCount,
+  roomStateGameOver,
+} from './lobbyCleanupLogic.js'
 
 /* ==============================
    LISTAGEM DE LOBBIES
@@ -79,8 +85,8 @@ export async function deleteLobbyIfEmpty(lobbyId) {
   if (error) throw error
 
   if ((count || 0) === 0) {
-    const { error: e2 } = await supabase.from('lobbies').delete().eq('id', lobbyId)
-    if (e2) throw e2
+    const del = await deleteEmptyLobbyCascade(lobbyId)
+    if (!del.ok && del.error) throw del.error
   }
 }
 
@@ -150,7 +156,7 @@ export async function leaveLobby({ lobbyId, playerId }) {
   if (er) throw er
 
   if (!rest || rest.length === 0) {
-    await supabase.from('lobbies').delete().eq('id', lobbyId)
+    await deleteEmptyLobbyCascade(lobbyId)
     return
   }
 
@@ -384,16 +390,12 @@ export async function leaveRoom({ roomCode, playerId }) {
       return
     }
 
-    // 4. Se não há mais jogadores, deleta o lobby
+    // 4. Se não há mais jogadores, deleta lobby + rooms
     if (!remainingPlayers || remainingPlayers.length === 0) {
-      const { error: deleteError } = await supabase
-        .from('lobbies')
-        .delete()
-        .eq('id', roomCode)
-
-      if (deleteError) {
-        console.warn('[leaveRoom] Erro ao deletar lobby vazio:', deleteError)
-      } else {
+      const del = await deleteEmptyLobbyCascade(roomCode)
+      if (!del.ok && del.error) {
+        console.warn('[leaveRoom] Erro ao deletar lobby vazio:', del.error)
+      } else if (del.ok) {
         console.log(`[leaveRoom] Lobby ${roomCode} deletado com sucesso (sem jogadores)`)
       }
     } else {
@@ -457,16 +459,12 @@ export async function leaveRoomById({ roomId, playerId }) {
       return
     }
 
-    // 3. Se não há mais jogadores, deleta o lobby
+    // 3. Se não há mais jogadores, deleta lobby + rooms
     if (!remainingPlayers || remainingPlayers.length === 0) {
-      const { error: deleteError } = await supabase
-        .from('lobbies')
-        .delete()
-        .eq('id', roomId)
-
-      if (deleteError) {
-        console.warn('[leaveRoomById] Erro ao deletar lobby vazio:', deleteError)
-      } else {
+      const del = await deleteEmptyLobbyCascade(roomId)
+      if (!del.ok && del.error) {
+        console.warn('[leaveRoomById] Erro ao deletar lobby vazio:', del.error)
+      } else if (del.ok) {
         console.log(`[leaveRoomById] Lobby ${roomId} deletado com sucesso (sem jogadores)`)
       }
     } else {
@@ -505,12 +503,42 @@ function _numEnv(name, fallback) {
 export function getLobbyConfig() {
   return {
     emptyLobbyTtlMin: _numEnv('VITE_EMPTY_LOBBY_TTL_MINUTES', 30),
-    lockedLobbyTtlMin: _numEnv('VITE_LOCKED_LOBBY_TTL_MINUTES', 120),
+    /** Locked com assentos ainda no rooms.state (janela de reconnect). */
+    emptyLockedTtlMin: _numEnv('VITE_LOCKED_LOBBY_TTL_MINUTES', 120),
+    /** Locked vazio / gameOver — TTL a partir da última atividade (rooms.updated_at). */
+    emptyLockedIdleTtlMin: _numEnv('VITE_LOCKED_IDLE_TTL_MINUTES', 30),
     stalePlayerTtlMin: _numEnv('VITE_STALE_LOBBY_PLAYER_TTL_MINUTES', 3),
     cleanupIntervalMs: _numEnv('VITE_LOBBY_CLEANUP_INTERVAL_MS', 120000),
     heartbeatIntervalMs: _numEnv('VITE_LOBBY_HEARTBEAT_INTERVAL_MS', 30000),
     maxLobbiesHardCap: _numEnv('VITE_MAX_LOBBIES_HARD_CAP', 200), // opcional
   }
+}
+
+/**
+ * Remove rows de `rooms` pelo code (= lobbyId). Melhor esforço; não lança.
+ */
+export async function deleteRoomsByCode(roomCode) {
+  const code = String(roomCode || '').trim()
+  if (!code) return { ok: false, skipped: true }
+  const { error } = await supabase.from('rooms').delete().eq('code', code)
+  if (error) {
+    console.warn('[rooms] falha ao deletar code=', code, error.message || error)
+    return { ok: false, error }
+  }
+  return { ok: true }
+}
+
+/** Deleta lobby + rooms do mesmo code (sala realmente vazia). */
+export async function deleteEmptyLobbyCascade(lobbyId) {
+  const id = String(lobbyId || '').trim()
+  if (!id) return { ok: false, skipped: true }
+  await deleteRoomsByCode(id)
+  const { error } = await supabase.from('lobbies').delete().eq('id', id)
+  if (error) {
+    console.warn('[cleanup] falha ao deletar lobby', id, error.message || error)
+    return { ok: false, error }
+  }
+  return { ok: true }
 }
 
 let __lastSeenSupported = null
@@ -932,24 +960,53 @@ export async function cleanupLobbiesOnce() {
     console.warn('[cleanup] last_seen indisponível: pulando limpeza por inatividade.')
   }
 
-  // 2) deletar salas vazias por TTL (open e locked)
-  const lobbies = await listLobbies() // já existe no seu arquivo
-  const emptyOpenCut = now - cfg.emptyLobbyTtlMin * 60_000
-  const emptyLockedCut = now - cfg.lockedLobbyTtlMin * 60_000
+  // 2) deletar salas vazias por TTL (atividade = rooms.updated_at || created_at)
+  const lobbies = await listLobbies()
+  const lobbyIds = (lobbies || []).map((l) => l.id).filter(Boolean)
+
+  const roomByCode = new Map()
+  for (const ids of _chunk(lobbyIds, 25)) {
+    const { data: roomRows, error: rErr } = await supabase
+      .from('rooms')
+      .select('code, state, updated_at')
+      .in('code', ids)
+    if (rErr) {
+      console.warn('[cleanup] erro lendo rooms:', rErr.message || rErr)
+      continue
+    }
+    for (const row of roomRows || []) {
+      const code = String(row.code || '')
+      if (!code) continue
+      const prev = roomByCode.get(code)
+      const ts = Date.parse(row.updated_at || '') || 0
+      const prevTs = prev ? (Date.parse(prev.updated_at || '') || 0) : -1
+      if (!prev || ts >= prevTs) roomByCode.set(code, row)
+    }
+  }
 
   const emptyCandidates = []
   for (const l of lobbies || []) {
-    const created = Date.parse(l.created_at || '')
-    const count = Array.isArray(l.lobby_players) ? Number(l.lobby_players?.[0]?.count || 0) : 0
-
-    if (count !== 0) continue
-    if (!Number.isFinite(created)) continue
-
-    if (l.status === 'open' && created < emptyOpenCut) emptyCandidates.push(l.id)
-    if (l.status === 'locked' && created < emptyLockedCut) emptyCandidates.push(l.id)
+    const count = Array.isArray(l.lobby_players)
+      ? Number(l.lobby_players?.[0]?.count || 0)
+      : 0
+    const createdAtMs = Date.parse(l.created_at || '')
+    const room = roomByCode.get(String(l.id))
+    const roomUpdatedAtMs = room ? Date.parse(room.updated_at || '') : null
+    const plan = planEmptyLobbyDeletion({
+      status: l.status,
+      playerCount: count,
+      createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
+      roomUpdatedAtMs: Number.isFinite(roomUpdatedAtMs) ? roomUpdatedAtMs : null,
+      roomPlayerCount: roomStatePlayerCount(room?.state),
+      roomGameOver: roomStateGameOver(room?.state),
+      now,
+      emptyOpenTtlMin: cfg.emptyLobbyTtlMin,
+      emptyLockedTtlMin: cfg.emptyLockedTtlMin,
+      emptyLockedIdleTtlMin: cfg.emptyLockedIdleTtlMin,
+    })
+    if (plan.delete) emptyCandidates.push(l.id)
   }
 
-  // hard cap opcional: se explodiu de lobby, prioriza apagar vazias antigas
   if ((lobbies?.length || 0) > cfg.maxLobbiesHardCap) {
     console.warn('[cleanup] hard cap de lobbies excedido - priorizando remoção de vazias antigas.')
   }
@@ -959,10 +1016,50 @@ export async function cleanupLobbiesOnce() {
     return
   }
 
+  // 3) Revalida presença antes do DELETE (nunca apaga jogo vivo)
+  const confirmed = []
   for (const ids of _chunk(emptyCandidates, 25)) {
-    const { error: delErr } = await supabase.from('lobbies').delete().in('id', ids)
-    if (delErr) console.warn('[cleanup] erro deletando lobbies:', delErr.message || delErr)
+    const { data: livePlayers, error: pErr } = await supabase
+      .from('lobby_players')
+      .select('lobby_id, last_seen')
+      .in('lobby_id', ids)
+
+    if (pErr) {
+      console.warn('[cleanup] erro revalidando players:', pErr.message || pErr)
+      continue
+    }
+
+    const byLobby = new Map()
+    for (const row of livePlayers || []) {
+      const lid = row.lobby_id
+      if (!byLobby.has(lid)) byLobby.set(lid, [])
+      byLobby.get(lid).push(row)
+    }
+
+    const freshCut = now - GAME_OFFLINE_THRESHOLD_MS
+    for (const id of ids) {
+      const rows = byLobby.get(id) || []
+      const freshPresenceCount = rows.filter((r) => {
+        const t = Date.parse(r.last_seen || '')
+        return Number.isFinite(t) && t >= freshCut
+      }).length
+      const guard = canSafelyDeleteLobby({
+        playerCount: rows.length,
+        freshPresenceCount,
+      })
+      if (guard.ok) confirmed.push(id)
+      else console.log(`[cleanup] skip lobby ${id}: ${guard.reason}`)
+    }
   }
 
-  console.log(`[cleanup] lobbies vazios deletados: ${emptyCandidates.length}`)
+  if (!confirmed.length) {
+    console.log('[cleanup] candidatos TTL rejeitados pelos guards de presença.')
+    return
+  }
+
+  for (const id of confirmed) {
+    await deleteEmptyLobbyCascade(id)
+  }
+
+  console.log(`[cleanup] lobbies vazios deletados: ${confirmed.length}`)
 }

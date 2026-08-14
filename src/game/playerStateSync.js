@@ -5,6 +5,8 @@
  * - roster parcial não apaga jogadores ausentes.
  */
 
+import { normalizePlayerAliases } from './playerShape.js'
+
 /** Cash válido para aplicar em patch: número finito (inclui 0). */
 export function isValidCashPatchValue(value) {
   return typeof value === 'number' && Number.isFinite(value)
@@ -21,7 +23,9 @@ export function mergePlayerPartial(existing, delta = {}) {
       ? { ...existing }
       : {}
 
-  if (!delta || typeof delta !== 'object') return base
+  if (!delta || typeof delta !== 'object') {
+    return normalizePlayerAliases(base)
+  }
 
   for (const [key, value] of Object.entries(delta)) {
     if (key === '_actionId') continue
@@ -36,7 +40,7 @@ export function mergePlayerPartial(existing, delta = {}) {
     base[key] = value
   }
 
-  return base
+  return normalizePlayerAliases(base)
 }
 
 /**

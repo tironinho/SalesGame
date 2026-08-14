@@ -11,6 +11,7 @@ import {
 } from '../game/productMixPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from '../game/roundConfig'
+import TileContextHint from './TileContextHint.jsx'
 
 const LEVEL_RANK = { A: 4, B: 3, C: 2, D: 1 }
 
@@ -169,6 +170,8 @@ export default function MixProductsModal({
         <button ref={closeRef} type="button" style={S.close} onClick={resolveSkip} aria-label="Fechar">✕</button>
 
         <h2 className="mixTitle">Escolha um <b>mix de produtos</b>:</h2>
+
+        <TileContextHint kind="MIX" />
 
         <div style={S.note}>
           <div style={{fontWeight:900, marginBottom:4}}>MIX DE PRODUTOS</div>

@@ -1,5 +1,6 @@
 import React from "react";
 import ModalBase from "./ModalBase";
+import TileContextHint from "./TileContextHint.jsx";
 
 /**
  * Esta modal fecha chamando `onResolve`, que é injetado pelo ModalProvider
@@ -41,6 +42,8 @@ export default function DespesasOperacionaisModal({
         >
           DESPESAS DO MÊS
         </div>
+
+        <TileContextHint kind="EXPENSES" />
 
         <div style={{ marginBottom: 8 }}>
           Despesas operacionais:&nbsp;

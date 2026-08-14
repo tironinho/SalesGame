@@ -76,6 +76,8 @@ import {
   resolveBoardVersion,
 } from './data/boardVersions.js'
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './game/roundConfig'
+import { normalizePlayersAliases } from './game/playerShape.js'
+import { consumeTileTip } from './game/progressiveTips.js'
 
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
@@ -269,7 +271,7 @@ export default function App() {
     ordered = ordered.sort((a, b) => (a.joinOrder - b.joinOrder) || String(a?.id ?? '').localeCompare(String(b?.id ?? '')))
     
     if (DEBUG_LOGS) console.log('[App] normalizePlayers - ordenados:', ordered.map(p => ({ id: p.id, name: p.name, seat: p.seat })))
-    return ordered
+    return normalizePlayersAliases(ordered)
   }
 
   const [players, _setPlayers] = useState([
@@ -2162,6 +2164,26 @@ export default function App() {
 
   // ====== tutorial "Como jogar" (reabertura manual em jogo; sem auto-open aqui)
   const [tutorialOpen, setTutorialOpen] = useState(false)
+  // Dica progressiva (1× por tipo de casa / sessão) — só UI local
+  const [progressiveTip, setProgressiveTip] = useState(null)
+  const progressiveTipTimerRef = useRef(null)
+
+  const handleTileVisit = React.useCallback((kind) => {
+    const tip = consumeTileTip(kind)
+    if (!tip) return
+    setProgressiveTip(tip)
+    if (progressiveTipTimerRef.current) {
+      clearTimeout(progressiveTipTimerRef.current)
+    }
+    progressiveTipTimerRef.current = setTimeout(() => {
+      setProgressiveTip(null)
+      progressiveTipTimerRef.current = null
+    }, 9000)
+  }, [])
+
+  useEffect(() => () => {
+    if (progressiveTipTimerRef.current) clearTimeout(progressiveTipTimerRef.current)
+  }, [])
 
   // ✅ CORREÇÃO DESSYNC: Deriva turnOrder dos players (ordem determinística)
   const turnOrder = useMemo(() => {
@@ -2208,6 +2230,7 @@ export default function App() {
     setTurnSeq,
     maxRounds,
     boardVersion,
+    onTileVisit: handleTileVisit,
   })
 
   // Presença + auto-skip (Etapa 2) — só durante game multiplayer
@@ -2877,6 +2900,22 @@ export default function App() {
           </div>
 
           <div className="turnPrimaryActions">
+            {progressiveTip && (
+              <div className="progressiveTip" role="status" aria-live="polite">
+                <div className="progressiveTipBody">
+                  <strong className="progressiveTipLabel">Dica</strong>
+                  <span>{progressiveTip.text}</span>
+                </div>
+                <button
+                  type="button"
+                  className="progressiveTipDismiss"
+                  aria-label="Fechar dica"
+                  onClick={() => setProgressiveTip(null)}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div
               className={`nextStepHint${nextStepIsMyTurn ? ' nextStepHintMyTurn' : ''}`}
               role="status"

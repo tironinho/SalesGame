@@ -82,12 +82,17 @@ export function calculateErpReturn({
       immediateCost,
       paybackRounds: 0,
       horizonRounds: horizon,
+      horizonNet: 0,
       paysBackWithinHorizon: true,
       status: 'no_cost',
+      guidance: 'Sem custo imediato neste nível.',
     }
   }
 
   if (incrementalNet <= 0) {
+    const guidance = staff === 0
+      ? 'Com 0 colaboradores o ERP não gera ganho líquido. Contrate equipe antes de subir de nível.'
+      : 'Com a equipe atual o ganho líquido por ciclo é ≤ 0. O ERP escala por colaborador — ampliar a equipe melhora o retorno.'
     return {
       staffCount: staff,
       revenueDelta,
@@ -96,12 +101,19 @@ export function calculateErpReturn({
       immediateCost,
       paybackRounds: null,
       horizonRounds: horizon,
+      horizonNet: incrementalNet * horizon,
       paysBackWithinHorizon: false,
       status: 'no_financial_return',
+      guidance,
     }
   }
 
   const paybackRounds = immediateCost / incrementalNet
+  const horizonNet = incrementalNet * horizon
+  const paysBackWithinHorizon = paybackRounds <= horizon
+  const guidance = paysBackWithinHorizon
+    ? `Com a equipe atual, o investimento tende a se pagar em cerca de ${Math.ceil(paybackRounds * 10) / 10} ciclo(s), dentro das ${horizon} rodada(s) da partida.`
+    : `Com a equipe atual, o payback estimado (~${Math.ceil(paybackRounds * 10) / 10} ciclos) passa das ${horizon} rodada(s). Mais colaboradores aumentam o ganho líquido por ciclo.`
 
   return {
     staffCount: staff,
@@ -111,8 +123,10 @@ export function calculateErpReturn({
     immediateCost,
     paybackRounds,
     horizonRounds: horizon,
-    paysBackWithinHorizon: paybackRounds <= horizon,
-    status: paybackRounds <= horizon ? 'pays_back_within_horizon' : 'beyond_horizon',
+    horizonNet,
+    paysBackWithinHorizon,
+    status: paysBackWithinHorizon ? 'pays_back_within_horizon' : 'beyond_horizon',
+    guidance,
   }
 }
 

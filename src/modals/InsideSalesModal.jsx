@@ -6,6 +6,7 @@ import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
 import { buildInsideSalesPurchaseDeltas } from '../game/insideSalesPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import TileContextHint from './TileContextHint.jsx'
 
 /**
  * onResolve(payload)
@@ -155,6 +156,8 @@ export default function InsideSalesModal({ onResolve, currentCash = 0, currentPl
         >✕</button>
 
         <h2 className="isTitle">Você pode escolher quantos <b>Inside Sales</b> quer comprar:</h2>
+
+        <TileContextHint kind="INSIDE" />
 
         <p className="purchasePreviewHint">
           O Inside Sales aumenta a capacidade de atendimento em {attendsUpTo} clientes,
