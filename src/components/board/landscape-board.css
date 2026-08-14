@@ -49,6 +49,38 @@
   pointer-events: none;
 }
 
+.sg40GameBoard__hint {
+  position: absolute;
+  z-index: 2;
+  left: calc(100% / 13 + 8px);
+  right: calc(100% / 13 + 8px);
+  bottom: calc(100% / 9 + 8px);
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(186, 230, 253, 0.32);
+  background: rgba(7, 29, 59, 0.9);
+  color: #e8f4ff;
+  font-size: clamp(10px, 1.15vw, 13px);
+  line-height: 1.35;
+  pointer-events: none;
+  text-align: left;
+  overflow: hidden;
+}
+.sg40GameBoard__hintKicker {
+  display: block;
+  margin-bottom: 1px;
+  font-size: 0.78em;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+}
+.sg40GameBoard__hintText {
+  display: block;
+  font-weight: 650;
+}
+
 .sg40GameBoard__selection {
   position: absolute;
   width: 1px;
@@ -147,6 +179,14 @@
     top: var(--token-portrait-y);
     width: clamp(10px, 3.8%, 17px);
     font-size: clamp(6px, 1.8vw, 9px);
+  }
+
+  .sg40GameBoard__hint {
+    left: calc(100% / 8 + 6px);
+    right: calc(100% / 8 + 6px);
+    bottom: calc(100% / 14 + 6px);
+    padding: 5px 8px;
+    font-size: clamp(10px, 2.6vw, 12px);
   }
 }
 

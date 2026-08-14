@@ -1,17 +1,23 @@
 import React from 'react'
 
 import { getBoardVisualCoordinate } from './boardVisualCoordinates.js'
+import { getTileHint } from '../../modals/tileContext.js'
 
 export default function BoardTile({
   tile,
   selected = false,
   onSelect,
+  onHighlight,
   presentation = false,
   game = false,
 }) {
   const numberLabel = String(tile.number).padStart(2, '0')
   const desktopCoordinate = getBoardVisualCoordinate(tile.index, 'landscape-13x9')
   const mobileCoordinate = getBoardVisualCoordinate(tile.index, 'portrait-8x14')
+  const hint = getTileHint(tile.eventKind || tile.type)
+  const hintTitle = hint
+    ? `Casa ${numberLabel} — ${tile.label}. ${hint}`
+    : `Casa ${numberLabel} — ${tile.label}`
 
   const classes = [
     'sg40Preview__tile',
@@ -54,8 +60,8 @@ export default function BoardTile({
     'data-index': tile.index,
     'data-row': tile.gridRow ?? tile.row,
     'data-column': tile.gridColumn ?? tile.column,
-    'aria-label': `Casa ${numberLabel}, ${tile.label}`,
-    title: `Casa ${numberLabel} — ${tile.label}`,
+    'aria-label': hintTitle,
+    title: hintTitle,
   }
 
   if (presentation) {
@@ -72,6 +78,10 @@ export default function BoardTile({
       type="button"
       aria-pressed={selected}
       onClick={() => onSelect?.(tile)}
+      onMouseEnter={() => onHighlight?.(tile)}
+      onMouseLeave={() => onHighlight?.(null)}
+      onFocus={() => onHighlight?.(tile)}
+      onBlur={() => onHighlight?.(null)}
     >
       {content}
     </button>

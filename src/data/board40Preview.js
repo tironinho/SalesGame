@@ -1,3 +1,5 @@
+import { getBoardVisualCoordinate } from '../components/board/boardVisualCoordinates.js'
+
 export const BOARD_40_TYPES = Object.freeze([
   'START_REVENUE',
   'CLIENTS',
@@ -110,20 +112,7 @@ export function getBoard40GridPosition(number) {
   if (!Number.isInteger(number) || number < 1 || number > 40) {
     throw new RangeError('Board preview tile number must be an integer from 1 through 40')
   }
-
-  if (number <= 13) {
-    return { row: 1, column: number }
-  }
-
-  if (number <= 20) {
-    return { row: number - 12, column: 13 }
-  }
-
-  if (number <= 33) {
-    return { row: 9, column: 34 - number }
-  }
-
-  return { row: 42 - number, column: 1 }
+  return getBoardVisualCoordinate(number - 1, 'landscape-13x9')
 }
 
 export const BOARD_40_CONFIG = Object.freeze(

@@ -29,7 +29,34 @@ export const TILE_CONTEXT = Object.freeze({
     'Ao cruzar Despesas, o caixa paga a manutenção do mês e eventuais cobranças de empréstimo.',
 })
 
-export function getTileContext(kind) {
+/** Uma linha no tabuleiro (desktop/mobile). Mais curta que o texto da modal. */
+export const TILE_HINTS = Object.freeze({
+  REVENUE: 'Início: ao passar, você recebe o faturamento do mês.',
+  CLIENTS: 'Amplia a base de clientes e o potencial de faturamento.',
+  ERP: 'Sistemas: o ganho cresce com o tamanho da equipe.',
+  INSIDE: 'Vendas internas: atende mais clientes por pessoa.',
+  MANAGER: 'Gestor: impulsiona a equipe se tiver certificado.',
+  TRAINING: 'Certificados que mudam o desempenho da equipe.',
+  FIELD: 'Vendas externas: ticket maior, menos clientes por pessoa.',
+  DIRECT_BUY: 'Escolha um recurso e veja o impacto antes de confirmar.',
+  LUCK: 'Carta aleatória: pode creditar ou debitar o caixa.',
+  COMMON: 'Contrate vendedores de linha para atender mais clientes.',
+  EXPENSES: 'Ao passar, você paga a manutenção do mês.',
+  MIX: 'Define quanto cada cliente fatura e custa por ciclo.',
+})
+
+function hintKey(kind) {
   const key = String(kind || '').toUpperCase()
+  if (key === 'START_REVENUE') return 'REVENUE'
+  return key
+}
+
+export function getTileContext(kind) {
+  const key = hintKey(kind)
   return TILE_CONTEXT[key] || ''
+}
+
+export function getTileHint(kind) {
+  const key = hintKey(kind)
+  return TILE_HINTS[key] || TILE_CONTEXT[key] || ''
 }

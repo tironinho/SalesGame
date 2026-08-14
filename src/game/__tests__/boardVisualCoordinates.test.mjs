@@ -38,14 +38,14 @@ test('portrait layout maps all 40 canonical indexes to one unique 8 by 14 perime
 
 test('portrait layout follows the approved top right bottom and left segments', () => {
   const expected = new Map([
-    [0, { row: 1, column: 1 }],
-    [7, { row: 1, column: 8 }],
-    [8, { row: 2, column: 8 }],
-    [19, { row: 13, column: 8 }],
-    [20, { row: 14, column: 8 }],
-    [27, { row: 14, column: 1 }],
-    [28, { row: 13, column: 1 }],
-    [39, { row: 2, column: 1 }],
+    [0, { row: 14, column: 8 }],
+    [7, { row: 14, column: 1 }],
+    [8, { row: 13, column: 1 }],
+    [19, { row: 2, column: 1 }],
+    [20, { row: 1, column: 1 }],
+    [27, { row: 1, column: 8 }],
+    [28, { row: 2, column: 8 }],
+    [39, { row: 13, column: 8 }],
   ])
 
   for (const [index, coordinate] of expected) {
@@ -65,12 +65,14 @@ test('both visual layouts keep every consecutive tile adjacent and close 40 to 0
   }
 })
 
-test('desktop layout preserves the approved 13 by 9 coordinates', () => {
+test('desktop starts at bottom-right and follows 1,2,3 clockwise', () => {
   assert.deepEqual(BOARD_VISUAL_LAYOUTS['landscape-13x9'], { columns: 13, rows: 9 })
-  assert.deepEqual(getBoardVisualCoordinate(0, 'landscape-13x9'), { row: 1, column: 1 })
-  assert.deepEqual(getBoardVisualCoordinate(12, 'landscape-13x9'), { row: 1, column: 13 })
-  assert.deepEqual(getBoardVisualCoordinate(20, 'landscape-13x9'), { row: 9, column: 13 })
-  assert.deepEqual(getBoardVisualCoordinate(39, 'landscape-13x9'), { row: 2, column: 1 })
+  assert.deepEqual(getBoardVisualCoordinate(0, 'landscape-13x9'), { row: 9, column: 13 })
+  assert.deepEqual(getBoardVisualCoordinate(1, 'landscape-13x9'), { row: 9, column: 12 })
+  assert.deepEqual(getBoardVisualCoordinate(2, 'landscape-13x9'), { row: 9, column: 11 })
+  assert.deepEqual(getBoardVisualCoordinate(12, 'landscape-13x9'), { row: 9, column: 1 })
+  assert.deepEqual(getBoardVisualCoordinate(20, 'landscape-13x9'), { row: 1, column: 1 })
+  assert.deepEqual(getBoardVisualCoordinate(39, 'landscape-13x9'), { row: 8, column: 13 })
 })
 
 test('visual adapter rejects invalid indexes and layouts without coercing logical positions', () => {

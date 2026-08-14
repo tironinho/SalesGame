@@ -11,6 +11,7 @@ import {
   BOARD_VISUAL_LAYOUTS,
   getBoardVisualCoordinate,
 } from './boardVisualCoordinates.js'
+import { getTileHint } from '../../modals/tileContext.js'
 import './landscape-board-preview.css'
 import './landscape-board.css'
 
@@ -63,6 +64,7 @@ export default function LandscapeBoard({
   onMeHud,
 }) {
   const [selectedIndex, setSelectedIndex] = useState(null)
+  const [hoveredIndex, setHoveredIndex] = useState(null)
   const [visualPositions, setVisualPositions] = useState({})
   const visualRef = useRef({})
   const timersRef = useRef({})
@@ -159,11 +161,19 @@ export default function LandscapeBoard({
   )
 
   const activePlayerId = players[turnIdx]?.id
+  const hintIndex = selectedIndex ?? hoveredIndex
+  const hintTile = Number.isInteger(hintIndex) ? BOARD_40_CONFIG[hintIndex] : null
+  const hintText = hintTile
+    ? getTileHint(hintTile.eventKind || hintTile.type)
+    : ''
 
   return (
     <section
       className="board sg40GameBoard"
       aria-label="Tabuleiro Sales Game com 40 casas"
+      onClick={(event) => {
+        if (!event.target.closest('.sg40Preview__tile')) setSelectedIndex(null)
+      }}
     >
       <img
         className="sg40Preview__boardImage"
@@ -180,7 +190,10 @@ export default function LandscapeBoard({
             key={tile.index}
             tile={tile}
             selected={selectedIndex === tile.index}
-            onSelect={(selectedTile) => setSelectedIndex(selectedTile.index)}
+            onSelect={(selectedTile) => setSelectedIndex((current) => (
+              current === selectedTile.index ? null : selectedTile.index
+            ))}
+            onHighlight={(highlighted) => setHoveredIndex(highlighted?.index ?? null)}
             game
           />
         ))}
@@ -216,10 +229,19 @@ export default function LandscapeBoard({
         })}
       </div>
 
-      <p className="sg40GameBoard__selection" aria-live="polite">
-        {selectedIndex === null
-          ? ''
-          : `Casa ${String(BOARD_40_CONFIG[selectedIndex].number).padStart(2, '0')}: ${BOARD_40_CONFIG[selectedIndex].label}`}
+      <p className="sg40GameBoard__hint" role="status" aria-live="polite">
+        {hintTile ? (
+          <>
+            <span className="sg40GameBoard__hintKicker">
+              {`Casa ${String(hintTile.number).padStart(2, '0')} · ${hintTile.label}`}
+            </span>
+            <span className="sg40GameBoard__hintText">{hintText}</span>
+          </>
+        ) : (
+          <span className="sg40GameBoard__hintText">
+            Toque numa casa para ver o que ela faz.
+          </span>
+        )}
       </p>
     </section>
   )
