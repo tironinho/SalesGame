@@ -127,3 +127,33 @@
     transform: rotate(90deg);
   }
 }
+
+/* Chip de tela cheia — só no tabuleiro mobile landscape (montado via JS) */
+.orientationFullscreenChip {
+  position: fixed;
+  z-index: 2147482990;
+  right: calc(10px + env(safe-area-inset-right, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: #5b4dff;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.orientationFullscreenChip:focus-visible {
+  outline: 2px solid #aab4ff;
+  outline-offset: 2px;
+}
+
+.orientationFullscreenChip:active {
+  filter: brightness(0.92);
+}

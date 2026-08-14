@@ -37,7 +37,11 @@ export async function requestAppFullscreen(target) {
 
   try {
     if (typeof element.requestFullscreen === 'function') {
-      await element.requestFullscreen()
+      try {
+        await element.requestFullscreen({ navigationUI: 'hide' })
+      } catch {
+        await element.requestFullscreen()
+      }
       return true
     }
     if (typeof element.webkitRequestFullscreen === 'function') {

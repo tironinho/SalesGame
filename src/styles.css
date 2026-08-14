@@ -5221,7 +5221,7 @@ html, body {
     height: auto !important;
     max-height: none;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(160px, 28%);
+    grid-template-columns: minmax(0, 1fr) minmax(148px, 22%);
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
     justify-items: stretch;
@@ -5287,28 +5287,29 @@ html, body {
     --sg-board-max-h: 100%;
     box-sizing: border-box;
     flex: 0 0 auto !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
     margin: 0 !important;
-    aspect-ratio: 13 / 9;
+    aspect-ratio: auto;
   }
 
   @supports (height: 1cqh) {
     .boardWrap .board.sg40GameBoard,
     .page .content .boardWrap > .board.sg40GameBoard,
     .page .content .boardWrap > .sg40GameBoard {
-      height: min(100cqh, calc(100cqw * 9 / 13)) !important;
-      width: min(100cqw, calc(100cqh * 13 / 9)) !important;
-      max-width: 100cqw !important;
-      max-height: 100cqh !important;
+      /* Cover: preenche laterais/altura da célula (sem barras pretas) */
+      width: max(100cqw, calc(100cqh * 13 / 9)) !important;
+      height: max(100cqh, calc(100cqw * 9 / 13)) !important;
+      max-width: none !important;
+      max-height: none !important;
       aspect-ratio: 13 / 9;
     }
   }
 
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: contain;
+    object-fit: cover;
     object-position: center;
   }
 
