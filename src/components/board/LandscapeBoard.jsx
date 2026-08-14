@@ -11,15 +11,18 @@ import {
   BOARD_VISUAL_LAYOUTS,
   getBoardVisualCoordinate,
 } from './boardVisualCoordinates.js'
+import {
+  TOKEN_HOP_MAX_STEPS,
+  TOKEN_HOP_STEP_MS,
+  planTokenHop,
+} from './tokenHop.js'
 import { getTileHint } from '../../modals/tileContext.js'
 import './landscape-board-preview.css'
 import './landscape-board.css'
 
 const TRACK_LEN = BOARD_40_CONFIG.length
 /** Duração de cada pulo (casa → casa). Deve bater com o CSS `sgTokenHop`. */
-const TOKEN_STEP_MS = 320
-/** Anima qualquer avanço até uma volta completa (dado ≤ 6; cobre efeitos extras). */
-const MAX_ANIMATED_STEPS = TRACK_LEN
+const TOKEN_STEP_MS = TOKEN_HOP_STEP_MS
 const TOKEN_CELL_OFFSETS = Object.freeze([
   Object.freeze({ x: -0.22, y: -0.22 }),
   Object.freeze({ x: 0.22, y: -0.22 }),
@@ -41,21 +44,6 @@ const normalizePosition = (value) => {
   const number = Number(value)
   if (!Number.isFinite(number)) return 0
   return ((Math.trunc(number) % TRACK_LEN) + TRACK_LEN) % TRACK_LEN
-}
-
-const forwardDistance = (from, to) => (
-  (normalizePosition(to) - normalizePosition(from) + TRACK_LEN) % TRACK_LEN
-)
-
-const buildForwardPath = (from, to) => {
-  const path = []
-  const target = normalizePosition(to)
-  let cursor = normalizePosition(from)
-  for (let guard = 0; guard < TRACK_LEN && cursor !== target; guard += 1) {
-    cursor = (cursor + 1) % TRACK_LEN
-    path.push(cursor)
-  }
-  return path
 }
 
 export default function LandscapeBoard({
@@ -99,6 +87,24 @@ export default function LandscapeBoard({
       })
       delete hopClearTimersRef.current[id]
     }, TOKEN_STEP_MS + 40)
+  }
+
+  const snapTokenTo = (id, target) => {
+    clearTimeout(timersRef.current[id])
+    delete timersRef.current[id]
+    clearTimeout(hopClearTimersRef.current[id])
+    delete hopClearTimersRef.current[id]
+    visualRef.current[id] = target
+    targetsRef.current[id] = target
+    setHoppingIds((previous) => {
+      if (!previous.has(id)) return previous
+      const next = new Set(previous)
+      next.delete(id)
+      return next
+    })
+    setVisualPositions((previous) => (
+      previous[id] === target ? previous : { ...previous, [id]: target }
+    ))
   }
 
   const positionsSignature = useMemo(() => players
@@ -151,20 +157,22 @@ export default function LandscapeBoard({
       }
       if (timersRef.current[id] && targetsRef.current[id] === target) continue
 
+      const plan = planTokenHop(current, target, TRACK_LEN, TOKEN_HOP_MAX_STEPS)
+      if (reducedMotion || plan.mode === 'snap') {
+        snapTokenTo(id, target)
+        continue
+      }
+
       clearTimeout(timersRef.current[id])
       delete timersRef.current[id]
       targetsRef.current[id] = target
 
-      const distance = forwardDistance(current, target)
-      if (reducedMotion || distance === 0 || distance > MAX_ANIMATED_STEPS) {
-        visualRef.current[id] = target
-        setVisualPositions((previous) => ({ ...previous, [id]: target }))
-        continue
-      }
-
-      const path = buildForwardPath(current, target)
+      // path.length === steps do dado (1–6); hard-cap de segurança
+      const path = plan.path.slice(0, TOKEN_HOP_MAX_STEPS)
       let step = 0
       const tick = () => {
+        // Alvo mudou no meio do pulo (rede): abandona este path.
+        if (targetsRef.current[id] !== target) return
         const nextPosition = path[step]
         step += 1
         visualRef.current[id] = nextPosition
