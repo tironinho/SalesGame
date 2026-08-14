@@ -33,7 +33,6 @@ import {
 } from '../game/turnTimeConfig'
 import { mergeLobbyMatchSettings, readMatchConfigFromRoomState } from '../game/turnTimerLogic'
 import { useGameNet } from '../net/GameNetProvider.jsx'
-import { enterGamePresentation } from '../utils/fullscreen.js'
 
 /* ---------- Ícones SVG inline (decorativos; sem dependência externa) ---------- */
 const svgProps = {
@@ -447,8 +446,6 @@ useEffect(() => {
 
   async function handleStart() {
     if (!canStart) return
-    // Gesture do usuário: tenta fullscreen + lock landscape (falha silenciosa).
-    await enterGamePresentation().catch(() => {})
     const prev = lobby?.status
     await setLobbyStatus(lobbyId, 'locked')   // trava a sala
     try {

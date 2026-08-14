@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react'
 import { useDeviceType } from '../../hooks/useDeviceType.js'
 import { useOrientation } from '../../hooks/useOrientation.js'
 import { enterGamePresentation } from '../../utils/fullscreen.js'
+import { unlockOrientation } from '../../utils/screenOrientation.js'
 import OrientationOverlay from './OrientationOverlay.jsx'
 
 function blurActiveField() {
@@ -16,24 +17,26 @@ function blurActiveField() {
 }
 
 /**
- * Exige landscape em mobile/tablet touch.
- * Desktop e landscape: jogo normal.
- * Portrait mobile: overlay por cima (children permanecem montados).
+ * Exige landscape só quando `enabled` (ex.: phase === 'game' / tabuleiro).
+ * Lobby, nome e salas ficam livres em portrait com scroll.
+ * Children permanecem montados sob o overlay.
  */
-export default function OrientationGuard({ children }) {
+export default function OrientationGuard({ children, enabled = false }) {
   const { isPortrait, lockLandscape } = useOrientation()
   const { shouldEnforceLandscape } = useDeviceType()
 
-  const shouldBlock = shouldEnforceLandscape && isPortrait
+  const active = Boolean(enabled) && shouldEnforceLandscape
+  const shouldBlock = active && isPortrait
 
-  // Tentativa best-effort de lock (só funciona após gesture em vários browsers).
   useEffect(() => {
-    if (!shouldEnforceLandscape) return undefined
+    if (!active) {
+      unlockOrientation().catch(() => {})
+      return undefined
+    }
     lockLandscape().catch(() => {})
     return undefined
-  }, [shouldEnforceLandscape, lockLandscape])
+  }, [active, lockLandscape])
 
-  // Ao mostrar o overlay, tira foco de inputs (evita zoom Safari).
   useEffect(() => {
     if (shouldBlock) blurActiveField()
   }, [shouldBlock])

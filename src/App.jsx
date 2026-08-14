@@ -78,6 +78,8 @@ import {
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './game/roundConfig'
 import { normalizePlayersAliases } from './game/playerShape.js'
 import { consumeTileTip } from './game/progressiveTips.js'
+import OrientationGuard from './components/orientation/OrientationGuard.jsx'
+import { enterGamePresentation } from './utils/fullscreen.js'
 
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
@@ -2698,8 +2700,9 @@ export default function App() {
     )
   }
 
-  // 4) Jogo
+  // 4) Jogo — landscape/fullscreen só aqui (tabuleiro); lobbies/nome livres em portrait
   return (
+    <OrientationGuard enabled>
     <ModalProvider>
     <div className="page">
       <header className="topbar">
@@ -2775,7 +2778,11 @@ export default function App() {
           className="boardModeBtn"
           aria-label="Modo ampliado do tabuleiro"
           aria-pressed={boardView === 'follow'}
-          onClick={() => setBoardView(v => (v === 'follow' ? 'fit' : 'follow'))}
+          onClick={() => {
+            // Gesture no tabuleiro: tenta fullscreen + landscape (falha silenciosa).
+            enterGamePresentation().catch(() => {})
+            setBoardView(v => (v === 'follow' ? 'fit' : 'follow'))
+          }}
         >
           {boardView === 'follow'
             ? 'Voltar ao modo normal'
@@ -2959,5 +2966,6 @@ export default function App() {
       />
     </div>
     </ModalProvider>
+    </OrientationGuard>
   )
 }

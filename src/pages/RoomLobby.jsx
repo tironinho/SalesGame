@@ -5,7 +5,6 @@ import {
   setPlayerReady, setLobbyStatus, startMatch
 } from '../lib/lobbies'
 import { getOrCreateLocalPlayerId, getOrSetPlayerName } from '../auth'
-import { enterGamePresentation } from '../utils/fullscreen.js'
 
 export default function RoomLobby({ lobbyId, onLeave, onStartGame }) {
   const meId = getOrCreateLocalPlayerId()
@@ -62,8 +61,6 @@ export default function RoomLobby({ lobbyId, onLeave, onStartGame }) {
     if (!isHost || !allReady) return
     setStarting(true)
     try {
-      // Gesture do usuário: tenta fullscreen + lock landscape (falha silenciosa).
-      await enterGamePresentation().catch(() => {})
       // marca a sala como "started" e cria o match básico
       await startMatch({ lobbyId })
       await setLobbyStatus(lobbyId, 'started')
