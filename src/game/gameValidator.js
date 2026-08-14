@@ -209,20 +209,19 @@ export class GameValidator {
   validateGameOverState(players, gameOver, winner) {
     const aliveCount = countAlivePlayers(players)
     
-    if (gameOver && aliveCount > 1) {
-      this.addError('Jogo marcado como terminado mas há mais de 1 jogador vivo')
-    }
-
-    if (gameOver && !winner) {
-      this.addError('Jogo terminado mas não há vencedor definido')
+    // Fim por falência: no máximo 1 vivo. Fim por rodadas: vários vivos OK.
+    // Só sinaliza inconsistência se gameOver + winner falido.
+    if (gameOver && winner && winner.bankrupt) {
+      this.addError('Vencedor não pode estar falido')
     }
 
     if (winner && !gameOver) {
       this.addError('Há vencedor definido mas jogo não terminou')
     }
 
-    if (winner && winner.bankrupt) {
-      this.addError('Vencedor não pode estar falido')
+    // Solo falido: gameOver sem winner é permitido (alive === 0)
+    if (gameOver && !winner && aliveCount > 0) {
+      this.addError('Jogo terminado com jogadores vivos mas sem vencedor definido')
     }
   }
 

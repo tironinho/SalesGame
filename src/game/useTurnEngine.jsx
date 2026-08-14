@@ -43,6 +43,7 @@ import {
   countAlivePlayers,
   findNextAliveIdx,
 } from './gameMath'
+import { pickWinnerByPatrimonio } from './patrimonio.js'
 import { buildClientsPurchaseDeltas } from './clientsPurchase'
 import { buildManagerPurchaseDeltas } from './managersPurchase'
 import { buildCommonSellersPurchaseDeltas } from './commonSellersPurchase'
@@ -625,19 +626,7 @@ export function useTurnEngine({
     }
 
     // vencedor: maior patrimônio (cash + bens). Desempate: cash, depois nome.
-    const ranked = alivePlayers
-      .map(p => ({
-        player: p,
-        patrimonio: (p.cash || 0) + (p.bens || 0),
-        cash: (p.cash || 0),
-      }))
-      .sort((a, b) =>
-        (b.patrimonio - a.patrimonio) ||
-        (b.cash - a.cash) ||
-        String(a.player?.name || '').localeCompare(String(b.player?.name || ''))
-      )
-
-    const champ = ranked[0]?.player || null
+    const champ = pickWinnerByPatrimonio(alivePlayers)
 
     console.log("[ENDGAME] finalizando: vencedor=", champ?.name || "N/A", ", round=", MAX_ROUNDS)
 
@@ -2731,24 +2720,7 @@ export function useTurnEngine({
 
           // pega estado mais recente (inclui faturamento/despesas já aplicados)
           const finalPlayers = Array.isArray(playersRef.current) ? playersRef.current : (td?.nextPlayers || [])
-          const alive = (finalPlayers || []).filter(p => !p?.bankrupt)
-
-          // campeão: patrimônio desc, cash desc, nome asc
-          let champ = null
-          if (alive.length > 0) {
-            const ranked = alive
-              .map(p => ({
-                p,
-                patrimonio: (Number(p.cash) || 0) + (Number(p.bens) || 0),
-                cash: (Number(p.cash) || 0),
-              }))
-              .sort((a, b) =>
-                (b.patrimonio - a.patrimonio) ||
-                (b.cash - a.cash) ||
-                String(a.p?.name || '').localeCompare(String(b.p?.name || ''))
-              )
-            champ = ranked[0]?.p || null
-          }
+          const champ = pickWinnerByPatrimonio(finalPlayers)
 
           console.log('[ENDGAME] finalizando: vencedor=%s, round=%s', champ?.name || '—', MAX_ROUNDS)
 

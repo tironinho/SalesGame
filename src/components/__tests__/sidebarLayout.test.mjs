@@ -220,10 +220,9 @@ describe('sidebar player summary layout', () => {
       css,
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
     )
-    const idx = css.search(
-      /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
-    )
-    const block = css.slice(idx, idx + 14000)
+    const marker = css.indexOf('/* ====== Mobile landscape (touch): tabuleiro em prioridade')
+    assert.ok(marker >= 0, 'bloco board-first deve existir')
+    const block = css.slice(marker, marker + 14000)
     assert.match(block, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(136px,\s*20%\)/)
     assert.match(block, /container-type:\s*size/)
     assert.match(block, /height:\s*100cqh\s*!important/)

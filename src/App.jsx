@@ -2871,51 +2871,6 @@ export default function App() {
               <DiceResult lastRoll={lastRollUI} isRolling={isRollingUI} />
             </div>
 
-            {/* Tela final (pódio Top 3) */}
-            {gameOver && (
-              <FinalWinners
-                players={players}
-                maxRounds={maxRounds}
-                endedRound={round}
-                onExit={async () => {
-                  if (currentLobbyId && myUid) {
-                    try {
-                      await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
-                    } catch (error) {
-                      console.warn('[App] Erro ao sair da sala:', error)
-                    }
-                    clearMatchIdentity(currentLobbyId)
-                  }
-                  window.__setRoomCode?.(null)
-                  setPhase('lobbies')
-                }}
-                onRestart={() => {
-                  const freshPlayers = players.map((p, i) =>
-                    applyStarterKit({
-                      id: p.id,
-                      name: p.name,
-                      color: p.color,
-                      seat: Number.isFinite(p.seat) ? p.seat : i,
-                      joinOrder: Number.isFinite(p.joinOrder) ? p.joinOrder : i,
-                      cash: 18000,
-                      bens: 4000,
-                      pos: 0,
-                      bankrupt: false,
-                      waitingAtRevenue: false,
-                      lastRevenueRound: 0,
-                      loanPending: null,
-                      loanTakenInMatch: false,
-                      lastChargedLoanId: null,
-                      emprestimos: 0,
-                      revenue: 0
-                    })
-                  )
-                  setTurnLockBroadcast(false)
-                  broadcastStart(freshPlayers, maxRoundsRef.current, turnTimeSecRef.current)
-                  setLog(['Novo jogo iniciado!'])
-                }}
-              />
-            )}
           </div>
 
           <div className="turnPrimaryActions">
@@ -3037,6 +2992,27 @@ export default function App() {
       <footer className="foot">
         <TironiCredit compact />
       </footer>
+
+      {/* Pódio final — overlay full-screen (não fica preso na sidebar) */}
+      {gameOver && (
+        <FinalWinners
+          players={players}
+          maxRounds={maxRounds}
+          endedRound={round}
+          onExit={async () => {
+            if (currentLobbyId && myUid) {
+              try {
+                await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
+              } catch (error) {
+                console.warn('[App] Erro ao sair da sala:', error)
+              }
+              clearMatchIdentity(currentLobbyId)
+            }
+            window.__setRoomCode?.(null)
+            setPhase('lobbies')
+          }}
+        />
+      )}
 
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
       {showBankruptOverlay && (
