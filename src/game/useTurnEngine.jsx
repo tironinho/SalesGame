@@ -43,6 +43,7 @@ import {
   countAlivePlayers,
   findNextAliveIdx,
 } from './gameMath'
+import { resolveFinalRoundMove } from './resolveFinalRoundMove.js'
 import { pickWinnerByPatrimonio } from './patrimonio.js'
 import { buildClientsPurchaseDeltas } from './clientsPurchase'
 import { buildManagerPurchaseDeltas } from './managersPurchase'
@@ -650,18 +651,31 @@ export function useTurnEngine({
         modalLocks: modalLocksRef.current,
         opening: openingModalRef.current
       })
-      // ✅ Evita duplicação: consolida retries (vários cliques não podem agendar vários retries)
+      // Consolida retries até liberar (antes: 1 tentativa de 200ms descartava o movimento)
       pendingAdvanceArgsRef.current = { steps, deltaCash, note }
       if (advanceRetryTimerRef.current) return
-      advanceRetryTimerRef.current = setTimeout(() => {
-        advanceRetryTimerRef.current = null
-        const args = pendingAdvanceArgsRef.current
-        pendingAdvanceArgsRef.current = null
-        if (!args) return
-        if (modalLocksRef.current === 0 && !openingModalRef.current) {
-          advanceAndMaybeLap(args.steps, args.deltaCash, args.note)
-        }
-      }, 200)
+      let attempts = 0
+      const maxAttempts = 25 // ~5s
+      const scheduleRetry = () => {
+        advanceRetryTimerRef.current = setTimeout(() => {
+          advanceRetryTimerRef.current = null
+          const args = pendingAdvanceArgsRef.current
+          if (!args) return
+          attempts += 1
+          if (modalLocksRef.current === 0 && !openingModalRef.current) {
+            pendingAdvanceArgsRef.current = null
+            advanceAndMaybeLap(args.steps, args.deltaCash, args.note)
+            return
+          }
+          if (attempts < maxAttempts) {
+            scheduleRetry()
+            return
+          }
+          pendingAdvanceArgsRef.current = null
+          console.warn('[DEBUG] ⚠️ advanceAndMaybeLap - desistiu após retries; movimento descartado')
+        }, 200)
+      }
+      scheduleRetry()
       return
     }
 
@@ -1158,22 +1172,32 @@ export function useTurnEngine({
     }
 
     const oldPos = cur.pos
-    const newPos = (oldPos + steps) % trackLen
-    const lap = newPos < oldPos
-    
+    const roundNow = currentRoundRef.current
+    const aliveCount = players.filter(p => !p?.bankrupt).length
+
+    const moveResolved = resolveFinalRoundMove({
+      oldPos,
+      steps,
+      trackLen,
+      roundNow,
+      maxRounds: MAX_ROUNDS,
+      aliveCount,
+      prevWaitingAtRevenue: cur.waitingAtRevenue === true,
+      prevLastRevenueRound: Number(cur.lastRevenueRound) || 0,
+    })
+    const newPos = moveResolved.mathPos
+    const lap = moveResolved.lap
+    const crossedStart1ForRound = moveResolved.crossedStart
+    const stopAtRevenue = moveResolved.stopAtRevenue === true
+
     // ✅ CORREÇÃO CRÍTICA: Detecta volta completa e incrementa rodada individual do jogador
     // NOTA: A rodada geral só incrementa quando TODOS passam pela casa 0, mas aqui detectamos volta completa
     const completedLap = lap && oldPos >= trackLen - 1  // Se estava na última casa e deu volta
 
-    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap, 'CompletedLap:', completedLap)
+    console.log('[DEBUG] 🚶 MOVIMENTO - De posição:', oldPos, 'Para posição:', newPos, 'Steps:', steps, 'Lap:', lap, 'CompletedLap:', completedLap, 'stopAtRevenue:', stopAtRevenue)
 
-    // ✅ CORREÇÃO: Verifica se passou pela casa 0 (Faturamento do Mês)
-    const crossedStart1ForRound = crossedTile(oldPos, newPos, 0) || lap
-    
     // aplica movimento + eventual cashDelta imediato (sem permitir negativo)
     // ✅ Adiciona lastRevenueRound e waitingAtRevenue
-    const roundNow = currentRoundRef.current
-    const aliveCount = players.filter(p => !p?.bankrupt).length
     
     // ✅ CORREÇÃO: Atualiza jogador por ID/seat, não por índice
     const nextPlayers = normalizePlayers(players).map((p) => {
@@ -1181,30 +1205,12 @@ export function useTurnEngine({
 
       const nextCash = (p.cash || 0) + (deltaCash || 0)
 
-      const prevLastRevenueRound = Number(p.lastRevenueRound) || 0
-      const prevWaiting = p.waitingAtRevenue === true
-
-      let newLastRevenueRound = prevLastRevenueRound
-      let waitingAtRevenue = (roundNow === MAX_ROUNDS) ? prevWaiting : false
-      let finalPos = (waitingAtRevenue ? 0 : newPos)
-
-      // ✅ cruzou casa 0 → marca rodada atual
-      if (crossedStart1ForRound) {
-        newLastRevenueRound = Math.max(prevLastRevenueRound, roundNow)
-
-        // ✅ rodada final trava SEMPRE na casa 0
-        if (roundNow === MAX_ROUNDS && aliveCount > 1) {
-          waitingAtRevenue = true
-          finalPos = 0
-        }
-      }
-
       return {
         ...p,
-        pos: finalPos,
+        pos: moveResolved.finalPos,
         cash: Math.max(0, nextCash),
-        lastRevenueRound: newLastRevenueRound,
-        waitingAtRevenue
+        lastRevenueRound: moveResolved.lastRevenueRound,
+        waitingAtRevenue: moveResolved.waitingAtRevenue
       }
     })
     
@@ -1409,10 +1415,15 @@ export function useTurnEngine({
     // O turno será mudado na função tick() quando modalLocks === 0
     // ✅ CORREÇÃO: Finalização por rodada será detectada no tick() quando shouldIncrementRound && nextRound > MAX_ROUNDS
 
-    const landedOneBased = newPos + 1
-    const landedTileType = getTileType(landedOneBased, resolvedBoardVersion)
-    const crossedStart1 = crossedTile(oldPos, newPos, 0)
-    const crossedExpenses23 = crossedTile(oldPos, newPos, expensesIndex)
+    const landPos = moveResolved.landPos
+    const landedOneBased = landPos + 1
+    const landedTileType = stopAtRevenue
+      ? 'NONE'
+      : getTileType(landedOneBased, resolvedBoardVersion)
+    const crossedStart1 = crossedStart1ForRound
+    const crossedExpenses23 = stopAtRevenue
+      ? false
+      : crossedTile(oldPos, newPos, expensesIndex)
 
     // Dicas progressivas (HUD) — só para o jogador local, sem sync
     try {

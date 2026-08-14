@@ -337,6 +337,8 @@ export default function App() {
   const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
   const [gameOver, setGameOver] = useState(false)
+  const gameOverRef = useRef(false)
+  useEffect(() => { gameOverRef.current = !!gameOver }, [gameOver])
   const [winner, setWinner] = useState(null)
   // ✅ Anti-double-roll persistido (independente do lock)
   const [lastRollTurnKey, setLastRollTurnKey] = useState(null)
@@ -351,6 +353,8 @@ export default function App() {
   const diceFxRef = useRef(null)
   const rollingTimeoutRef = useRef(null)
   const lastRollUIRef = useRef(null)
+  const diceInFlightRef = useRef(false)
+  const handleDiceFxCompleteRef = useRef(null)
   useEffect(() => { lastRollUIRef.current = lastRollUI }, [lastRollUI])
   useEffect(() => { diceFxRef.current = diceFx }, [diceFx])
 
@@ -360,6 +364,13 @@ export default function App() {
       rollingTimeoutRef.current = null
     }
   }, [])
+
+  const clearDiceUi = React.useCallback(() => {
+    clearRollingTimeout()
+    diceInFlightRef.current = false
+    setDiceFx(null)
+    setIsRollingUI(false)
+  }, [clearRollingTimeout])
 
   // Aplica lastRoll no espelho local com proteção visual contra regressão de turnKey.
   const applyLastRollUI = React.useCallback((incoming) => {
@@ -382,6 +393,12 @@ export default function App() {
     setLastRollUI(normalized)
     clearRollingTimeout()
 
+    // Não anima dado depois do fim de jogo (evita “rolar” eterno no pódio)
+    if (gameOverRef.current) {
+      setIsRollingUI(false)
+      return
+    }
+
     // Remoto (ou sync): anima o dado 3D se ainda não mostramos este turnKey.
     const key = normalized.turnKey != null ? String(normalized.turnKey) : null
     if (key && !diceAnimatedKeysRef.current.has(key) && !diceFxRef.current) {
@@ -401,13 +418,30 @@ export default function App() {
   // Limpa UI do dado ao sair da fase de jogo / unmount
   useEffect(() => {
     if (phase !== 'game') {
-      clearRollingTimeout()
+      clearDiceUi()
       setLastRollUI(null)
-      setIsRollingUI(false)
-      setDiceFx(null)
       diceAnimatedKeysRef.current.clear()
     }
-  }, [phase, clearRollingTimeout])
+  }, [phase, clearDiceUi])
+
+  // Fim de jogo: nunca deixar dado “rolando” por cima do pódio
+  useEffect(() => {
+    if (!gameOver) return
+    clearDiceUi()
+  }, [gameOver, clearDiceUi])
+
+  // Watchdog: se o overlay ficar preso, aplica o ROLL pendente
+  useEffect(() => {
+    if (!diceFx) return undefined
+    const startedAt = Date.now()
+    const t = setInterval(() => {
+      if (!diceFxRef.current) return
+      if (Date.now() - startedAt < 2800) return
+      console.warn('[dice] watchdog: forçando conclusão do overlay')
+      handleDiceFxCompleteRef.current?.()
+    }, 400)
+    return () => clearInterval(t)
+  }, [diceFx])
 
   useEffect(() => {
     return () => { clearRollingTimeout() }
@@ -2293,6 +2327,7 @@ export default function App() {
   })
 
   // Cronômetro autoritativo: presence-coordinator ou lobby-host-fallback; CAS compartilhado.
+  // Bloqueia também enquanto o dado 3D ainda não aplicou o ROLL no motor.
   useTurnTimerAutoPass({
     enabled: phase === 'game' && !gameOver && (!!net?.enabled ? !!net?.ready : true),
     lobbyId: currentLobbyId,
@@ -2302,7 +2337,7 @@ export default function App() {
     turnPlayerId,
     turnSeq,
     turnDeadlineAt,
-    turnLock,
+    turnLock: turnLock || !!diceFx || diceInFlightRef.current,
     gameOver,
     turnTimeSec,
     attemptSkipTurn: skipAbsentTurn,
@@ -2416,8 +2451,13 @@ export default function App() {
         onAction(act)
         return
       }
+      if (diceInFlightRef.current || diceFxRef.current) {
+        console.warn('[dice] ROLL ignorado — animação ainda em andamento')
+        return
+      }
       // Gesto do usuário: desbloqueia áudio aqui (antes do overlay montar).
       unlockDiceAudio().catch(() => {})
+      diceInFlightRef.current = true
       setIsRollingUI(true)
       clearRollingTimeout()
       const localKey = `local:${currentTurnKey || turnSeq || Date.now()}`
@@ -2436,9 +2476,22 @@ export default function App() {
 
   const handleDiceFxComplete = React.useCallback(() => {
     const fx = diceFxRef.current
+    // Consome uma vez (StrictMode / double onComplete não reaplica ROLL)
+    if (fx) {
+      diceFxRef.current = null
+    }
+    const pending = fx?.pendingAction || null
+    if (fx && fx.pendingAction) fx.pendingAction = null
+
     setDiceFx(null)
-    if (fx?.pendingAction) {
-      onAction(fx.pendingAction)
+    diceInFlightRef.current = false
+
+    if (pending) {
+      try {
+        onAction(pending)
+      } catch (err) {
+        console.error('[dice] falha ao aplicar ROLL após animação', err)
+      }
     }
     clearRollingTimeout()
     rollingTimeoutRef.current = setTimeout(() => {
@@ -2446,6 +2499,10 @@ export default function App() {
       rollingTimeoutRef.current = null
     }, 200)
   }, [clearRollingTimeout, onAction])
+
+  useEffect(() => {
+    handleDiceFxCompleteRef.current = handleDiceFxComplete
+  }, [handleDiceFxComplete])
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
