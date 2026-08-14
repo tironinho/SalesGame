@@ -16,6 +16,7 @@ import {
   TOKEN_HOP_STEP_MS,
   planTokenHop,
 } from './tokenHop.js'
+import { playTokenHopSound, unlockTokenHopAudio } from '../../utils/tokenHopSound.js'
 import { getTileHint } from '../../modals/tileContext.js'
 import './landscape-board-preview.css'
 import './landscape-board.css'
@@ -67,6 +68,7 @@ export default function LandscapeBoard({
   playersRef.current = players
 
   const markHopping = (id) => {
+    playTokenHopSound()
     setHoppingIds((previous) => {
       if (previous.has(id)) return previous
       const next = new Set(previous)
@@ -88,6 +90,20 @@ export default function LandscapeBoard({
       delete hopClearTimersRef.current[id]
     }, TOKEN_STEP_MS + 40)
   }
+
+  // Mobile/desktop: AudioContext só roda após gesto — desbloqueia no 1º toque/clique.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const unlock = () => {
+      unlockTokenHopAudio().catch(() => {})
+    }
+    window.addEventListener('pointerdown', unlock, { once: true, passive: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
 
   const snapTokenTo = (id, target) => {
     clearTimeout(timersRef.current[id])
