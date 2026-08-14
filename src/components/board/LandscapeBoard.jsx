@@ -16,8 +16,10 @@ import './landscape-board-preview.css'
 import './landscape-board.css'
 
 const TRACK_LEN = BOARD_40_CONFIG.length
-const TOKEN_STEP_MS = 150
-const MAX_ANIMATED_STEPS = 6
+/** Duração de cada pulo (casa → casa). Deve bater com o CSS `sgTokenHop`. */
+const TOKEN_STEP_MS = 320
+/** Anima qualquer avanço até uma volta completa (dado ≤ 6; cobre efeitos extras). */
+const MAX_ANIMATED_STEPS = TRACK_LEN
 const TOKEN_CELL_OFFSETS = Object.freeze([
   Object.freeze({ x: -0.22, y: -0.22 }),
   Object.freeze({ x: 0.22, y: -0.22 }),
@@ -66,11 +68,38 @@ export default function LandscapeBoard({
   const [selectedIndex, setSelectedIndex] = useState(null)
   const [hoveredIndex, setHoveredIndex] = useState(null)
   const [visualPositions, setVisualPositions] = useState({})
+  /** Contador por jogador: remonta a face e reinicia o pulo a cada casa. */
+  const [hopNonceById, setHopNonceById] = useState({})
+  const [hoppingIds, setHoppingIds] = useState(() => new Set())
   const visualRef = useRef({})
   const timersRef = useRef({})
   const targetsRef = useRef({})
+  const hopClearTimersRef = useRef({})
   const playersRef = useRef(players)
   playersRef.current = players
+
+  const markHopping = (id) => {
+    setHoppingIds((previous) => {
+      if (previous.has(id)) return previous
+      const next = new Set(previous)
+      next.add(id)
+      return next
+    })
+    setHopNonceById((previous) => ({
+      ...previous,
+      [id]: (previous[id] || 0) + 1,
+    }))
+    clearTimeout(hopClearTimersRef.current[id])
+    hopClearTimersRef.current[id] = setTimeout(() => {
+      setHoppingIds((previous) => {
+        if (!previous.has(id)) return previous
+        const next = new Set(previous)
+        next.delete(id)
+        return next
+      })
+      delete hopClearTimersRef.current[id]
+    }, TOKEN_STEP_MS + 40)
+  }
 
   const positionsSignature = useMemo(() => players
     .map((player) => `${player?.id}:${normalizePosition(player?.pos)}`)
@@ -99,7 +128,9 @@ export default function LandscapeBoard({
     for (const id of Object.keys(visualRef.current)) {
       if (aliveIds.has(id)) continue
       clearTimeout(timersRef.current[id])
+      clearTimeout(hopClearTimersRef.current[id])
       delete timersRef.current[id]
+      delete hopClearTimersRef.current[id]
       delete targetsRef.current[id]
       delete visualRef.current[id]
     }
@@ -137,17 +168,21 @@ export default function LandscapeBoard({
         const nextPosition = path[step]
         step += 1
         visualRef.current[id] = nextPosition
+        markHopping(id)
         setVisualPositions((previous) => ({ ...previous, [id]: nextPosition }))
         if (step < path.length) timersRef.current[id] = setTimeout(tick, TOKEN_STEP_MS)
         else delete timersRef.current[id]
       }
-      timersRef.current[id] = setTimeout(tick, TOKEN_STEP_MS)
+      // Primeiro pulo imediato; os seguintes no ritmo TOKEN_STEP_MS
+      tick()
     }
   }, [positionsSignature])
 
   useEffect(() => () => {
     Object.values(timersRef.current).forEach(clearTimeout)
+    Object.values(hopClearTimersRef.current).forEach(clearTimeout)
     timersRef.current = {}
+    hopClearTimersRef.current = {}
   }, [])
 
   const renderedPlayers = useMemo(() => players.map((player) => ({
@@ -207,23 +242,33 @@ export default function LandscapeBoard({
           const portraitPosition = getTokenVisualPosition(position, 'portrait-8x14', slot)
           const active = String(player?.id) === String(activePlayerId)
           const initial = String(player?.name || '').trim().charAt(0).toUpperCase() || '?'
+          const hopping = hoppingIds.has(String(player.id))
+          const hopNonce = hopNonceById[String(player.id)] || 0
           return (
             <div
               key={player.id}
-              className={`token sg40GameBoard__token${active ? ' token--active' : ''}`}
+              className={[
+                'token',
+                'sg40GameBoard__token',
+                active ? 'token--active' : '',
+                hopping ? 'sg40GameBoard__token--hopping' : '',
+              ].filter(Boolean).join(' ')}
               style={{
                 '--token-landscape-x': landscapePosition.x,
                 '--token-landscape-y': landscapePosition.y,
                 '--token-portrait-x': portraitPosition.x,
                 '--token-portrait-y': portraitPosition.y,
                 '--token-color': player.color || '#6c5ce7',
-                zIndex: active ? 5 : 4,
+                '--token-hop-ms': `${TOKEN_STEP_MS}ms`,
+                zIndex: hopping ? 8 : (active ? 5 : 4),
               }}
               data-player-position={position}
               title={`${player.name || 'Jogador'} • Casa ${tile.number}`}
               aria-label={`${player.name || 'Jogador'} está na casa ${tile.number}`}
             >
-              <span className="tokenInitial">{initial}</span>
+              <span key={hopNonce} className="sg40GameBoard__tokenFace" aria-hidden="true">
+                <span className="tokenInitial">{initial}</span>
+              </span>
             </div>
           )
         })}
