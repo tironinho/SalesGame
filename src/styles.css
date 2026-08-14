@@ -329,9 +329,6 @@ html, body {
 .btn.go{ background:#4f46e5; color:#fff; }
 .turnBox{ display:flex; flex-direction:column; gap:8px }
 
-/* Rodapé removido p/ não sobrar faixa preta */
-.foot{ display:none; }
-
 /* ===== Modais (mantidos) ===== */
 .modalBackdrop{
   position:fixed; inset:0; background:rgba(0,0,0,.55);
@@ -670,9 +667,112 @@ html, body {
   gap:16px; padding:12px 20px 18px; min-height:72px;
 }
 .startLinks{ font-size:18px; line-height:1.25; text-shadow:0 2px 10px rgba(0,0,0,.55); }
-.startBrand{ display:flex; align-items:center; justify-content:flex-end; }
+.startBrand{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  justify-content:flex-end;
+  gap:10px;
+}
 .startBrandLogo{
   height:132px; width:auto; filter: drop-shadow(0 8px 18px rgba(0,0,0,.5));
+}
+
+/* ===== Crédito Tironi Tech ===== */
+.tironiCredit{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  text-decoration:none;
+  color:#e8eef8;
+  border-radius:12px;
+  padding:6px 10px 6px 6px;
+  background:rgba(8, 14, 28, 0.55);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 6px 18px rgba(0,0,0,.28);
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.tironiCredit:hover,
+.tironiCredit:focus-visible{
+  background:rgba(16, 28, 52, 0.82);
+  border-color:rgba(242, 193, 78, .55);
+  outline:none;
+  transform: translateY(-1px);
+}
+.tironiCreditMark{
+  flex:none;
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  border-radius:9px;
+  background:linear-gradient(145deg, #0b1f3a 0%, #163a66 100%);
+  color:#f2c14e;
+  font-weight:900;
+  font-size:13px;
+  letter-spacing:-0.04em;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+}
+.tironiCreditText{
+  display:flex;
+  flex-direction:column;
+  line-height:1.15;
+  min-width:0;
+}
+.tironiCreditLabel{
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:rgba(232,238,248,.72);
+}
+.tironiCreditName{
+  font-size:16px;
+  font-weight:800;
+  color:#fff;
+}
+.tironiCredit--compact{
+  padding:4px 8px 4px 4px;
+  gap:8px;
+  border-radius:10px;
+}
+.tironiCredit--compact .tironiCreditMark{
+  width:28px;
+  height:28px;
+  font-size:11px;
+  border-radius:7px;
+}
+.tironiCredit--compact .tironiCreditText{
+  flex-direction:row;
+  flex-wrap:wrap;
+  gap:4px;
+  font-size:12px;
+  color:rgba(232,238,248,.88);
+}
+.tironiCredit--compact .tironiCreditText strong{
+  color:#fff;
+  font-weight:800;
+}
+
+.lobbyTironiCredit{
+  display:flex;
+  justify-content:center;
+  padding:8px 12px 16px;
+}
+
+.foot{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:6px 10px 10px;
+}
+.foot .tironiCredit{
+  background:rgba(8, 14, 28, 0.72);
+}
+
+/* Em partida (mobile landscape) o rodapé some para não roubar altura */
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse){
+  .foot{ display:none !important; }
 }
 
 /* responsivo */

@@ -3,6 +3,7 @@ import {
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
 import TutorialModal, { shouldAutoOpenTutorial } from './TutorialModal.jsx'
+import TironiCredit from './TironiCredit.jsx'
 
 // ajuste os paths dos assets conforme você salvou
 import bgImg from '/dynamic-data-visualization-3d.jpg'
@@ -96,6 +97,7 @@ export default function StartScreen({ onEnter }) {
         </div>
 
         <div className="startBrand">
+          <TironiCredit />
           <img className="startBrandLogo" src={logoMultiplier} alt="Multiplier" />
         </div>
       </div>
