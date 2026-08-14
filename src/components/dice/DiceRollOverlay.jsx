@@ -10,9 +10,9 @@ import {
   unlockDiceAudio,
 } from '../../utils/diceRollSound.js'
 
-const ROLL_MS = 1800
-const HOLD_MS = 750
-const FADE_MS = 320
+const ROLL_MS = 1000
+const HOLD_MS = 350
+const FADE_MS = 200
 
 function prefersReducedMotion() {
   try {

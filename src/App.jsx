@@ -2432,7 +2432,7 @@ export default function App() {
     rollingTimeoutRef.current = setTimeout(() => {
       setIsRollingUI(false)
       rollingTimeoutRef.current = null
-    }, 450)
+    }, 200)
   }, [clearRollingTimeout, onAction])
 
   useEffect(() => {

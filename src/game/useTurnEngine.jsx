@@ -2717,7 +2717,7 @@ export function useTurnEngine({
       // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
       // Isso garante que todas as modais (incluindo aninhadas) foram completamente fechadas
       const timeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
-      const minTimeAfterModalClose = 200 // ✅ CORREÇÃO: Aguarda 200ms após fechar a última modal antes de mudar turno
+      const minTimeAfterModalClose = 100 // após fechar modal, handoff rápido (antes 200ms)
       const canChangeTurn = currentModalLocks === 0 && (timeSinceLastModalClosed >= minTimeAfterModalClose || !lastModalClosedTimeRef.current)
       
       if (canChangeTurn) {
@@ -2804,7 +2804,7 @@ export function useTurnEngine({
             
             // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
             const finalTimeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
-            const finalCanChangeTurn = finalModalLocks === 0 && !finalOpening && (finalTimeSinceLastModalClosed >= 200 || !lastModalClosedTimeRef.current)
+            const finalCanChangeTurn = finalModalLocks === 0 && !finalOpening && (finalTimeSinceLastModalClosed >= 100 || !lastModalClosedTimeRef.current)
             
               // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
               if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
@@ -3008,9 +3008,13 @@ export function useTurnEngine({
       if (DEBUG_LOGS) console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
       tick()
     }
-    // ✅ CORREÇÃO: Delay maior para dar tempo das modais serem abertas (as modais são abertas de forma assíncrona)
-    // As modais são abertas dentro de blocos (async () => { ... })(), então precisamos aguardar
-    setTimeout(checkBeforeTick, 500)
+    // Delay inicial curto: só o necessário para IIFEs de modal marcarem openingModalRef.
+    // Se não houver modal, o handoff não fica +500ms parado (solo/multiplayer).
+    const initialDelay =
+      (openingModalRef.current || modalLocksRef.current > 0 || eventsInProgressRef.current)
+        ? 60
+        : 90
+    setTimeout(checkBeforeTick, initialDelay)
   } catch (error) {
     console.error('[DEBUG] Erro em advanceAndMaybeLap:', error)
     // ✅ BUG 2 FIX: Libera turnLock em caso de erro
