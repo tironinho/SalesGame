@@ -1,7 +1,7 @@
 /** Persistência entre sessões (histórico local). */
-export const TUTORIAL_STORAGE_KEY = 'salesgame_tutorial_seen_v2'
+export const TUTORIAL_STORAGE_KEY = 'salesgame_tutorial_seen_v3'
 /** Uma abertura automática por aba/sessão do browser. */
-export const TUTORIAL_SESSION_KEY = 'salesgame_tutorial_session_shown_v1'
+export const TUTORIAL_SESSION_KEY = 'salesgame_tutorial_session_shown_v3'
 
 export function hasSeenTutorial() {
   try {

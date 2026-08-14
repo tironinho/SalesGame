@@ -84,7 +84,7 @@ export default function StartScreen({ onEnter }) {
             className="startBtnSecondary"
             onClick={() => setTutorialOpen(true)}
           >
-            Como jogar
+            Tour / Como jogar
           </button>
         </div>
       </div>

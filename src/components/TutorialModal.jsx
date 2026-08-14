@@ -8,6 +8,13 @@ import {
   shouldAutoOpenTutorial,
   markTutorialSeen,
 } from './tutorialStorage.js'
+import {
+  TOUR_WELCOME,
+  TOUR_STEPS,
+  TOUR_TILES,
+  TOUR_HUD,
+  TOUR_RECOVERY,
+} from './tutorialContent.js'
 
 export {
   TUTORIAL_STORAGE_KEY,
@@ -18,119 +25,26 @@ export {
   markTutorialSeen,
 }
 
-const STEPS = [
-  {
-    title: 'Objetivo',
-    body: [
-      'No SalesGame, você administra a empresa e toma decisões comerciais ao longo da partida.',
-      'O vencedor é quem terminar com o maior PATRIMÔNIO.',
-      'Patrimônio = Caixa + Bens.',
-      'Em empate de patrimônio, desempata quem tiver maior caixa; se ainda empatar, o desempate é pelo nome.',
-    ],
-  },
-  {
-    title: 'Rodadas',
-    body: [
-      'A duração da partida é configurada pelo host antes do início, entre 1 e 5 rodadas (o padrão é 5).',
-      'A partida termina após o número de rodadas configurado pelo host para aquela sala.',
-    ],
-  },
-  {
-    title: 'Seu turno',
-    body: [
-      'Na sua vez, use “Rolar Dado & Andar” para lançar o dado e movimentar o jogador pelo tabuleiro.',
-      'Em seguida, resolva o que a casa pedir e aguarde o próximo participante — cada jogador joga na sua vez.',
-    ],
-  },
-  {
-    title: 'Gestão da empresa',
-    body: [
-      'Acompanhe o caixa (saldo disponível), o faturamento gerado pelas vendas e recursos, e as despesas de manutenção da operação.',
-      'A capacidade indica quantos clientes a equipe consegue atender. Empréstimos entram pela recuperação financeira e aumentam o caixa, gerando obrigações.',
-    ],
-  },
-  {
-    title: 'Final da partida',
-    body: [
-      'Ao fim das rodadas configuradas pelo host, vence quem tiver o maior patrimônio (Caixa + Bens).',
-      'Em empate de patrimônio, prevalece quem tiver mais caixa. A partida também pode terminar se restar apenas um jogador ativo.',
-    ],
-  },
-]
-
-/** Glossário curto (1–2 frases) — ajuda contextual, sem alterar regras. */
-export const TUTORIAL_GLOSSARY = [
-  {
-    title: 'Caixa',
-    body: 'Dinheiro disponível para compras, despesas e decisões. Aparece no placar como saldo.',
-  },
-  {
-    title: 'Patrimônio',
-    body: 'Caixa + Bens. É o critério de vitória no fim da partida.',
-  },
-  {
-    title: 'Faturamento',
-    body: 'Valor gerado pelas vendas e recursos da empresa a cada ciclo.',
-  },
-  {
-    title: 'Manutenção',
-    body: 'Custos periódicos para manter vendedores, gestores, sistemas e outros recursos.',
-  },
-  {
-    title: 'Capacidade',
-    body: 'Quantidade de clientes que a equipe consegue atender ao mesmo tempo.',
-  },
-  {
-    title: 'Clientes',
-    body: 'Base atendida pela equipe. Sem capacidade suficiente, o excesso pode ser perdido no faturamento do mês.',
-  },
-  {
-    title: 'ERP',
-    body: 'Sistemas da empresa. Níveis melhores elevam faturamento e despesas conforme o tamanho da equipe.',
-  },
-  {
-    title: 'Vendedor Comum',
-    body: 'Colaborador de linha. Aumenta capacidade e contribui com faturamento e despesas.',
-  },
-  {
-    title: 'Field Sales',
-    body: 'Vendedor externo com maior capacidade por pessoa e impacto operacional próprio.',
-  },
-  {
-    title: 'Inside Sales',
-    body: 'Vendedor interno; costuma atender mais clientes por pessoa com perfil de custo diferente do Field.',
-  },
-  {
-    title: 'Gestor',
-    body: 'Gestor comercial. Não aumenta capacidade; com certificado, impulsiona o time.',
-  },
-  {
-    title: 'Certificados',
-    body: 'Treinamentos (cores) que alteram faturamento e despesas dos vendedores ou habilitam o boost do gestor.',
-  },
-  {
-    title: 'Empréstimo',
-    body: 'Opção da recuperação financeira: aumenta o caixa agora e gera obrigação futura nas despesas.',
-  },
-]
+export { TOUR_STEPS, TOUR_TILES, TOUR_HUD, TOUR_RECOVERY }
 
 /**
- * Tutorial inicial em etapas + glossário opcional.
- * Isolado do ModalProvider / engine — não altera regras do jogo.
+ * Tour guiado interativo na entrada (e reabertura via “Como jogar”).
+ * Isolado do ModalProvider / engine — não altera regras.
  */
 export default function TutorialModal({ open, onClose }) {
+  const [phase, setPhase] = useState('welcome') // 'welcome' | 'tour'
   const [stepIndex, setStepIndex] = useState(0)
-  const [showGlossary, setShowGlossary] = useState(false)
-  const total = STEPS.length
-  const step = STEPS[stepIndex]
+  const [selectedTile, setSelectedTile] = useState(TOUR_TILES[0]?.key || null)
+  const total = TOUR_STEPS.length
+  const step = TOUR_STEPS[stepIndex]
   const isFirst = stepIndex === 0
   const isLast = stepIndex === total - 1
 
   useEffect(() => {
-    if (open) {
-      setStepIndex(0)
-      setShowGlossary(false)
-    }
+    if (!open) return
+    setPhase('welcome')
+    setStepIndex(0)
+    setSelectedTile(TOUR_TILES[0]?.key || null)
   }, [open])
 
   function handleClose() {
@@ -138,14 +52,20 @@ export default function TutorialModal({ open, onClose }) {
     onClose?.()
   }
 
+  function startTour() {
+    setPhase('tour')
+    setStepIndex(0)
+  }
+
+  function skipTour() {
+    handleClose()
+  }
+
   useEffect(() => {
     if (!open) return undefined
 
     function onKeyDown(event) {
-      if (event.key === 'Escape') {
-        markTutorialSeen()
-        onClose?.()
-      }
+      if (event.key === 'Escape') handleClose()
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -164,22 +84,22 @@ export default function TutorialModal({ open, onClose }) {
     setStepIndex((i) => Math.min(total - 1, i + 1))
   }
 
-  if (!open || !step) return null
+  if (!open) return null
+
+  const selectedTileData = TOUR_TILES.find((t) => t.key === selectedTile) || TOUR_TILES[0]
 
   return (
     <ModalBase onClose={handleClose} zIndex={4000}>
-      <div className="tutorialModal">
+      <div className="tutorialModal tutorialModal--tour">
         <div className="tutorialHeader">
           <div className="tutorialHeaderText">
-            <h2 className="tutorialTitle">Como jogar</h2>
-            {!showGlossary && (
+            <h2 className="tutorialTitle">
+              {phase === 'welcome' ? 'Tour guiado' : 'Como jogar'}
+            </h2>
+            {phase === 'tour' && step && (
               <span className="tutorialStepLabel" aria-live="polite">
                 {stepIndex + 1} de {total}
-              </span>
-            )}
-            {showGlossary && (
-              <span className="tutorialStepLabel" aria-live="polite">
-                Glossário
+                {step.icon ? ` · ${step.icon}` : ''}
               </span>
             )}
           </div>
@@ -193,41 +113,115 @@ export default function TutorialModal({ open, onClose }) {
           </button>
         </div>
 
+        {phase === 'tour' && (
+          <div className="tutorialProgress" aria-hidden="true">
+            {TOUR_STEPS.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`tutorialProgressDot${i === stepIndex ? ' is-active' : ''}${i < stepIndex ? ' is-done' : ''}`}
+                title={s.title}
+                onClick={() => setStepIndex(i)}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="tutorialBody">
-          {showGlossary ? (
+          {phase === 'welcome' ? (
             <>
-              <h3 className="tutorialStepTitle">Conceitos rápidos</h3>
-              <p className="tutorialStepBody">
-                Referência curta. Não muda regras — só explica os termos da partida.
-              </p>
-              {TUTORIAL_GLOSSARY.map((item) => (
-                <div key={item.title} className="tutorialGlossaryItem">
-                  <h4 className="tutorialGlossaryTitle">{item.title}</h4>
-                  <p className="tutorialGlossaryBody">{item.body}</p>
-                </div>
-              ))}
-            </>
-          ) : (
-            <>
-              <h3 className="tutorialStepTitle">{step.title}</h3>
-              {step.body.map((paragraph) => (
+              <h3 className="tutorialStepTitle">{TOUR_WELCOME.title}</h3>
+              <p className="tutorialWelcomeKicker">{TOUR_WELCOME.subtitle}</p>
+              {TOUR_WELCOME.body.map((paragraph) => (
                 <p key={paragraph} className="tutorialStepBody">
                   {paragraph}
                 </p>
               ))}
+              <ul className="tutorialWelcomeList">
+                <li>Objetivo e vitória (Caixa + Bens)</li>
+                <li>Casas do tabuleiro</li>
+                <li>HUD / placar</li>
+                <li>Recuperação financeira e falência</li>
+              </ul>
             </>
+          ) : (
+            step && (
+              <>
+                <h3 className="tutorialStepTitle">
+                  {step.icon ? <span className="tutorialStepIcon">{step.icon}</span> : null}
+                  {step.title}
+                </h3>
+                {step.body.map((paragraph) => (
+                  <p key={paragraph} className="tutorialStepBody">
+                    {paragraph}
+                  </p>
+                ))}
+                {step.highlight && (
+                  <p className="tutorialHighlight" role="note">
+                    {step.highlight}
+                  </p>
+                )}
+
+                {step.interactive === 'tiles' && (
+                  <div className="tutorialInteractive">
+                    <div className="tutorialChipGrid" role="list">
+                      {TOUR_TILES.map((tile) => (
+                        <button
+                          key={tile.key}
+                          type="button"
+                          role="listitem"
+                          className={`tutorialChip${selectedTile === tile.key ? ' is-selected' : ''}`}
+                          onClick={() => setSelectedTile(tile.key)}
+                        >
+                          {tile.title}
+                        </button>
+                      ))}
+                    </div>
+                    {selectedTileData && (
+                      <div className="tutorialChipDetail">
+                        <strong>{selectedTileData.title}</strong>
+                        <p>{selectedTileData.body}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {step.interactive === 'hud' && (
+                  <div className="tutorialCardGrid">
+                    {TOUR_HUD.map((item) => (
+                      <article key={item.title} className="tutorialInfoCard">
+                        <h4>{item.title}</h4>
+                        <p>{item.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {step.interactive === 'recovery' && (
+                  <div className="tutorialCardGrid">
+                    {TOUR_RECOVERY.map((item) => (
+                      <article key={item.title} className="tutorialInfoCard tutorialInfoCard--accent">
+                        <h4>{item.title}</h4>
+                        <p>{item.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </>
+            )
           )}
         </div>
 
         <div className="tutorialActions">
-          {showGlossary ? (
-            <button
-              type="button"
-              className="tutorialBtnSecondary"
-              onClick={() => setShowGlossary(false)}
-            >
-              Voltar às etapas
-            </button>
+          {phase === 'welcome' ? (
+            <>
+              <button type="button" className="tutorialBtnGhost" onClick={skipTour}>
+                Pular tutorial
+              </button>
+              <button type="button" className="tutorialBtnPrimary" onClick={startTour}>
+                Seguir o tour
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -238,22 +232,13 @@ export default function TutorialModal({ open, onClose }) {
               >
                 Anterior
               </button>
-              <button
-                type="button"
-                className="tutorialBtnGhost"
-                onClick={() => setShowGlossary(true)}
-              >
-                Glossário
+              <button type="button" className="tutorialBtnGhost" onClick={skipTour}>
+                Pular
               </button>
               <button type="button" className="tutorialBtnPrimary" onClick={goNext}>
                 {isLast ? 'Começar a jogar' : 'Próximo'}
               </button>
             </>
-          )}
-          {showGlossary && (
-            <button type="button" className="tutorialBtnPrimary" onClick={handleClose}>
-              Começar a jogar
-            </button>
           )}
         </div>
       </div>

@@ -643,6 +643,135 @@ html, body {
   border:1px solid rgba(168,196,255,.35);
 }
 .tutorialBtnGhost:hover{ background:rgba(168,196,255,.2); }
+
+/* Tour guiado — elementos interativos */
+.tutorialModal--tour{
+  max-width:min(560px, 96vw);
+  width:100%;
+}
+.tutorialWelcomeKicker{
+  margin:0;
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:#f2c14e;
+}
+.tutorialWelcomeList{
+  margin:4px 0 0;
+  padding:0 0 0 18px;
+  color:#d7def2;
+  font-size:14px;
+  line-height:1.55;
+}
+.tutorialWelcomeList li{ margin:2px 0; }
+.tutorialStepIcon{
+  margin-right:8px;
+}
+.tutorialHighlight{
+  margin:4px 0 0;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid rgba(242,193,78,.4);
+  background:rgba(242,193,78,.12);
+  color:#ffe9b0;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.4;
+}
+.tutorialProgress{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+.tutorialProgressDot{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  border:1px solid rgba(168,196,255,.45);
+  background:rgba(255,255,255,.08);
+  padding:0;
+  cursor:pointer;
+}
+.tutorialProgressDot.is-done{
+  background:rgba(79,70,229,.55);
+  border-color:rgba(129,140,248,.8);
+}
+.tutorialProgressDot.is-active{
+  background:#4f46e5;
+  border-color:#a5b4fc;
+  transform:scale(1.15);
+}
+.tutorialInteractive{ display:flex; flex-direction:column; gap:10px; }
+.tutorialChipGrid{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.tutorialChip{
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(255,255,255,.05);
+  color:#e8edf8;
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  line-height:1.2;
+}
+.tutorialChip.is-selected,
+.tutorialChip:hover{
+  border-color:rgba(168,196,255,.55);
+  background:rgba(79,70,229,.28);
+}
+.tutorialChipDetail{
+  padding:10px 12px;
+  border-radius:10px;
+  background:#151a28;
+  border:1px solid rgba(255,255,255,.1);
+}
+.tutorialChipDetail strong{
+  display:block;
+  margin-bottom:4px;
+  color:#a8c4ff;
+  font-size:13px;
+}
+.tutorialChipDetail p{
+  margin:0;
+  font-size:13px;
+  line-height:1.45;
+  color:#d7def2;
+}
+.tutorialCardGrid{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:8px;
+}
+.tutorialInfoCard{
+  padding:10px;
+  border-radius:10px;
+  background:#151a28;
+  border:1px solid rgba(255,255,255,.1);
+}
+.tutorialInfoCard--accent{
+  border-color:rgba(242,193,78,.28);
+}
+.tutorialInfoCard h4{
+  margin:0 0 4px;
+  font-size:13px;
+  color:#a8c4ff;
+}
+.tutorialInfoCard p{
+  margin:0;
+  font-size:12px;
+  line-height:1.4;
+  color:#d7def2;
+}
+@media (max-width: 560px){
+  .tutorialCardGrid{ grid-template-columns:1fr; }
+}
+
 .tutorialGlossaryItem{
   padding:8px 0;
   border-top:1px solid rgba(255,255,255,.08);
