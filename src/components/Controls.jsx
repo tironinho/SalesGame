@@ -86,6 +86,32 @@ export default function Controls({
   const showSecondary = section === 'all' || section === 'secondary'
   const showPrimary = section === 'all' || section === 'primary'
 
+  // Fragment no secondary: evita wrapper + display:contents (Safari/WebKit some com os botões).
+  if (showSecondary && !showPrimary) {
+    return (
+      <>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={onRecoveryClick}
+          disabled={isBankrupt}
+          aria-disabled={isBankrupt}
+        >
+          RECUPERAÇÃO FINANCEIRA
+        </button>
+        <button
+          type="button"
+          className="btn dark"
+          onClick={onBankruptClick}
+          disabled={isBankrupt}
+          aria-disabled={isBankrupt}
+        >
+          DECLARAR FALÊNCIA
+        </button>
+      </>
+    )
+  }
+
   return (
     <div className={`controls ${!canRoll ? 'is-wait' : ''} ${isBankrupt ? 'is-bankrupt' : ''}`}>
       {showSecondary && (

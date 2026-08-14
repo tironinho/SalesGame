@@ -82,6 +82,7 @@ import { normalizePlayersAliases } from './game/playerShape.js'
 import { consumeTileTip } from './game/progressiveTips.js'
 import OrientationGuard from './components/orientation/OrientationGuard.jsx'
 import { enterGamePresentation } from './utils/fullscreen.js'
+import { useBoardPinchZoom } from './hooks/useBoardPinchZoom.js'
 
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
@@ -430,6 +431,8 @@ export default function App() {
   // visual/local: não entra em rooms.state, não é sincronizado nem persistido.
   // 'fit' = modo normal | 'follow' = modo foco (edge-to-edge, sem scroll)
   const [boardView, setBoardView] = useState('fit')
+  const boardWrapRef = useRef(null)
+  useBoardPinchZoom(boardWrapRef, phase === 'game')
 
   // ====== bloqueio de turno (cadeado entre abas)
   const [turnLock, setTurnLock] = useState(false)
@@ -2836,7 +2839,10 @@ export default function App() {
             ? 'Voltar ao modo normal'
             : 'Expandir tabuleiro'}
         </button>
-        <div className={`boardWrap${boardView === 'follow' ? ' boardWrap--follow' : ''}`}>
+        <div
+          ref={boardWrapRef}
+          className={`boardWrap${boardView === 'follow' ? ' boardWrap--follow' : ''}`}
+        >
           <Board
             players={players}
             turnIdx={turnIdx}
@@ -2857,25 +2863,17 @@ export default function App() {
           <HUD totals={totals} players={players} />
 
           <div className="sideSecondary">
-          <div className="controlsSticky">
-            <DiceResult lastRoll={lastRollUI} isRolling={isRollingUI} />
-            <Controls
-              section="secondary"
-              onAction={onControlsAction}
-              current={current}
-              isMyTurn={isMyTurn}
-              myUid={myUid}
-              turnPlayerId={turnPlayerId}
-              turnLock={turnLock}
-              lockOwner={lockOwner}
-              modalLocks={modalLocks}
-              gameOver={gameOver}
-            />
-            <div style={{ marginTop: 10 }}>
-              <button
-                className="btn dark"
-                onClick={async () => {
-                  // Saída explícita: remove assento + identidade persistida da sala
+            <div className="controlsSticky">
+              <DiceResult lastRoll={lastRollUI} isRolling={isRollingUI} />
+            </div>
+
+            {/* Tela final (pódio Top 3) */}
+            {gameOver && (
+              <FinalWinners
+                players={players}
+                maxRounds={maxRounds}
+                endedRound={round}
+                onExit={async () => {
                   if (currentLobbyId && myUid) {
                     try {
                       await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
@@ -2884,80 +2882,36 @@ export default function App() {
                     }
                     clearMatchIdentity(currentLobbyId)
                   }
-                  window.__setRoomCode?.(null) // pausa sync remoto ao sair
+                  window.__setRoomCode?.(null)
                   setPhase('lobbies')
                 }}
-              >
-                Sair para Lobbies
-              </button>
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <button
-                type="button"
-                className="btn dark"
-                onClick={() => setTutorialOpen(true)}
-              >
-                Como jogar
-              </button>
-            </div>
-          </div>
-
-          {/* Tela final (pódio Top 3) */}
-          {gameOver && (
-            <FinalWinners
-              players={players}
-              maxRounds={maxRounds}
-              endedRound={round}
-              onExit={async () => {
-                // Saída explícita ao fim da partida
-                if (currentLobbyId && myUid) {
-                  try {
-                    await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
-                  } catch (error) {
-                    console.warn('[App] Erro ao sair da sala:', error)
-                  }
-                  clearMatchIdentity(currentLobbyId)
-                }
-                window.__setRoomCode?.(null)
-                setPhase('lobbies')
-              }}
-              onRestart={() => {
-                // ✅ Reset LIMPO: não herda estado da partida anterior
-                const freshPlayers = players.map((p, i) =>
-                  applyStarterKit({
-                    id: p.id,
-                    name: p.name,
-                    color: p.color,
-                    seat: Number.isFinite(p.seat) ? p.seat : i,
-                    joinOrder: Number.isFinite(p.joinOrder) ? p.joinOrder : i,
-
-                    // estado inicial padrão
-                    cash: 18000,
-                    bens: 4000,
-                    pos: 0,
-                    bankrupt: false,
-
-                    // zera flags e travas que podem vazar de partida anterior
-                    waitingAtRevenue: false,
-                    lastRevenueRound: 0,
-                    loanPending: null,
-                    loanTakenInMatch: false,
-                    lastChargedLoanId: null,
-                    emprestimos: 0,
-                    revenue: 0
-                  })
-                )
-
-                // ✅ limpa turnlock global antes de reiniciar
-                setTurnLockBroadcast(false)
-
-                // ✅ reinicia sincronizando para todos (resolve desync / estado preso)
-                broadcastStart(freshPlayers, maxRoundsRef.current, turnTimeSecRef.current)
-
-                setLog(['Novo jogo iniciado!'])
-              }}
-            />
-          )}
+                onRestart={() => {
+                  const freshPlayers = players.map((p, i) =>
+                    applyStarterKit({
+                      id: p.id,
+                      name: p.name,
+                      color: p.color,
+                      seat: Number.isFinite(p.seat) ? p.seat : i,
+                      joinOrder: Number.isFinite(p.joinOrder) ? p.joinOrder : i,
+                      cash: 18000,
+                      bens: 4000,
+                      pos: 0,
+                      bankrupt: false,
+                      waitingAtRevenue: false,
+                      lastRevenueRound: 0,
+                      loanPending: null,
+                      loanTakenInMatch: false,
+                      lastChargedLoanId: null,
+                      emprestimos: 0,
+                      revenue: 0
+                    })
+                  )
+                  setTurnLockBroadcast(false)
+                  broadcastStart(freshPlayers, maxRoundsRef.current, turnTimeSecRef.current)
+                  setLog(['Novo jogo iniciado!'])
+                }}
+              />
+            )}
           </div>
 
           <div className="turnPrimaryActions">
@@ -2983,6 +2937,46 @@ export default function App() {
               aria-live="polite"
             >
               {nextStepHint}
+            </div>
+            {/* Sempre acima do rolar: não depende do grid/scroll do controlsSticky */}
+            <div className="sideQuickActions">
+              <Controls
+                section="secondary"
+                onAction={onControlsAction}
+                current={current}
+                isMyTurn={isMyTurn}
+                myUid={myUid}
+                turnPlayerId={turnPlayerId}
+                turnLock={turnLock}
+                lockOwner={lockOwner}
+                modalLocks={modalLocks}
+                gameOver={gameOver}
+              />
+              <button
+                type="button"
+                className="btn dark"
+                onClick={async () => {
+                  if (currentLobbyId && myUid) {
+                    try {
+                      await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
+                    } catch (error) {
+                      console.warn('[App] Erro ao sair da sala:', error)
+                    }
+                    clearMatchIdentity(currentLobbyId)
+                  }
+                  window.__setRoomCode?.(null)
+                  setPhase('lobbies')
+                }}
+              >
+                Sair para Lobbies
+              </button>
+              <button
+                type="button"
+                className="btn dark"
+                onClick={() => setTutorialOpen(true)}
+              >
+                Como jogar
+              </button>
             </div>
             <Controls
               section="primary"

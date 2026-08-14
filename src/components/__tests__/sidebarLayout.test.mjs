@@ -48,16 +48,24 @@ describe('sidebar player summary layout', () => {
     assert.ok(secondaryStart > hudStart)
   })
 
-  it('região secundária envolve controles secundários, não o resumo nem o roll', () => {
+  it('região secundária tem dado; ações rápidas ficam acima do roll', () => {
     const side = sideMarkup()
     const secondaryStart = side.indexOf('sideSecondary')
     const primaryStart = side.indexOf('turnPrimaryActions')
     const secondary = side.slice(secondaryStart, primaryStart)
+    const primary = side.slice(primaryStart)
     assert.match(secondary, /controlsSticky/)
-    assert.match(secondary, /section="secondary"/)
+    assert.match(secondary, /DiceResult/)
+    assert.doesNotMatch(secondary, /section="secondary"/)
     assert.doesNotMatch(secondary, /section="primary"/)
     assert.doesNotMatch(secondary, /nextStepHint/)
     assert.ok(!secondary.includes('<HUD'))
+    assert.match(primary, /sideQuickActions/)
+    assert.match(primary, /section="secondary"/)
+    assert.match(primary, /Sair para Lobbies/)
+    assert.match(primary, /Como jogar/)
+    assert.match(primary, /section="primary"/)
+    assert.match(primary, /nextStepHint/)
   })
 
   it('ação principal fica fora do scroll, no rodapé flex da sidebar', () => {
@@ -68,7 +76,7 @@ describe('sidebar player summary layout', () => {
     const primary = side.slice(primaryStart)
     assert.match(primary, /nextStepHint/)
     assert.match(primary, /section="primary"/)
-    assert.doesNotMatch(primary, /section="secondary"/)
+    assert.match(primary, /sideQuickActions/)
   })
 
   it('desktop largo landscape: sidebar sem scroll interno; HUD e ação principal preservados', () => {
@@ -108,11 +116,9 @@ describe('sidebar player summary layout', () => {
     assert.doesNotMatch(tall, /align-content:\s*space-evenly/)
     assert.match(tall, /flex:\s*1\s+1\s+135px/)
     assert.match(tall, /min-height:\s*125px/)
-    assert.match(tall, /max-height:\s*165px/)
-    assert.match(tall, /\.turnPrimaryActions\s*\{[^}]*display:\s*grid/)
+    assert.match(tall, /\.turnPrimaryActions\s*\{[^}]*display:\s*flex/)
     assert.match(tall, /\.btn\.go\s*\{[^}]*min-height:\s*58px/)
     assert.match(tall, /min-height:\s*clamp\(88px,\s*10dvh,\s*108px\)/)
-    assert.doesNotMatch(tall, /\.side\s*>\s*\.turnPrimaryActions/)
   })
 
   it('notebook baixo (<=1599×700): sidebar mais larga, sem scroll e botões em uma linha', () => {
@@ -164,7 +170,6 @@ describe('sidebar player summary layout', () => {
 
   it('mobile não depende de filho direto .side > .controlsSticky', () => {
     assert.doesNotMatch(css, /\.side\s*>\s*\.controlsSticky/)
-    assert.doesNotMatch(css, /\.side\s*>\s*\.turnPrimaryActions/)
     assert.match(css, /\.sideSecondary\s*>\s*\.controlsSticky/)
     assert.match(css, /\.side\s*>\s*\.hud/)
   })
@@ -174,8 +179,17 @@ describe('sidebar player summary layout', () => {
     assert.ok(matches.length >= 2, 'portrait e landscape devem ter o seletor novo')
     for (const match of matches) {
       assert.match(match[1], /position:\s*static/)
-      assert.match(match[1], /order:\s*1/)
     }
+  })
+
+  it('sideQuickActions existe e secondary Controls usa fragment (sem contents)', () => {
+    assert.match(css, /\.sideQuickActions\s*\{/)
+    assert.match(app, /sideQuickActions/)
+    const block = firstBlock(css, '.sideQuickActions')
+    assert.match(block, /display:\s*grid/)
+    assert.doesNotMatch(block, /display:\s*contents/)
+    assert.match(controls, /showSecondary && !showPrimary/)
+    assert.match(controls, /<>/)
   })
 
   it('Controls preserva canRoll e só fatia o JSX por section', () => {
@@ -197,7 +211,7 @@ describe('sidebar player summary layout', () => {
     assert.doesNotMatch(compact, /position:\s*(fixed|sticky)/)
   })
 
-  it('mobile landscape touch: board-first e não colapsa o tabuleiro', () => {
+  it('mobile landscape touch: board-first, fill lateral e ações rápidas', () => {
     assert.match(
       css,
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
@@ -205,13 +219,14 @@ describe('sidebar player summary layout', () => {
     const idx = css.search(
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
     )
-    const block = css.slice(idx)
+    const block = css.slice(idx, idx + 12000)
     assert.match(block, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(136px,\s*20%\)/)
     assert.match(block, /container-type:\s*size/)
-    assert.match(block, /min\(100cqh/)
-    assert.match(block, /100cqw/)
-    // Botões acima do rolar dado: grid auto (não 1fr que escondia as fileiras)
-    assert.match(block, /grid-template-rows:\s*auto\s+auto\s+auto/)
+    // Fill laterais sem subir altura: 100cqh × 100cqw (não contain 13:9)
+    assert.match(block, /height:\s*100cqh\s*!important/)
+    assert.match(block, /width:\s*100cqw\s*!important/)
+    assert.match(block, /sideQuickActions/)
+    assert.match(block, /min-height:\s*68px/)
     assert.doesNotMatch(block, /grid-template-rows:\s*minmax\(88px,\s*1fr\)/)
   })
 

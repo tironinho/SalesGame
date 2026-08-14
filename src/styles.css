@@ -813,11 +813,46 @@ html, body {
   padding-right: 6px;
 }
 
+/* Ações secundárias — sempre acima do “Rolar Dado” (dentro de turnPrimaryActions) */
+.sideQuickActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: visible;
+}
+.sideQuickActions .btn {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  white-space: normal;
+  line-height: 1.15;
+}
+
+/* Camada de pinch-zoom local do tabuleiro (mobile) */
+.boardWrap--pinch {
+  touch-action: none;
+  overflow: hidden;
+}
+.boardWrap--pinch .boardZoomLayer,
+.boardWrap--pinch .sg40GameBoard.boardZoomLayer {
+  transform-origin: center center;
+  will-change: transform;
+}
+.boardWrap--pinch.is-board-zoomed {
+  cursor: grab;
+}
+
 /* Ação principal do turno: reserva altura no flex, sem overlay */
 .turnPrimaryActions {
   flex: 0 0 auto;
   min-height: 0;
   padding-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* bloco de controles no fluxo do secundário (não sobrepõe o resumo) */
@@ -3396,11 +3431,34 @@ html, body {
     max-height: none;
     overflow: visible;
   }
+  /* Manter caixas reais — display:contents escondia sideQuickActions no mobile */
   .sideSecondary{
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 8px;
+    overflow: visible;
   }
   .turnPrimaryActions{
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 8px;
+    overflow: visible;
+  }
+  .sideQuickActions{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-height: 88px;
+    overflow: visible;
+  }
+  .sideQuickActions .btn{
+    min-height: 44px;
+    font-size: 13px;
+    padding: 8px 6px;
+    white-space: normal;
   }
 
   /* tokens no mobile: `scale` (propriedade individual) compõe com o
@@ -3673,20 +3731,37 @@ html, body {
     padding-bottom: 8px;
   }
   .sideSecondary{
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 8px;
+    overflow: visible;
   }
   .turnPrimaryActions{
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 8px;
+    overflow: visible;
   }
-  .turnPrimaryActions .nextStepHint,
-  .turnPrimaryActions .controls{
-    order: 1;
+  .sideQuickActions{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-height: 88px;
+    overflow: visible;
+  }
+  .sideQuickActions .btn{
+    min-height: 44px;
+    font-size: 13px;
+    padding: 8px 6px;
+    white-space: normal;
   }
 
   /* Controles no fluxo (não sticky no rodapé) */
   .sideSecondary > .controlsSticky,
   .controlsSticky{
-    order: 1;
     position: static;
     bottom: auto;
     top: auto;
@@ -3698,7 +3773,6 @@ html, body {
     border-top: none;
   }
   .side > .hud{
-    order: 2;
     min-width: 0;
     height: auto;
     max-height: none;
@@ -3999,15 +4073,37 @@ html, body {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
+  /* NÃO usar display:contents — sumia sideQuickActions no landscape */
   .sideSecondary{
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+    gap: 6px;
   }
   .turnPrimaryActions{
-    display: contents;
-  }
-  .turnPrimaryActions .nextStepHint,
-  .turnPrimaryActions .controls{
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+    gap: 6px;
     order: 1;
+  }
+  .sideQuickActions{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    flex: 0 0 auto;
+    min-height: 72px;
+    overflow: visible;
+  }
+  .sideQuickActions .btn{
+    min-height: 36px;
+    font-size: 12px;
+    padding: 6px 4px;
+    white-space: normal;
   }
 
   .side > .hud{
@@ -4615,7 +4711,13 @@ html, body {
   .page .content .side .turnPrimaryActions {
     box-sizing: border-box; flex: 0 0 auto; height: auto; min-height: 0; max-height: none;
     width: 100%; margin: 0; padding: 0;
-    display: grid; grid-template-rows: auto auto; gap: 4px; overflow: visible;
+    display: flex; flex-direction: column; gap: 4px; overflow: visible;
+  }
+  .page .content .side .turnPrimaryActions .sideQuickActions {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
   }
   .page .content .side .turnPrimaryActions .nextStepHint {
     display: flex; align-items: center; min-height: 26px; max-height: 30px;
@@ -4936,10 +5038,16 @@ html, body {
     width: 100%;
     margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 4px;
     overflow: visible;
+  }
+  .page .content .side .turnPrimaryActions .sideQuickActions {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
   }
   .page .content .side .turnPrimaryActions .nextStepHint {
     display: flex;
@@ -4951,9 +5059,10 @@ html, body {
     font-size: 12px;
     line-height: 1.2;
   }
-  .page .content .side .turnPrimaryActions .controls {
+  .page .content .side .turnPrimaryActions > .controls {
     display: grid;
-    height: 100%;
+    flex: 1 1 auto;
+    height: auto;
     min-height: 0;
     margin: 0;
     padding: 0;
@@ -5106,11 +5215,18 @@ html, body {
   .page .content .side .turnPrimaryActions {
     flex: 1 1 135px;
     min-height: 125px;
-    max-height: 165px;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    max-height: none;
+    display: flex;
+    flex-direction: column;
     gap: 5px;
     overflow: visible;
+  }
+  .page .content .side .turnPrimaryActions .sideQuickActions {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    min-height: 0;
   }
   .page .content .side .turnPrimaryActions .nextStepHint {
     display: flex;
@@ -5123,12 +5239,19 @@ html, body {
   }
   .page .content .side .turnPrimaryActions .controls {
     display: grid;
-    height: 100%;
+    height: auto;
     min-height: 0;
     margin: 0;
     padding: 0;
     border: 0;
     background: transparent;
+  }
+  .page .content .side .turnPrimaryActions .controls:not(.sideQuickActions .controls) {
+    flex: 1 1 auto;
+  }
+  .page .content .side .turnPrimaryActions > .controls {
+    flex: 1 1 auto;
+    min-height: clamp(88px, 10dvh, 108px);
   }
   .page .content .side .turnPrimaryActions .turnBox {
     display: grid;
@@ -5313,8 +5436,8 @@ html, body {
     padding: 0;
     overflow: hidden;
     display: flex !important;
-    align-items: center;
-    justify-content: center;
+    align-items: stretch;
+    justify-content: stretch;
     container-type: size;
     flex: none;
     background:
@@ -5330,30 +5453,34 @@ html, body {
   .page .content .boardWrap > .sg40GameBoard {
     --sg-board-max-h: 100%;
     box-sizing: border-box;
-    flex: 0 0 auto !important;
-    width: auto !important;
-    height: auto !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: 100% !important;
     max-width: 100% !important;
     max-height: 100% !important;
     margin: 0 !important;
-    aspect-ratio: 13 / 9;
+    aspect-ratio: auto;
   }
 
   @supports (height: 1cqh) {
     .boardWrap .board.sg40GameBoard,
     .page .content .boardWrap > .board.sg40GameBoard,
     .page .content .boardWrap > .sg40GameBoard {
-      /* Contain: tabuleiro INTEIRO visível (sem cortar cima/baixo) */
-      height: min(100cqh, calc(100cqw * 9 / 13)) !important;
-      width: min(100cqw, calc(100cqh * 13 / 9)) !important;
+      /*
+       * Ocupa a largura sobrando dos lados SEM aumentar a altura:
+       * altura = 100% do wrap; largura = 100% do wrap (em vez de contain 13:9
+       * que deixava faixas azuis laterais).
+       */
+      height: 100cqh !important;
+      width: 100cqw !important;
       max-width: 100cqw !important;
       max-height: 100cqh !important;
-      aspect-ratio: 13 / 9;
+      aspect-ratio: auto;
     }
   }
 
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: contain;
+    object-fit: cover;
     object-position: center;
   }
 
@@ -5386,16 +5513,34 @@ html, body {
   }
 
   .sideSecondary {
-    display: flex;
-    flex-direction: column;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    order: 1 !important;
+    gap: 4px;
+  }
+
+  .side > .turnPrimaryActions {
+    order: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+    min-height: auto !important;
+    overflow: visible !important;
     gap: 4px;
   }
 
   .side > .hud {
-    order: 2;
-    flex: 0 0 auto;
+    order: 2 !important;
+    flex: 1 1 auto;
     min-height: 0;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .side .hud .panel,
@@ -5434,50 +5579,52 @@ html, body {
   .controlsSticky,
   .side .controlsSticky {
     position: static !important;
-    order: 1;
+    order: unset;
     flex: 0 0 auto !important;
     flex-shrink: 0 !important;
     padding: 2px;
     gap: 4px !important;
     box-shadow: none;
-    /* Anula grid de tablet (900–1199) que vazava no celular landscape */
-    display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-template-rows: auto auto auto !important;
-    align-content: start !important;
+    display: block !important;
     height: auto !important;
     max-height: none !important;
     min-height: 0 !important;
     overflow: visible !important;
   }
 
-  .side .controlsSticky .controls {
-    display: contents !important;
+  /* 2×2 acima do Rolar Dado — sempre reservado */
+  .sideQuickActions,
+  .turnPrimaryActions .sideQuickActions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 4px !important;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
+    min-height: 68px !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+  .sideQuickActions .btn {
+    min-height: 32px !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 5px 4px !important;
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;
+    opacity: 1 !important;
+    visibility: visible !important;
   }
 
   .side .controlsSticky .diceResult,
   .controlsSticky .diceResult {
-    grid-column: 1 / -1 !important;
-    grid-row: auto !important;
+    grid-column: unset !important;
     margin: 0 0 2px;
     padding: 4px 6px;
     min-height: 0 !important;
-    max-height: none !important;
-  }
-
-  .side .controlsSticky > div {
-    margin-top: 0 !important;
-    min-width: 0;
-    min-height: 32px !important;
-    display: flex !important;
-    align-items: stretch;
-  }
-
-  .side .controlsSticky > div .btn,
-  .side .controlsSticky .btn {
-    width: 100% !important;
-    min-height: 32px !important;
-    height: auto !important;
     max-height: none !important;
   }
 
@@ -5511,10 +5658,7 @@ html, body {
   }
 
   .turnPrimaryActions {
-    order: 0;
     gap: 3px;
-    flex: 0 0 auto !important;
-    flex-shrink: 0 !important;
   }
 
   .turnPrimaryActions .nextStepHint {
@@ -5633,11 +5777,12 @@ html, body {
     html.sg-ios .boardWrap .board.sg40GameBoard,
     html.sg-ios .page .content .boardWrap > .board.sg40GameBoard,
     html.sg-ios .page .content .boardWrap > .sg40GameBoard {
-      height: min(100cqh, calc(100cqw * 9 / 13)) !important;
-      width: min(100cqw, calc(100cqh * 13 / 9)) !important;
+      /* Mesmo fill do Android: lados ocupados, altura = wrap */
+      height: 100cqh !important;
+      width: 100cqw !important;
       max-width: 100cqw !important;
       max-height: 100cqh !important;
-      aspect-ratio: 13 / 9;
+      aspect-ratio: auto;
     }
   }
 
