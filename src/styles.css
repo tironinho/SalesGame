@@ -74,6 +74,7 @@ html, body {
   flex:1 1 auto; min-width:0;
   height: 100%;                /* ocupa 100% da área útil */
   display:flex; align-items:center; justify-content:center;
+  position: relative;          /* overlay do dado 3D */
 }
 
 /* Botão de modo do tabuleiro: recurso exclusivamente mobile.

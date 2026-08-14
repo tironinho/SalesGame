@@ -10,6 +10,7 @@ import Board from './components/board/Board.jsx'
 import HUD from './components/panel/HUD.jsx'
 import Controls from './components/panel/Controls.jsx'
 import DiceResult from './components/DiceResult.jsx'
+import DiceRollOverlay from './components/dice/DiceRollOverlay.jsx'
 import FinalWinners from './components/FinalWinners.jsx'
 import TutorialModal from './components/TutorialModal.jsx'
 import TurnTimer from './components/TurnTimer.jsx'
@@ -342,9 +343,13 @@ export default function App() {
   // ===== Última rolagem do dado (somente apresentação; não entra em regras) =====
   const [lastRollUI, setLastRollUI] = useState(null)
   const [isRollingUI, setIsRollingUI] = useState(false)
+  const [diceFx, setDiceFx] = useState(null)
+  const diceAnimatedKeysRef = useRef(new Set())
+  const diceFxRef = useRef(null)
   const rollingTimeoutRef = useRef(null)
   const lastRollUIRef = useRef(null)
   useEffect(() => { lastRollUIRef.current = lastRollUI }, [lastRollUI])
+  useEffect(() => { diceFxRef.current = diceFx }, [diceFx])
 
   const clearRollingTimeout = React.useCallback(() => {
     if (rollingTimeoutRef.current) {
@@ -373,7 +378,21 @@ export default function App() {
     }
     setLastRollUI(normalized)
     clearRollingTimeout()
-    setIsRollingUI(false)
+
+    // Remoto (ou sync): anima o dado 3D se ainda não mostramos este turnKey.
+    const key = normalized.turnKey != null ? String(normalized.turnKey) : null
+    if (key && !diceAnimatedKeysRef.current.has(key) && !diceFxRef.current) {
+      diceAnimatedKeysRef.current.add(key)
+      setIsRollingUI(true)
+      setDiceFx({
+        id: key,
+        steps: normalized.steps,
+        playerName: normalized.playerName || 'Jogador',
+        pendingAction: null,
+      })
+    } else {
+      setIsRollingUI(false)
+    }
   }, [clearRollingTimeout])
 
   // Limpa UI do dado ao sair da fase de jogo / unmount
@@ -382,6 +401,8 @@ export default function App() {
       clearRollingTimeout()
       setLastRollUI(null)
       setIsRollingUI(false)
+      setDiceFx(null)
+      diceAnimatedKeysRef.current.clear()
     }
   }, [phase, clearRollingTimeout])
 
@@ -2375,17 +2396,41 @@ export default function App() {
   const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus && !hostPromotedHint
 
   const onControlsAction = (act) => {
-    // Estado visual “Rolando…” — não altera a ação nem as regras
+    // Dado 3D no tabuleiro: atrasa o ROLL do motor até a animação terminar (sem mudar regras).
     if (act?.type === 'ROLL' && controlsCanRoll) {
+      const steps = Number(act.steps)
+      if (!Number.isInteger(steps) || steps < 1 || steps > 6) {
+        onAction(act)
+        return
+      }
       setIsRollingUI(true)
       clearRollingTimeout()
-      rollingTimeoutRef.current = setTimeout(() => {
-        setIsRollingUI(false)
-        rollingTimeoutRef.current = null
-      }, 2800)
+      const localKey = `local:${currentTurnKey || turnSeq || Date.now()}`
+      diceAnimatedKeysRef.current.add(localKey)
+      if (currentTurnKey) diceAnimatedKeysRef.current.add(String(currentTurnKey))
+      setDiceFx({
+        id: localKey,
+        steps,
+        playerName: meHudLive?.name || meHud?.name || 'Jogador',
+        pendingAction: act,
+      })
+      return
     }
     onAction(act)
   }
+
+  const handleDiceFxComplete = React.useCallback(() => {
+    const fx = diceFxRef.current
+    setDiceFx(null)
+    if (fx?.pendingAction) {
+      onAction(fx.pendingAction)
+    }
+    clearRollingTimeout()
+    rollingTimeoutRef.current = setTimeout(() => {
+      setIsRollingUI(false)
+      rollingTimeoutRef.current = null
+    }, 450)
+  }, [clearRollingTimeout, onAction])
 
   useEffect(() => {
     // log sempre, mas não interfere no fluxo; ajuda a diagnosticar turn/lock
@@ -2796,6 +2841,12 @@ export default function App() {
             boardVersion={boardVersion}
             me={players.find(isMine) || null}
             matchId={currentLobbyId || roomId}
+          />
+          <DiceRollOverlay
+            open={!!diceFx}
+            result={diceFx?.steps || 1}
+            playerName={diceFx?.playerName || ''}
+            onComplete={handleDiceFxComplete}
           />
         </div>
 
