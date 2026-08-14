@@ -206,9 +206,9 @@ describe('sidebar player summary layout', () => {
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
     )
     const block = css.slice(idx)
-    assert.match(block, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(148px,\s*22%\)/)
+    assert.match(block, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(136px,\s*20%\)/)
     assert.match(block, /container-type:\s*size/)
-    assert.match(block, /max\(100cqw/)
-    assert.match(block, /100cqh/)
+    assert.match(block, /min\(100cqh/)
+    assert.match(block, /100cqw/)
   })
 })

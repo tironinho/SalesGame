@@ -294,6 +294,39 @@
   }
 }
 
+/* Mobile landscape: sempre layout 13×9 (nunca o portrait 8×14). */
+@media (max-width: 960px) and (orientation: landscape) {
+  .sg40GameBoard {
+    --board-ratio: 13 / 9;
+    max-width: none;
+    aspect-ratio: 13 / 9;
+  }
+
+  .sg40GameBoard .sg40Preview__boardImage {
+    inset: calc(100% / 9) calc(100% / 13);
+    width: 84.6153846%;
+    height: 77.7777778%;
+    object-fit: cover;
+    object-position: center;
+    background: #071d3b;
+  }
+
+  .sg40GameBoard .sg40Preview__track {
+    grid-template-columns: repeat(13, minmax(0, 1fr));
+    grid-template-rows: repeat(9, minmax(0, 1fr));
+  }
+
+  .sg40GameBoard .sg40Preview__tile {
+    grid-row: var(--desktop-row);
+    grid-column: var(--desktop-column);
+  }
+
+  .sg40GameBoard__token {
+    left: var(--token-landscape-x);
+    top: var(--token-landscape-y);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sg40GameBoard__token {
     transition: none;
