@@ -102,7 +102,12 @@ export default function TutorialModal({
   const selectedTileData = TOUR_TILES.find((t) => t.key === selectedTile) || TOUR_TILES[0]
 
   const modal = (
-    <ModalBase onClose={handleClose} zIndex={2147483010}>
+    <ModalBase
+      onClose={handleClose}
+      zIndex={2147483010}
+      width="min(440px, 92vw)"
+      maxWidth="min(440px, 92vw)"
+    >
       <div className="tutorialModal tutorialModal--tour">
         <div className="tutorialHeader">
           <div className="tutorialHeaderText">

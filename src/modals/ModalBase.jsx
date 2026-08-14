@@ -4,8 +4,16 @@ import React from "react";
  * Componente base de modal. NÃO usa o contexto.
  * Quem chama passa `onClose`, e esse onClose deve chamar `onResolve`
  * do provider (feito no componente da modal).
+ *
+ * @param {{ children: React.ReactNode, onClose?: () => void, zIndex?: number, width?: string, maxWidth?: string }} props
  */
-export default function ModalBase({ children, onClose, zIndex = 3000 }) {
+export default function ModalBase({
+  children,
+  onClose,
+  zIndex = 3000,
+  width = 'min(780px, 92vw)',
+  maxWidth = '92vw',
+}) {
   const handleClose = () => {
     if (typeof onClose === "function") onClose();
   };
@@ -31,8 +39,8 @@ export default function ModalBase({ children, onClose, zIndex = 3000 }) {
           background: "#0f1420",
           border: "1px solid rgba(255,255,255,.1)",
           borderRadius: 14,
-          width: "min(780px, 92vw)",
-          maxWidth: "92vw",
+          width,
+          maxWidth,
           maxHeight: "90vh",
           overflowY: "auto",
           color: "#fff",

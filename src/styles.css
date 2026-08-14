@@ -547,11 +547,11 @@ html, body {
 
 /* Tutorial inicial em etapas (tela inicial) */
 .tutorialModal{
-  padding:20px 22px 18px;
+  padding:16px 18px 14px;
   max-height:min(80vh, 720px);
   display:flex;
   flex-direction:column;
-  gap:14px;
+  gap:12px;
 }
 .tutorialHeader{
   display:flex;
@@ -920,8 +920,13 @@ html, body {
 
 /* Tour guiado — elementos interativos */
 .tutorialModal--tour{
-  max-width:min(560px, 96vw);
+  max-width:100%;
   width:100%;
+}
+/* Reforço: card do tour mais estreito (ModalBase default é 780px) */
+.sg-modal-backdrop:has(.tutorialModal) .sg-modal-card{
+  width:min(440px, 92vw) !important;
+  max-width:min(440px, 92vw) !important;
 }
 .tutorialWelcomeKicker{
   margin:0;
