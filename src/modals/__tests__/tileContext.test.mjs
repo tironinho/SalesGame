@@ -28,8 +28,8 @@ test('tile hints são curtos e cobrem todos os tipos do tabuleiro', () => {
     const hint = getTileHint(key)
     assert.ok(hint, `falta hint para ${key}`)
     assert.equal(hint, TILE_HINTS[key])
-    assert.ok(hint.length > 20)
-    assert.ok(hint.length <= 90, `${key} hint longo demais: ${hint.length}`)
+    assert.ok(hint.length >= 40, `${key} hint curto demais para explicar a função`)
+    assert.ok(hint.length <= 160, `${key} hint longo demais: ${hint.length}`)
   }
   assert.equal(getTileHint('START_REVENUE'), TILE_HINTS.REVENUE)
   assert.equal(getTileHint('unknown'), '')

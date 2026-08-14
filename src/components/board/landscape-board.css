@@ -41,12 +41,47 @@
 .sg40GameBoard__token {
   left: var(--token-landscape-x);
   top: var(--token-landscape-y);
-  width: clamp(11px, 2.05%, 24px);
+  /* ~2× o peão anterior — mais legível no tabuleiro azul */
+  width: clamp(22px, 4.1%, 48px);
   height: auto;
   aspect-ratio: 1;
-  border-width: clamp(1px, 0.18vw, 2px);
-  font-size: clamp(7px, 0.75vw, 12px);
+  border: 3px solid #ffffff;
+  border-width: clamp(2px, 0.35vw, 4px);
+  box-shadow:
+    0 0 0 2px #0b1220,
+    0 0 0 4px rgba(255, 255, 255, 0.55),
+    0 4px 14px rgba(0, 0, 0, 0.7);
+  color: #ffffff;
+  font-size: clamp(12px, 1.55vw, 22px);
+  font-weight: 900;
+  z-index: 6;
   pointer-events: none;
+  /* evita o scale global do mobile encolher o peão do tabuleiro v2 */
+  scale: 1 !important;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+}
+.sg40GameBoard__token.token--active {
+  scale: 1.08 !important;
+  animation: none;
+  box-shadow:
+    0 0 0 2px #0b1220,
+    0 0 0 5px rgba(255, 255, 255, 0.75),
+    0 0 0 8px color-mix(in srgb, var(--token-color, #6c5ce7) 75%, #fff),
+    0 6px 18px rgba(0, 0, 0, 0.75);
+}
+.sg40GameBoard__token .tokenInitial {
+  color: #ffffff;
+  -webkit-text-stroke: 1.35px #0b1220;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 1px #0b1220,
+    1px 0 #0b1220,
+    -1px 0 #0b1220,
+    0 1px #0b1220,
+    0 -1px #0b1220,
+    1px 1px 0 #0b1220,
+    -1px -1px 0 #0b1220;
 }
 
 .sg40GameBoard__hint {
@@ -177,8 +212,13 @@
   .sg40GameBoard__token {
     left: var(--token-portrait-x);
     top: var(--token-portrait-y);
-    width: clamp(10px, 3.8%, 17px);
-    font-size: clamp(6px, 1.8vw, 9px);
+    width: clamp(20px, 7.2%, 36px);
+    font-size: clamp(11px, 3.4vw, 18px);
+    border-width: clamp(2px, 0.7vw, 3px);
+    scale: 1 !important;
+  }
+  .sg40GameBoard__token.token--active {
+    scale: 1.08 !important;
   }
 
   .sg40GameBoard__hint {

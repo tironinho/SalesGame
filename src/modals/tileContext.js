@@ -1,48 +1,60 @@
 /**
- * Textos curtos: por que a casa importa (curva de entendimento).
- * Não altera regras — só copy de UI.
+ * Textos das casas — baseados no Manual, Orientações Casa e cartilha de casas.
+ * Não altera regras do motor — só copy de UI (modal + hint no tabuleiro).
  */
 export const TILE_CONTEXT = Object.freeze({
   CLIENTS:
-    'Você parou na Carteira de Clientes: ampliar a base aumenta o potencial de faturamento — se a equipe tiver capacidade.',
+    'Carteira de Clientes: prospecte novos clientes. Se o número passar da capacidade da equipe no Faturamento, o excesso (e a receita dele) é perdido.',
   COMMON:
-    'Casa de Vendedor Comum: contrate equipe de linha para atender mais clientes.',
+    'Vendedor Comum (faz-tudo): atende até 2 clientes. Contratação + manutenção mensal; certificados melhoram despesa e faturamento.',
   FIELD:
-    'Casa de Field Sales: perfil externo — ticket mais alto e menos clientes por pessoa.',
+    'Field Sales: perfil externo (até 5 clientes). Ticket maior; contratação e manutenção mensal conforme a cartela.',
   INSIDE:
-    'Casa de Inside Sales: perfil interno — mais clientes por pessoa, com custo diferente do Field.',
+    'Inside Sales: perfil interno (até 5 clientes). Mais atendimento por pessoa, com custo diferente do Field.',
   MANAGER:
-    'Casa de Gestor Comercial: impulsiona a equipe apenas com certificado (sem cert = 0% de boost).',
+    'Gestor Comercial: gerencia até 7 colaboradores. Impulsiona o faturamento da equipe conforme os certificados.',
   ERP:
-    'Casa de ERP/Sistemas: o benefício cresce com o tamanho da equipe, não com o número de clientes.',
+    'ERP/Sistemas: níveis A–D (não cumulativos). Valores por colaborador — o retorno cresce com o tamanho da equipe.',
   MIX:
-    'Casa de Mix de Produtos: redefine quanto cada cliente fatura e custa por ciclo.',
+    'Mix de Produtos: níveis A–D (não cumulativos). Multiplica faturamento e despesa pelo total de clientes.',
   TRAINING:
-    'Casa de Treinamento: certificados mudam faturamento/despesa dos profissionais e ativam o boost do gestor.',
+    'Treinamento: compre certificados (azul/amarelo/roxo) para elevar a performance dos profissionais e o efeito do gestor.',
   DIRECT_BUY:
-    'Direito de Compra: escolha um recurso agora; o impacto financeiro aparece antes de confirmar.',
+    'Direito de Compra: escolha exatamente um investimento livre — patrimônio, colaborador, treinamento ou clientes.',
   LUCK:
-    'Sorte & Revés: a carta pode creditar ou debitar caixa conforme o estado da sua empresa.',
+    'Sorte & Revés: compre a carta do topo. Sorte pode gerar ganho ou isenção; revés pode cobrar, multar ou reduzir produtividade.',
   REVENUE:
-    'Ao cruzar o Início, você recebe o faturamento do mês calculado com a operação atual.',
+    'Faturamento do Mês: receba a venda do ciclo (equipe × clientes × mix × ERP). Cruzar esta casa encerra a volta/rodada.',
   EXPENSES:
-    'Ao cruzar Despesas, o caixa paga a manutenção do mês e eventuais cobranças de empréstimo.',
+    'Despesas Operacionais: pague a manutenção do mês (equipe, clientes e ativos). Empréstimos também são quitados aqui.',
 })
 
-/** Uma linha no tabuleiro (desktop/mobile). Mais curta que o texto da modal. */
+/** Texto no tabuleiro (desktop/mobile): função da casa em 1–2 frases. */
 export const TILE_HINTS = Object.freeze({
-  REVENUE: 'Início: ao passar, você recebe o faturamento do mês.',
-  CLIENTS: 'Amplia a base de clientes e o potencial de faturamento.',
-  ERP: 'Sistemas: o ganho cresce com o tamanho da equipe.',
-  INSIDE: 'Vendas internas: atende mais clientes por pessoa.',
-  MANAGER: 'Gestor: impulsiona a equipe se tiver certificado.',
-  TRAINING: 'Certificados que mudam o desempenho da equipe.',
-  FIELD: 'Vendas externas: ticket maior, menos clientes por pessoa.',
-  DIRECT_BUY: 'Escolha um recurso e veja o impacto antes de confirmar.',
-  LUCK: 'Carta aleatória: pode creditar ou debitar o caixa.',
-  COMMON: 'Contrate vendedores de linha para atender mais clientes.',
-  EXPENSES: 'Ao passar, você paga a manutenção do mês.',
-  MIX: 'Define quanto cada cliente fatura e custa por ciclo.',
+  REVENUE:
+    'Início/Faturamento: ao passar, receba a venda do mês (equipe, clientes, mix e ERP). Esta casa fecha a volta.',
+  CLIENTS:
+    'Carteira de Clientes: compre clientes para faturar mais. Sem capacidade da equipe, o excesso é perdido no faturamento.',
+  ERP:
+    'ERP/Sistemas: compre um nível (A–D). Ganho e custo são por colaborador, não pela quantidade de clientes.',
+  INSIDE:
+    'Inside Sales: contrate vendedores internos. Cada um atende até 5 clientes, com custo diferente do Field.',
+  MANAGER:
+    'Gestor Comercial: gerencia até 7 pessoas e aumenta o faturamento da equipe conforme os certificados.',
+  TRAINING:
+    'Treinamento: compre certificados (azul, amarelo ou roxo) para melhorar a performance da equipe e o gestor.',
+  FIELD:
+    'Field Sales: contrate vendedores externos. Atendem até 5 clientes, com ticket maior e manutenção mensal.',
+  DIRECT_BUY:
+    'Direito de Compra: escolha exatamente um investimento agora — equipe, mix, ERP, treinamento ou clientes.',
+  LUCK:
+    'Sorte & Revés: tire a carta do topo. Pode creditar o caixa, isentar custos, ou aplicar multa e perdas.',
+  COMMON:
+    'Vendedor Comum: o faz-tudo da equipe. Atende até 2 clientes; tem contratação e manutenção mensal.',
+  EXPENSES:
+    'Despesas: pague a manutenção do mês (equipe, clientes e ativos). Empréstimos também são cobrados aqui.',
+  MIX:
+    'Mix de Produtos: compre um nível (A–D). Define quanto cada cliente fatura e custa por ciclo.',
 })
 
 function hintKey(kind) {

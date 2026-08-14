@@ -19,10 +19,10 @@ const TRACK_LEN = BOARD_40_CONFIG.length
 const TOKEN_STEP_MS = 150
 const MAX_ANIMATED_STEPS = 6
 const TOKEN_CELL_OFFSETS = Object.freeze([
-  Object.freeze({ x: -0.16, y: -0.16 }),
-  Object.freeze({ x: 0.16, y: -0.16 }),
-  Object.freeze({ x: -0.16, y: 0.16 }),
-  Object.freeze({ x: 0.16, y: 0.16 }),
+  Object.freeze({ x: -0.22, y: -0.22 }),
+  Object.freeze({ x: 0.22, y: -0.22 }),
+  Object.freeze({ x: -0.22, y: 0.22 }),
+  Object.freeze({ x: 0.22, y: 0.22 }),
 ])
 
 const getTokenVisualPosition = (index, layout, slot) => {

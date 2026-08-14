@@ -3,7 +3,7 @@
  * Não altera regras nem sync — só UX local.
  */
 
-import { getTileContext } from '../modals/tileContext.js'
+import { getTileContext, getTileHint } from '../modals/tileContext.js'
 
 export const TIP_SESSION_PREFIX = 'salesgame_tip_seen_v1:'
 
@@ -54,7 +54,7 @@ export function consumeTileTip(kind) {
   const k = String(kind || '').toUpperCase()
   if (!TIP_KINDS.includes(k)) return null
   if (hasSeenTileTip(k)) return null
-  const text = getTileContext(k)
+  const text = getTileHint(k) || getTileContext(k)
   if (!text) return null
   markTileTipSeen(k)
   return { kind: k, text }

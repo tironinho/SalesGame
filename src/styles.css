@@ -143,10 +143,13 @@ html, body {
   place-items:center;
   /* brilho no topo + cor do jogador = leve volume 3D */
   background:
-    radial-gradient(circle at 30% 28%, rgba(255,255,255,.4), rgba(255,255,255,0) 55%),
+    radial-gradient(circle at 30% 28%, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
     var(--token-color, #6c5ce7);
-  border:3px solid rgba(255,255,255,.95); /* largura real vem do inline */
-  box-shadow: 0 3px 10px rgba(0,0,0,.55), 0 8px 18px rgba(0,0,0,.35);
+  border:3px solid #ffffff;
+  box-shadow:
+    0 0 0 2px #0b1220,
+    0 3px 10px rgba(0,0,0,.55),
+    0 8px 18px rgba(0,0,0,.35);
   color:#fff;
   font-weight:900;
   user-select:none;
@@ -168,7 +171,18 @@ html, body {
 }
 .tokenInitial{
   line-height:1;
-  text-shadow: 0 1px 2px rgba(0,0,0,.75), 0 0 3px rgba(0,0,0,.45);
+  color:#fff;
+  -webkit-text-stroke: 1.2px #0b1220;
+  paint-order: stroke fill;
+  text-shadow:
+    0 0 1px #0b1220,
+    1px 0 #0b1220,
+    -1px 0 #0b1220,
+    0 1px #0b1220,
+    0 -1px #0b1220,
+    1px 1px 0 #0b1220,
+    -1px -1px 0 #0b1220,
+    0 2px 3px rgba(0,0,0,.55);
 }
 /* jogador da vez: halo na cor do jogador + pulse sutil (sem piscar) */
 .token--active{
@@ -4640,11 +4654,8 @@ html, body {
     display: grid; height: auto; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent;
   }
   .page .content .side .turnPrimaryActions .turnBox {
-    display: grid; grid-template-rows: auto auto; gap: 6px;
+    display: grid; grid-template-rows: auto; gap: 6px;
     height: auto; min-height: 0; padding: 4px 6px;
-  }
-  .page .content .side .turnPrimaryActions .turnBox > div:first-child {
-    font-size: 12px; line-height: 1.15; white-space: nowrap;
   }
   .page .content .side .turnPrimaryActions .btn.go {
     width: 100%; min-height: 58px; height: 62px; max-height: 66px; padding: 8px 10px;
@@ -4980,16 +4991,11 @@ html, body {
   }
   .page .content .side .turnPrimaryActions .turnBox {
     display: grid;
-    grid-template-rows: auto minmax(54px, 1fr);
+    grid-template-rows: minmax(54px, 1fr);
     gap: 4px;
     height: 100%;
     min-height: 0;
     padding: 4px 7px;
-  }
-  .page .content .side .turnPrimaryActions .turnBox > div:first-child {
-    font-size: 13px;
-    line-height: 1.15;
-    white-space: nowrap;
   }
   .page .content .side .turnPrimaryActions .btn.go {
     width: 100%;
@@ -5155,18 +5161,12 @@ html, body {
   }
   .page .content .side .turnPrimaryActions .turnBox {
     display: grid;
-    grid-template-rows: auto minmax(58px, 1fr);
+    grid-template-rows: minmax(58px, 1fr);
     gap: clamp(5px, 0.7dvh, 8px);
     height: 100%;
     min-height: 0;
     padding: clamp(6px, 0.8dvh, 10px);
   }
-  .page .content .side .turnPrimaryActions .turnBox > div:first-child {
-    font-size: clamp(15px, 1.1vw, 17px);
-    line-height: 1.15;
-    white-space: nowrap;
-  }
-  .page .content .side .turnPrimaryActions .turnBox > div:first-child b { font-weight: 800; }
   .page .content .side .turnPrimaryActions .btn.go {
     width: 100%;
     height: 100%;

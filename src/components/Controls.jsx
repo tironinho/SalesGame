@@ -102,7 +102,6 @@ export default function Controls({
 
       {showPrimary && (
         <div className="turnBox">
-          <div>Vez de: <b>{current?.name}</b></div>
           <button
             className="btn go"
             onClick={roll}

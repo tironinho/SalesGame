@@ -183,6 +183,7 @@ describe('sidebar player summary layout', () => {
     assert.match(controls, /section = 'all'/)
     assert.match(controls, /onAction\?\.\(\{ type: 'ROLL'/)
     assert.match(controls, /Rolar Dado/)
+    assert.doesNotMatch(controls, /Vez de/)
   })
 
   it('desktop baixa altura tem modo compacto sem fixed/sticky e sem atingir mobile', () => {

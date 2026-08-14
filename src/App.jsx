@@ -275,7 +275,7 @@ export default function App() {
   }
 
   const [players, _setPlayers] = useState([
-    applyStarterKit({ id: meId, name: '', cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })
+    applyStarterKit({ id: meId, name: '', cash: 18000, pos: 0, color: '#FFD600', bens: 4000 })
   ])
 
   // ====== Cash Audit (instrumentação de saldo) ======
@@ -2418,7 +2418,7 @@ export default function App() {
           // ✅ salva somente após ação explícita do usuário
           setTabPlayerName(clean)
           setMyName(clean)
-          setPlayers([applyStarterKit({ id: meId, name: clean, cash: 18000, pos: 0, color: '#ffd54f', bens: 4000 })], { source: 'START' })
+          setPlayers([applyStarterKit({ id: meId, name: clean, cash: 18000, pos: 0, color: '#FFD600', bens: 4000 })], { source: 'START' })
           setRound(1); setTurnIdx(0); setGameOver(false); setWinner(null)
           setRoundFlags(new Array(1).fill(false))
           setMeHud(h => ({ ...h, name: clean }))
@@ -2597,7 +2597,7 @@ export default function App() {
               cash: 18000,
               pos: 0,
               bens: 4000,
-              color: ['#ffd54f','#90caf9','#a5d6a7','#ffab91'][i % 4],
+              color: ['#FFD600', '#2196F3', '#00C853', '#FF6D00'][i % 4],
               seat: i // ✅ CORREÇÃO: Atribui seat baseado na ordem ordenada
             })
           )
