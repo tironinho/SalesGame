@@ -26,6 +26,8 @@ test('tutorial auto-open: sessão limpa abre; após mark não reabre na mesma se
   }
 
   assert.equal(shouldAutoOpenTutorial(), true)
+  // Abrir NÃO marca sessão — só fechar/pular
+  assert.equal(sessionStorage.getItem(TUTORIAL_SESSION_KEY), null)
   markTutorialSessionShown()
   assert.equal(sessionStorage.getItem(TUTORIAL_SESSION_KEY), '1')
   assert.equal(hasShownTutorialThisSession(), true)

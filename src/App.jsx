@@ -13,7 +13,7 @@ import DiceResult from './components/DiceResult.jsx'
 import DiceRollOverlay from './components/dice/DiceRollOverlay.jsx'
 import { unlockDiceAudio } from './utils/diceRollSound.js'
 import FinalWinners from './components/FinalWinners.jsx'
-import TutorialModal, { shouldAutoOpenTutorial, markTutorialSessionShown } from './components/TutorialModal.jsx'
+import TutorialModal, { shouldAutoOpenTutorial } from './components/TutorialModal.jsx'
 import TurnTimer from './components/TurnTimer.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
 import DebugPanel from './components/DebugPanel.jsx'
@@ -2231,12 +2231,22 @@ export default function App() {
   const [progressiveTip, setProgressiveTip] = useState(null)
   const progressiveTipTimerRef = useRef(null)
 
+  // Não depender da referência de `players` (sync contínuo cancelava o timeout)
+  const gameRosterReady =
+    phase === 'game' && Array.isArray(players) && players.length > 0
+
   useEffect(() => {
-    if (phase !== 'game') return
-    if (!shouldAutoOpenTutorial()) return
-    markTutorialSessionShown()
-    setTutorialOpen(true)
-  }, [phase])
+    if (!gameRosterReady) return undefined
+    if (!shouldAutoOpenTutorial()) return undefined
+
+    const t = window.setTimeout(() => {
+      if (!shouldAutoOpenTutorial()) return
+      console.log('[tutorial] auto-open no tabuleiro')
+      setTutorialOpen(true)
+    }, 400)
+
+    return () => window.clearTimeout(t)
+  }, [gameRosterReady])
 
   const handleTileVisit = React.useCallback((kind) => {
     const tip = consumeTileTip(kind)
@@ -2819,6 +2829,7 @@ export default function App() {
 
   // 4) Jogo — landscape/fullscreen só aqui (tabuleiro); lobbies/nome livres em portrait
   return (
+    <>
     <OrientationGuard enabled>
     <ModalProvider>
     <div className="page">
@@ -3086,14 +3097,15 @@ export default function App() {
           autoCloseMs={1500}
         />
       )}
+    </div>
+    </ModalProvider>
+    </OrientationGuard>
 
-      {/* Tutorial "Como jogar" (auto ao entrar no tabuleiro; reabertura via botão) */}
+      {/* Fora do OrientationGuard + z-index acima do gate de girar/tela cheia */}
       <TutorialModal
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
       />
-    </div>
-    </ModalProvider>
-    </OrientationGuard>
+    </>
   )
 }
