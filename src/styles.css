@@ -3844,13 +3844,13 @@ html, body {
   }
 
   /*
-   * Duas colunas equilibradas (~52/48). height:auto — a página rola.
-   * Neutraliza column/100dvw do bloco ≤760px quando ambos aplicam.
+   * Duas colunas com prioridade no board (~70/30). height:auto — a página rola
+   * em browsers sem pointer:coarse; o bloco final (pointer:coarse) trava viewport.
    */
   .content,
   .content--boardFocus{
     display: grid;
-    grid-template-columns: minmax(0, 52%) minmax(0, 48%);
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 0.85fr);
     grid-template-rows: auto;
     align-items: start;
     justify-items: stretch;
@@ -3914,8 +3914,8 @@ html, body {
   .content--boardFocus .boardWrap--follow .board{
     --sg-board-max-h: calc(100dvh - 52px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
-    aspect-ratio: 800 / 700;
-    width: min(100%, calc(var(--sg-board-max-h) * 800 / 700));
+    aspect-ratio: 13 / 9;
+    width: min(100%, calc(var(--sg-board-max-h) * 13 / 9));
     max-width: 100%;
     height: auto;
     max-height: var(--sg-board-max-h);
@@ -4183,9 +4183,10 @@ html, body {
   .content--boardFocus .board,
   .content--boardFocus .boardWrap--follow .board{
     --sg-board-max-h: calc(100dvh - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-    width: min(100%, calc(var(--sg-board-max-h) * 800 / 700));
+    width: min(100%, calc(var(--sg-board-max-h) * 13 / 9));
     max-width: 100%;
     max-height: var(--sg-board-max-h);
+    aspect-ratio: 13 / 9;
   }
 
   /* peões: tamanho visual já existente no landscape */
@@ -5135,5 +5136,341 @@ html, body {
     inset: 0;
     width: auto;
     height: auto;
+  }
+}
+
+/* ====== Mobile landscape (touch): tabuleiro em prioridade ======
+   Telefones em paisagem costumam ter width ≥761px, então as regras
+   desktop de .sg40GameBoard (height:100% + container) ganhavam da media
+   landscape antiga e o board colapsava (área preta à esquerda).
+   Escopo: max-width 960 + landscape + pointer coarse — não altera desktop. */
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse) {
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  #root {
+    height: 100%;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .page {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+
+  .foot {
+    display: none;
+  }
+
+  .topbar {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    max-height: 40px;
+    padding: 2px 6px;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .topbar .status,
+  .topbar .topbarPrimary,
+  .topbar .topbarSecondary {
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.15;
+    flex-wrap: nowrap;
+  }
+
+  .topbar .money {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+
+  .topbar .topbarName {
+    padding: 2px 6px !important;
+    font-size: 11px;
+  }
+
+  .gameHostBadge {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .identityMismatchBanner {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .content,
+  .content--boardFocus {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+    max-height: none;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 28%);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    justify-items: stretch;
+    gap: 4px;
+    padding: 4px 6px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  /* Chip sobre o board — não rouba altura da grade */
+  .boardModeBtn {
+    display: block !important;
+    position: absolute;
+    z-index: 6;
+    top: 6px;
+    left: 8px;
+    width: auto;
+    min-height: 28px;
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 11px;
+    line-height: 1.2;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  }
+
+  .boardWrap,
+  .content--boardFocus .boardWrap,
+  .boardWrap--follow,
+  .content--boardFocus .boardWrap--follow,
+  .page .content .boardWrap:has(.sg40GameBoard),
+  .page .content .boardWrap {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative !important;
+    top: auto !important;
+    align-self: stretch;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0;
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0;
+    overflow: hidden;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    container-type: size;
+    flex: none;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 45%, #0a2748 0%, #071d3b 70%, #06182f 100%);
+  }
+
+  .board,
+  .content--boardFocus .board,
+  .boardWrap--follow .board,
+  .board.sg40GameBoard,
+  .boardWrap .board.sg40GameBoard,
+  .page .content .boardWrap > .board.sg40GameBoard,
+  .page .content .boardWrap > .sg40GameBoard {
+    --sg-board-max-h: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    aspect-ratio: 13 / 9;
+  }
+
+  @supports (height: 1cqh) {
+    .boardWrap .board.sg40GameBoard,
+    .page .content .boardWrap > .board.sg40GameBoard,
+    .page .content .boardWrap > .sg40GameBoard {
+      height: min(100cqh, calc(100cqw * 9 / 13)) !important;
+      width: min(100cqw, calc(100cqh * 13 / 9)) !important;
+      max-width: 100cqw !important;
+      max-height: 100cqh !important;
+      aspect-ratio: 13 / 9;
+    }
+  }
+
+  .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .page .content .boardWrap > .sg40GameBoard .sg40Preview__track,
+  .page .content .boardWrap > .sg40GameBoard .sg40GameBoard__tokens {
+    inset: 0;
+    width: auto;
+    height: auto;
+  }
+
+  .side,
+  .page .content .side {
+    --side-w: 100%;
+    grid-column: 2;
+    grid-row: 1;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    min-height: 0 !important;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    gap: 4px;
+    padding: 0 2px 6px 0;
+    font-size: 11px;
+    flex: none !important;
+  }
+
+  .sideSecondary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .side > .hud {
+    order: 2;
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .side .hud .panel,
+  .side .hud .game-stats-card {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .side .hud .game-stats-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px 6px;
+  }
+
+  .side .hud .game-stats-title {
+    font-size: 9px;
+    margin-bottom: 1px;
+  }
+
+  .side .hud .game-stat-row {
+    font-size: 10px;
+    gap: 4px;
+    padding: 0;
+  }
+
+  .side .hud .score .title {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .side .hud .score .row {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+
+  .sideSecondary > .controlsSticky,
+  .controlsSticky,
+  .side .controlsSticky {
+    position: static !important;
+    order: 1;
+    flex: 0 0 auto;
+    padding: 2px;
+    gap: 3px;
+    box-shadow: none;
+  }
+
+  .side .diceResult,
+  .controlsSticky .diceResult {
+    margin: 0 0 2px;
+    padding: 4px 6px;
+  }
+
+  .side .diceResultDie,
+  .controlsSticky .diceResultDie {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .side .diceResultPip,
+  .controlsSticky .diceResultPip {
+    width: 4px;
+    height: 4px;
+  }
+
+  .side .diceResultPlayer,
+  .side .diceResultHelp,
+  .side .diceResultLabel {
+    font-size: 10px !important;
+    line-height: 1.2;
+  }
+
+  .side .btn,
+  .controlsSticky .btn,
+  .turnPrimaryActions .btn {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    min-height: 0 !important;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .turnPrimaryActions {
+    order: 0;
+    gap: 3px;
+  }
+
+  .turnPrimaryActions .nextStepHint {
+    margin: 0;
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .turnPrimaryActions .btn.go {
+    padding: 8px 10px !important;
+    font-size: 13px !important;
+  }
+
+  .content--boardFocus {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .content--boardFocus .boardWrap,
+  .content--boardFocus .boardWrap--follow {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .content--boardFocus .side {
+    display: none !important;
+  }
+
+  .content--boardFocus .boardModeBtn {
+    left: 8px;
+  }
+
+  .sg40GameBoard__hint {
+    font-size: clamp(9px, 1.8vw, 12px);
+    padding: 4px 8px;
+  }
+
+  .token {
+    scale: 1;
   }
 }
