@@ -15,6 +15,7 @@ import {
   getLogStats,
   logCapture
 } from './game/debugMode.js'
+import { useIosVisualViewport } from './hooks/useIosVisualViewport.js'
 
 function initialRoomFromURL () {
   const qs = new URLSearchParams(window.location.search)
@@ -24,6 +25,8 @@ function initialRoomFromURL () {
 
 function Root() {
   const [roomCode, setRoomCode] = React.useState(initialRoomFromURL())
+  // iOS only: html.sg-ios + --sg-vv-height (não altera Android/desktop)
+  useIosVisualViewport()
 
   // expõe um setter global para o App trocar a sala dinamicamente
   React.useEffect(() => {

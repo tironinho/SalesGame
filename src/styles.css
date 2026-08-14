@@ -5476,3 +5476,112 @@ html, body {
     scale: 1;
   }
 }
+
+/* ====== iOS / WebKit ONLY (html.sg-ios) — landscape touch ======
+   Não altera Android Chrome nem desktop: exige a classe aplicada por
+   useIosVisualViewport(). Usa visualViewport (--sg-vv-height) para
+   caber com a barra do Safari sem cortar o topo do tabuleiro. */
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse) {
+  html.sg-ios,
+  html.sg-ios body {
+    height: var(--sg-vv-height, 100dvh);
+    max-height: var(--sg-vv-height, 100dvh);
+    overflow: hidden;
+  }
+
+  html.sg-ios #root {
+    height: var(--sg-vv-height, 100dvh);
+    max-height: var(--sg-vv-height, 100dvh);
+    overflow: hidden;
+  }
+
+  html.sg-ios .page {
+    height: var(--sg-vv-height, 100dvh);
+    max-height: var(--sg-vv-height, 100dvh);
+    min-height: 0;
+    /* offsetTop: quando a chrome do Safari “empurra” o visual viewport */
+    margin-top: var(--sg-vv-offset-top, 0px);
+    margin-left: var(--sg-vv-offset-left, 0px);
+    padding-top: max(2px, env(safe-area-inset-top, 0px));
+    padding-right: max(4px, env(safe-area-inset-right, 0px));
+    padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(4px, env(safe-area-inset-left, 0px));
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  html.sg-ios .topbar {
+    max-height: 34px;
+    padding: 2px 4px;
+  }
+
+  html.sg-ios .content,
+  html.sg-ios .content--boardFocus {
+    gap: 3px;
+    padding: 2px 4px;
+    /* Board um pouco maior no iOS landscape */
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 18%);
+  }
+
+  html.sg-ios .boardModeBtn {
+    top: 4px;
+    left: 4px;
+    min-height: 26px;
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  html.sg-ios .boardWrap,
+  html.sg-ios .page .content .boardWrap:has(.sg40GameBoard),
+  html.sg-ios .page .content .boardWrap {
+    align-items: center;
+    justify-content: center;
+    /* Evita o board “escapar” para cima sob a URL bar */
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  html.sg-ios .board.sg40GameBoard,
+  html.sg-ios .boardWrap .board.sg40GameBoard,
+  html.sg-ios .page .content .boardWrap > .board.sg40GameBoard,
+  html.sg-ios .page .content .boardWrap > .sg40GameBoard {
+    /* Contain explícito na caixa disponível */
+    max-width: 100% !important;
+    max-height: 100% !important;
+  }
+
+  @supports (height: 1cqh) {
+    html.sg-ios .boardWrap .board.sg40GameBoard,
+    html.sg-ios .page .content .boardWrap > .board.sg40GameBoard,
+    html.sg-ios .page .content .boardWrap > .sg40GameBoard {
+      height: min(100cqh, calc(100cqw * 9 / 13)) !important;
+      width: min(100cqw, calc(100cqh * 13 / 9)) !important;
+      max-width: 100cqw !important;
+      max-height: 100cqh !important;
+      aspect-ratio: 13 / 9;
+    }
+  }
+
+  html.sg-ios .side,
+  html.sg-ios .page .content .side {
+    font-size: 10px;
+    padding-bottom: 4px;
+  }
+
+  html.sg-ios .side .btn,
+  html.sg-ios .controlsSticky .btn,
+  html.sg-ios .turnPrimaryActions .btn {
+    padding: 4px 6px !important;
+    font-size: 10px !important;
+  }
+
+  html.sg-ios .turnPrimaryActions .btn.go {
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+  }
+
+  html.sg-ios .sg40GameBoard__hint {
+    font-size: clamp(8px, 1.5vw, 11px);
+    padding: 3px 6px;
+  }
+}

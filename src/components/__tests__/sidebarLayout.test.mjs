@@ -211,4 +211,14 @@ describe('sidebar player summary layout', () => {
     assert.match(block, /min\(100cqh/)
     assert.match(block, /100cqw/)
   })
+
+  it('overrides iOS landscape ficam atrás de html.sg-ios (Android intacto)', () => {
+    assert.match(css, /html\.sg-ios \.page/)
+    assert.match(css, /--sg-vv-height/)
+    // O seletor genérico (Android) NÃO deve exigir .sg-ios na mesma regra de .page height 100dvh
+    const genericIdx = css.search(
+      /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\) \{\s*\n\s*html,\s*\n\s*body \{/,
+    )
+    assert.ok(genericIdx >= 0, 'bloco genérico mobile landscape permanece')
+  })
 })

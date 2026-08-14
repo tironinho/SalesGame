@@ -4,6 +4,7 @@ import { useDeviceType } from '../../hooks/useDeviceType.js'
 import { useFullscreen } from '../../hooks/useFullscreen.js'
 import { useOrientation } from '../../hooks/useOrientation.js'
 import { enterGamePresentation } from '../../utils/fullscreen.js'
+import { isIOSDevice } from '../../utils/iosDetect.js'
 import { unlockOrientation } from '../../utils/screenOrientation.js'
 import OrientationOverlay from './OrientationOverlay.jsx'
 import './orientation.css'
@@ -20,7 +21,8 @@ function blurActiveField() {
 
 /**
  * Exige landscape só quando `enabled` (ex.: phase === 'game' / tabuleiro).
- * Ao girar para landscape: tenta tela cheia; se o browser bloquear, pede 1 toque.
+ * Android: tenta tela cheia ao girar.
+ * iOS/WebKit: não insiste em fullscreen (API fraca) — layout usa visualViewport.
  */
 export default function OrientationGuard({ children, enabled = false }) {
   const { isPortrait, isLandscape, lockLandscape } = useOrientation()
@@ -29,11 +31,14 @@ export default function OrientationGuard({ children, enabled = false }) {
 
   const [needsFullscreenTap, setNeedsFullscreenTap] = useState(false)
   const landscapeAttemptRef = useRef(0)
+  const isIOS = isIOSDevice()
 
   const active = Boolean(enabled) && shouldEnforceLandscape
   const shouldBlock = active && isPortrait
+  // iOS: fullscreen web quase não funciona — não mostra chip/gate
   const showFullscreenChip = (
-    active
+    !isIOS
+    && active
     && isLandscape
     && canFullscreen
     && !isFullscreen
@@ -46,6 +51,7 @@ export default function OrientationGuard({ children, enabled = false }) {
       setNeedsFullscreenTap(false)
       return undefined
     }
+    // Lock de orientação também falha no iOS; tentativa best-effort ok.
     lockLandscape().catch(() => {})
     return undefined
   }, [active, lockLandscape])
@@ -54,8 +60,12 @@ export default function OrientationGuard({ children, enabled = false }) {
     if (shouldBlock) blurActiveField()
   }, [shouldBlock])
 
-  // Ao entrar em landscape no tabuleiro: tenta FS automático; senão overlay de 1 toque.
+  // Android (não-iOS): tenta FS ao entrar em landscape; senão 1 toque.
   useEffect(() => {
+    if (isIOS) {
+      setNeedsFullscreenTap(false)
+      return undefined
+    }
     if (!active || !isLandscape || !canFullscreen) {
       setNeedsFullscreenTap(false)
       return undefined
@@ -73,7 +83,6 @@ export default function OrientationGuard({ children, enabled = false }) {
       await enterGamePresentation()
       await lockLandscape()
       if (cancelled || landscapeAttemptRef.current !== attemptId) return
-      // Se ainda não entrou, o browser exige gesto → 1 toque.
       const stillOut = typeof document !== 'undefined'
         && !document.fullscreenElement
         && !document.webkitFullscreenElement
@@ -87,7 +96,7 @@ export default function OrientationGuard({ children, enabled = false }) {
     return () => {
       cancelled = true
     }
-  }, [active, isLandscape, canFullscreen, isFullscreen, lockLandscape])
+  }, [active, isLandscape, canFullscreen, isFullscreen, lockLandscape, isIOS])
 
   const handleEnterPresentation = useCallback(async () => {
     await enterGamePresentation()
@@ -99,7 +108,7 @@ export default function OrientationGuard({ children, enabled = false }) {
     <>
       {children}
       {shouldBlock ? (
-        <OrientationOverlay onTryLock={handleEnterPresentation} />
+        <OrientationOverlay onTryLock={isIOS ? undefined : handleEnterPresentation} />
       ) : null}
       {needsFullscreenTap ? (
         <button
