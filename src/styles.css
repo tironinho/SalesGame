@@ -4541,10 +4541,11 @@ html, body {
     display: flex; flex-direction: column; gap: 3px;
   }
   .side .controlsSticky {
-    flex: 1 1 auto; min-height: 0; width: 100%;
+    flex: 0 0 auto; min-height: 0; width: 100%;
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: minmax(88px, 1fr) 38px 38px;
-    gap: 4px; align-content: stretch; padding: 4px;
+    /* auto: nunca comprimir as fileiras dos botões (1fr sumia no mobile baixo) */
+    grid-template-rows: auto auto auto;
+    gap: 4px; align-content: start; padding: 4px;
     border-top: 1px solid rgba(255, 255, 255, 0.08); box-shadow: none;
     background: rgba(15, 20, 32, 0.92);
   }
@@ -4553,10 +4554,10 @@ html, body {
     margin-top: 0 !important; min-width: 0; min-height: 0;
     display: flex; align-items: stretch;
   }
-  .side .controlsSticky > div .btn { width: 100%; height: 100%; }
+  .side .controlsSticky > div .btn { width: 100%; height: 100%; min-height: 36px; }
   .side .controlsSticky .diceResult {
-    grid-row: 1; grid-column: 1 / -1; align-self: stretch;
-    min-height: 88px; max-height: 115px;
+    grid-row: auto; grid-column: 1 / -1; align-self: stretch;
+    min-height: 72px; max-height: none;
     margin: 0; padding: 8px; box-sizing: border-box;
   }
   .side .controlsSticky .diceResultDie { width: clamp(46px, 7vh, 54px); height: clamp(46px, 7vh, 54px); }
@@ -5392,16 +5393,50 @@ html, body {
   .side .controlsSticky {
     position: static !important;
     order: 1;
-    flex: 0 0 auto;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
     padding: 2px;
-    gap: 3px;
+    gap: 4px !important;
     box-shadow: none;
+    /* Anula grid de tablet (900–1199) que vazava no celular landscape */
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: auto auto auto !important;
+    align-content: start !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
-  .side .diceResult,
+  .side .controlsSticky .controls {
+    display: contents !important;
+  }
+
+  .side .controlsSticky .diceResult,
   .controlsSticky .diceResult {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
     margin: 0 0 2px;
     padding: 4px 6px;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .side .controlsSticky > div {
+    margin-top: 0 !important;
+    min-width: 0;
+    min-height: 32px !important;
+    display: flex !important;
+    align-items: stretch;
+  }
+
+  .side .controlsSticky > div .btn,
+  .side .controlsSticky .btn {
+    width: 100% !important;
+    min-height: 32px !important;
+    height: auto !important;
+    max-height: none !important;
   }
 
   .side .diceResultDie,
@@ -5428,7 +5463,7 @@ html, body {
   .turnPrimaryActions .btn {
     padding: 5px 8px !important;
     font-size: 11px !important;
-    min-height: 0 !important;
+    min-height: 32px !important;
     line-height: 1.2;
     white-space: normal;
   }
@@ -5436,6 +5471,8 @@ html, body {
   .turnPrimaryActions {
     order: 0;
     gap: 3px;
+    flex: 0 0 auto !important;
+    flex-shrink: 0 !important;
   }
 
   .turnPrimaryActions .nextStepHint {

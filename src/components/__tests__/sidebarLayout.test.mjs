@@ -210,6 +210,9 @@ describe('sidebar player summary layout', () => {
     assert.match(block, /container-type:\s*size/)
     assert.match(block, /min\(100cqh/)
     assert.match(block, /100cqw/)
+    // Botões acima do rolar dado: grid auto (não 1fr que escondia as fileiras)
+    assert.match(block, /grid-template-rows:\s*auto\s+auto\s+auto/)
+    assert.doesNotMatch(block, /grid-template-rows:\s*minmax\(88px,\s*1fr\)/)
   })
 
   it('overrides iOS landscape ficam atrás de html.sg-ios (Android intacto)', () => {
