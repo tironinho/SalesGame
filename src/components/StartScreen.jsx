@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import {
   setTabPlayerName,      // grava o nome nesta ABA
 } from '../auth'
-import TutorialModal, { shouldAutoOpenTutorial } from './TutorialModal.jsx'
+import TutorialModal from './TutorialModal.jsx'
 import TironiCredit from './TironiCredit.jsx'
 
 // ajuste os paths dos assets conforme você salvou
@@ -13,8 +13,8 @@ import logoMultiplier from '/Multiplier-Copia.png'
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
   const [name, setName] = useState("")
-  // Auto-open 1× por sessão de aba (não depende do “já vi” antigo do localStorage)
-  const [tutorialOpen, setTutorialOpen] = useState(() => shouldAutoOpenTutorial())
+  // Tour automático fica ao entrar no tabuleiro; aqui só reabertura manual
+  const [tutorialOpen, setTutorialOpen] = useState(false)
   const inputRef = useRef(null)
 
   // Desktop: foca o nome. Mobile/touch: NÃO autofocar — Safari dá zoom em inputs.
@@ -97,7 +97,7 @@ export default function StartScreen({ onEnter }) {
         </div>
 
         <div className="startBrand">
-          <TironiCredit />
+          <TironiCredit compact />
           <img className="startBrandLogo" src={logoMultiplier} alt="Multiplier" />
         </div>
       </div>

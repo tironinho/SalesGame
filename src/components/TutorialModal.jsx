@@ -6,6 +6,7 @@ import {
   hasSeenTutorial,
   hasShownTutorialThisSession,
   shouldAutoOpenTutorial,
+  markTutorialSessionShown,
   markTutorialSeen,
 } from './tutorialStorage.js'
 import {
@@ -22,6 +23,7 @@ export {
   hasSeenTutorial,
   hasShownTutorialThisSession,
   shouldAutoOpenTutorial,
+  markTutorialSessionShown,
   markTutorialSeen,
 }
 

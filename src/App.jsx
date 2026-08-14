@@ -13,7 +13,7 @@ import DiceResult from './components/DiceResult.jsx'
 import DiceRollOverlay from './components/dice/DiceRollOverlay.jsx'
 import { unlockDiceAudio } from './utils/diceRollSound.js'
 import FinalWinners from './components/FinalWinners.jsx'
-import TutorialModal from './components/TutorialModal.jsx'
+import TutorialModal, { shouldAutoOpenTutorial, markTutorialSessionShown } from './components/TutorialModal.jsx'
 import TurnTimer from './components/TurnTimer.jsx'
 import BankruptOverlay from './modals/BankruptOverlay.jsx'
 import DebugPanel from './components/DebugPanel.jsx'
@@ -2191,11 +2191,18 @@ export default function App() {
   // ====== overlay “falido” (mostra quando eu declaro falência)
   const [showBankruptOverlay, setShowBankruptOverlay] = useState(false)
 
-  // ====== tutorial "Como jogar" (reabertura manual em jogo; sem auto-open aqui)
+  // ====== tutorial "Como jogar" — auto-open 1× por sessão ao entrar no tabuleiro
   const [tutorialOpen, setTutorialOpen] = useState(false)
   // Dica progressiva (1× por tipo de casa / sessão) — só UI local
   const [progressiveTip, setProgressiveTip] = useState(null)
   const progressiveTipTimerRef = useRef(null)
+
+  useEffect(() => {
+    if (phase !== 'game') return
+    if (!shouldAutoOpenTutorial()) return
+    markTutorialSessionShown()
+    setTutorialOpen(true)
+  }, [phase])
 
   const handleTileVisit = React.useCallback((kind) => {
     const tip = consumeTileTip(kind)
@@ -3023,7 +3030,7 @@ export default function App() {
         />
       )}
 
-      {/* Tutorial "Como jogar" (reabertura manual; não interfere no turno) */}
+      {/* Tutorial "Como jogar" (auto ao entrar no tabuleiro; reabertura via botão) */}
       <TutorialModal
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}

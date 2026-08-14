@@ -16,6 +16,14 @@ test('crédito Tironi Tech aponta para o site oficial', () => {
   assert.match(credit, /Tironi Tech/)
   assert.match(credit, /noopener noreferrer/)
   assert.match(start, /TironiCredit/)
+  assert.match(app, /shouldAutoOpenTutorial/)
+  assert.match(app, /markTutorialSessionShown/)
   assert.match(app, /TironiCredit/)
   assert.match(lobby, /TironiCredit/)
+})
+
+test('crédito Tironi no tabuleiro usa rodapé flutuante (não some fora da viewport)', () => {
+  const css = readFileSync(join(root, 'src/styles.css'), 'utf8')
+  assert.match(css, /\.foot\s*\{[^}]*position:\s*fixed/s)
+  assert.doesNotMatch(css, /\.foot\s*\{\s*display:\s*none/s)
 })

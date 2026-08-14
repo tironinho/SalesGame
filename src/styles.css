@@ -1050,6 +1050,10 @@ html, body {
   align-items:flex-end;
   justify-content:flex-end;
   gap:10px;
+  z-index: 2;
+}
+.startBrand .tironiCredit{
+  background: rgba(8, 14, 28, 0.78);
 }
 .startBrandLogo{
   height:132px; width:auto; filter: drop-shadow(0 8px 18px rgba(0,0,0,.5));
@@ -1138,18 +1142,39 @@ html, body {
 }
 
 .foot{
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  padding:6px 10px 10px;
+  /* Chip fixo: .content já usa a altura útil da viewport — sem isto o crédito some */
+  position: fixed;
+  left: 50%;
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  pointer-events: none;
 }
 .foot .tironiCredit{
-  background:rgba(8, 14, 28, 0.72);
+  pointer-events: auto;
+  background: rgba(8, 14, 28, 0.82);
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
 }
 
-/* Em partida (mobile landscape) o rodapé some para não roubar altura */
+/* Em partida (mobile landscape): canto inferior esquerdo, mais compacto */
 @media (max-width: 960px) and (orientation: landscape) and (pointer: coarse){
-  .foot{ display:none !important; }
+  .foot{
+    left: max(6px, env(safe-area-inset-left, 0px));
+    bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    transform: none;
+    justify-content: flex-start;
+    align-items: flex-end;
+  }
+  .foot .tironiCredit{
+    transform: scale(0.82);
+    transform-origin: bottom left;
+    background: rgba(8, 14, 28, 0.88);
+  }
 }
 
 /* responsivo */
@@ -5821,9 +5846,7 @@ html, body {
     box-sizing: border-box;
   }
 
-  .foot {
-    display: none;
-  }
+  /* .foot: chip fixo — regras em bloco .foot acima (não esconder crédito) */
 
   .topbar {
     flex: 0 0 auto;

@@ -6,6 +6,7 @@ import {
   TUTORIAL_SESSION_KEY,
   shouldAutoOpenTutorial,
   hasShownTutorialThisSession,
+  markTutorialSessionShown,
   markTutorialSeen,
 } from '../tutorialStorage.js'
 
@@ -25,10 +26,16 @@ test('tutorial auto-open: sessão limpa abre; após mark não reabre na mesma se
   }
 
   assert.equal(shouldAutoOpenTutorial(), true)
-  markTutorialSeen()
+  markTutorialSessionShown()
   assert.equal(sessionStorage.getItem(TUTORIAL_SESSION_KEY), '1')
-  assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), '1')
   assert.equal(hasShownTutorialThisSession(), true)
+  assert.equal(shouldAutoOpenTutorial(), false)
+  assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), null)
+
+  session.clear()
+  assert.equal(shouldAutoOpenTutorial(), true)
+  markTutorialSeen()
+  assert.equal(localStorage.getItem(TUTORIAL_STORAGE_KEY), '1')
   assert.equal(shouldAutoOpenTutorial(), false)
 
   // Nova sessão (session limpa) → abre de novo mesmo com localStorage marcado
