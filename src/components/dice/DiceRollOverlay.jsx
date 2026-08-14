@@ -55,7 +55,11 @@ export default function DiceRollOverlay({
       return () => clearTimeout(t)
     }
 
-    unlockDiceAudio().catch(() => {})
+    let cancelled = false
+    let raf = 0
+    let renderer = null
+    let dice = null
+    let ground = null
 
     const width = Math.max(160, host.clientWidth || 320)
     const height = Math.max(120, host.clientHeight || 240)
@@ -65,7 +69,7 @@ export default function DiceRollOverlay({
     camera.position.set(0, 1.45, 4.35)
     camera.lookAt(0, 0.1, 0)
 
-    const renderer = new THREE.WebGLRenderer({
+    renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
       powerPreference: 'high-performance',
@@ -84,7 +88,7 @@ export default function DiceRollOverlay({
     fill.position.set(-3.2, 1.4, 2.2)
     scene.add(ambient, key, fill)
 
-    const ground = new THREE.Mesh(
+    ground = new THREE.Mesh(
       new THREE.CircleGeometry(1.7, 48),
       new THREE.MeshBasicMaterial({
         color: 0x000000,
@@ -96,7 +100,7 @@ export default function DiceRollOverlay({
     ground.position.y = -0.52
     scene.add(ground)
 
-    const dice = createDiceMesh()
+    dice = createDiceMesh()
     scene.add(dice)
 
     const finalEuler = eulerForResultFace(result)
@@ -117,13 +121,21 @@ export default function DiceRollOverlay({
     const tumbleQuat = new THREE.Quaternion()
     const workQuat = new THREE.Quaternion()
 
-    const start = performance.now()
+    let start = performance.now()
     let landPlayed = false
-    playDiceTumbleSound(ROLL_MS)
+    let audioReady = false
 
-    let raf = 0
+    // Áudio: desbloqueia no gesto já feito (botão Rolar) e só então agenda o tumble.
+    const startAudio = async () => {
+      await unlockDiceAudio()
+      if (cancelled) return
+      audioReady = true
+      await playDiceTumbleSound(ROLL_MS)
+    }
+    startAudio().catch(() => {})
 
     const animate = (now) => {
+      if (cancelled) return
       const elapsed = now - start
       const rollT = Math.min(1, elapsed / ROLL_MS)
 
@@ -152,7 +164,12 @@ export default function DiceRollOverlay({
         dice.scale.setScalar(1.06)
         if (!landPlayed) {
           landPlayed = true
-          playDiceLandSound()
+          if (audioReady) playDiceLandSound().catch(() => {})
+          else {
+            unlockDiceAudio()
+              .then(() => playDiceLandSound())
+              .catch(() => {})
+          }
         }
       }
 
@@ -183,19 +200,20 @@ export default function DiceRollOverlay({
     window.addEventListener('resize', onResize)
 
     return () => {
+      cancelled = true
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
-      renderer.dispose()
-      dice.geometry.dispose()
-      if (Array.isArray(dice.material)) {
+      renderer?.dispose()
+      dice?.geometry?.dispose()
+      if (Array.isArray(dice?.material)) {
         dice.material.forEach((m) => {
           m.map?.dispose()
           m.dispose()
         })
       }
-      ground.geometry.dispose()
-      ground.material.dispose()
-      if (renderer.domElement.parentNode === host) {
+      ground?.geometry?.dispose()
+      ground?.material?.dispose()
+      if (renderer?.domElement?.parentNode === host) {
         host.removeChild(renderer.domElement)
       }
     }

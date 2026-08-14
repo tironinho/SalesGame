@@ -11,6 +11,7 @@ import HUD from './components/panel/HUD.jsx'
 import Controls from './components/panel/Controls.jsx'
 import DiceResult from './components/DiceResult.jsx'
 import DiceRollOverlay from './components/dice/DiceRollOverlay.jsx'
+import { unlockDiceAudio } from './utils/diceRollSound.js'
 import FinalWinners from './components/FinalWinners.jsx'
 import TutorialModal from './components/TutorialModal.jsx'
 import TurnTimer from './components/TurnTimer.jsx'
@@ -2403,6 +2404,8 @@ export default function App() {
         onAction(act)
         return
       }
+      // Gesto do usuário: desbloqueia áudio aqui (antes do overlay montar).
+      unlockDiceAudio().catch(() => {})
       setIsRollingUI(true)
       clearRollingTimeout()
       const localKey = `local:${currentTurnKey || turnSeq || Date.now()}`
