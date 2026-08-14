@@ -13,8 +13,10 @@ const final = readFileSync(join(root, 'src/components/FinalWinners.jsx'), 'utf8'
 const css = readFileSync(join(root, 'src/styles.css'), 'utf8')
 const app = readFileSync(join(root, 'src/App.jsx'), 'utf8')
 
-test('FinalWinners usa ranking por patrimônio e layout responsivo', () => {
+test('FinalWinners usa ranking por patrimônio, portal no body e layout responsivo', () => {
   assert.match(final, /rankPlayersByPatrimonio/)
+  assert.match(final, /createPortal/)
+  assert.match(final, /document\.body/)
   assert.match(final, /Caixa \+ Bens/)
   assert.match(final, /finalWinnersPodium/)
   assert.match(final, /Voltar aos Lobbies/)

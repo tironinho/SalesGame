@@ -3068,7 +3068,19 @@ export default function App() {
         <TironiCredit compact />
       </footer>
 
-      {/* Pódio final — overlay full-screen (não fica preso na sidebar) */}
+      {/* Overlay persistente de FALÊNCIA para o meu jogador */}
+      {showBankruptOverlay && (
+        <BankruptOverlay
+          playerName={meHudLive?.name || current?.name || 'Jogador'}
+          onClose={() => setShowBankruptOverlay(false)}
+          autoCloseMs={1500}
+        />
+      )}
+    </div>
+    </ModalProvider>
+    </OrientationGuard>
+
+      {/* Fora de .page (overflow) — FinalWinners ainda usa portal no body */}
       {gameOver && (
         <FinalWinners
           players={players}
@@ -3088,18 +3100,6 @@ export default function App() {
           }}
         />
       )}
-
-      {/* Overlay persistente de FALÊNCIA para o meu jogador */}
-      {showBankruptOverlay && (
-        <BankruptOverlay
-          playerName={meHudLive?.name || current?.name || 'Jogador'}
-          onClose={() => setShowBankruptOverlay(false)}
-          autoCloseMs={1500}
-        />
-      )}
-    </div>
-    </ModalProvider>
-    </OrientationGuard>
 
       {/* Fora do OrientationGuard + z-index acima do gate de girar/tela cheia */}
       <TutorialModal

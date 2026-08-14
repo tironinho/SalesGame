@@ -645,7 +645,14 @@ html, body {
 .tutorialBtnGhost:hover{ background:rgba(168,196,255,.2); }
 
 /* ===== Pódio final (FinalWinners) — desktop + mobile ===== */
+/* Portal no body: cobre viewport mesmo com .page overflow:hidden no iOS */
 .sg-modal-backdrop:has(.finalWinners){
+  position:fixed !important;
+  inset:0 !important;
+  width:100vw;
+  width:100dvw;
+  height:100vh;
+  height:100dvh;
   align-items:center;
   justify-content:center;
   padding:
@@ -654,6 +661,9 @@ html, body {
     max(6px, env(safe-area-inset-bottom, 0px))
     max(6px, env(safe-area-inset-left, 0px));
   box-sizing:border-box;
+  background:rgba(8,10,16,.82) !important;
+  -webkit-backdrop-filter:blur(4px);
+  backdrop-filter:blur(4px);
 }
 .sg-modal-backdrop:has(.finalWinners) .sg-modal-card{
   width:min(920px, 100%);

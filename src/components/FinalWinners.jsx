@@ -1,12 +1,17 @@
 // src/components/FinalWinners.jsx
 import React, { useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import ModalBase from '../modals/ModalBase'
 import { rankPlayersByPatrimonio } from '../game/patrimonio.js'
+
+/** Acima do tabuleiro / pinch-zoom / OrientationGuard no iOS Safari. */
+export const FINAL_WINNERS_Z_INDEX = 2147483646
 
 /**
  * Pódio final (Top 3) — modal travada no centro.
  * Ranking: patrimônio (Caixa+Bens) → caixa → nome; falidos por último.
- * Layout responsivo: desktop em 3 colunas; mobile/landscape empilha 1º→2º→3º.
+ * Portal em document.body: evita ficar atrás do tabuleiro no mobile
+ * (.page overflow:hidden + stacking do boardWrap).
  */
 export default function FinalWinners({ players = [], maxRounds, endedRound, onExit, onResolve }) {
   const rankedPlayers = useMemo(() => rankPlayersByPatrimonio(players), [players])
@@ -20,8 +25,8 @@ export default function FinalWinners({ players = [], maxRounds, endedRound, onEx
     else onExit?.()
   }
 
-  return (
-    <ModalBase zIndex={2147483647} onClose={() => {}}>
+  const ui = (
+    <ModalBase zIndex={FINAL_WINNERS_Z_INDEX} onClose={() => {}}>
       <div className="finalWinners">
         <h1 className="finalWinnersTitle">Fim da partida</h1>
         <p className="finalWinnersSubtitle">
@@ -71,6 +76,9 @@ export default function FinalWinners({ players = [], maxRounds, endedRound, onEx
       </div>
     </ModalBase>
   )
+
+  if (typeof document === 'undefined') return ui
+  return createPortal(ui, document.body)
 }
 
 function MedalCard({ place, player, big }) {
