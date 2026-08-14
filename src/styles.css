@@ -1050,7 +1050,7 @@ html, body {
 }
 
 .startFooter{
-  position:relative; z-index:1; display:flex; align-items:flex-end; justify-content:space-between;
+  position:relative; z-index:1; display:flex; align-items:flex-end; justify-content:flex-end;
   gap:16px; padding:12px 20px 18px; min-height:72px;
 }
 .startLinks{ font-size:18px; line-height:1.25; text-shadow:0 2px 10px rgba(0,0,0,.55); }
@@ -5157,7 +5157,7 @@ html, body {
     inset: 0; width: auto; height: auto;
   }
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: cover; object-position: center;
+    object-fit: contain; object-position: center;
   }
 
   .page .content .side {
@@ -5814,7 +5814,7 @@ html, body {
   }
 
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
   }
 
@@ -5998,7 +5998,7 @@ html, body {
   }
 
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
   }
 

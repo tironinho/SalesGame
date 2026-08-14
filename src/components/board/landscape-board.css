@@ -306,7 +306,7 @@
     inset: calc(100% / 9) calc(100% / 13);
     width: 84.6153846%;
     height: 77.7777778%;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
     background: #071d3b;
   }

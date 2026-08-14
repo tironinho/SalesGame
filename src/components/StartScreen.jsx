@@ -8,7 +8,6 @@ import TironiCredit from './TironiCredit.jsx'
 // ajuste os paths dos assets conforme você salvou
 import bgImg from '/dynamic-data-visualization-3d.jpg'
 import logoGame from '/SalesGame_Logo-removebg-preview.png'
-import logoMultiplier from '/Multiplier-Copia.png'
 
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
@@ -89,16 +88,10 @@ export default function StartScreen({ onEnter }) {
         </div>
       </div>
 
-      {/* rodapé com redes/site e marcas */}
+      {/* rodapé: crédito Tironi Tech */}
       <div className="startFooter">
-        <div className="startLinks">
-          <div>@multiplier.educacao</div>
-          <div>https://multipliereducacao.com.br/</div>
-        </div>
-
         <div className="startBrand">
           <TironiCredit compact />
-          <img className="startBrandLogo" src={logoMultiplier} alt="Multiplier" />
         </div>
       </div>
 

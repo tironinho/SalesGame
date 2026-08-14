@@ -113,7 +113,8 @@
   display: block;
   width: 84.6153846%;
   height: 77.7777778%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   pointer-events: none;
   user-select: none;
 }
