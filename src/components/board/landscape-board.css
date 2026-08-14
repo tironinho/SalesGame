@@ -207,12 +207,17 @@
   }
 
   .sg40GameBoard .sg40Preview__boardImage {
-    inset: calc(100% / 14) calc(100% / 8);
-    width: 75%;
-    height: calc(100% * 12 / 14);
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: auto;
+    height: auto;
+    max-width: min(48%, 220px);
+    max-height: min(28%, 120px);
+    transform: translate(-50%, -50%);
     object-fit: contain;
     object-position: center;
-    background: #071d3b;
+    background: transparent;
   }
 
   .sg40GameBoard .sg40Preview__track {
@@ -303,12 +308,17 @@
   }
 
   .sg40GameBoard .sg40Preview__boardImage {
-    inset: calc(100% / 9) calc(100% / 13);
-    width: 84.6153846%;
-    height: 77.7777778%;
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: auto;
+    height: auto;
+    max-width: min(40%, 200px);
+    max-height: min(34%, 110px);
+    transform: translate(-50%, -50%);
     object-fit: contain;
     object-position: center;
-    background: #071d3b;
+    background: transparent;
   }
 
   .sg40GameBoard .sg40Preview__track {

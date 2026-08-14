@@ -10,22 +10,16 @@ const start = readFileSync(join(root, 'src/components/StartScreen.jsx'), 'utf8')
 const app = readFileSync(join(root, 'src/App.jsx'), 'utf8')
 const lobby = readFileSync(join(root, 'src/pages/LobbyList.jsx'), 'utf8')
 
-test('crédito Tironi Tech aponta para o site oficial', () => {
+test('crédito Tironi Tech só na tela de entrada', () => {
   assert.match(credit, /https:\/\/tironitech\.com\//)
   assert.match(credit, /Desenvolvido por/)
   assert.match(credit, /Tironi Tech/)
   assert.match(credit, /noopener noreferrer/)
   assert.match(start, /TironiCredit/)
+  // Tabuleiro / lobbies: sem crédito (evita sobrepor o board)
+  assert.doesNotMatch(app, /TironiCredit/)
+  assert.doesNotMatch(lobby, /TironiCredit/)
   assert.match(app, /shouldAutoOpenTutorial/)
-  assert.match(app, /TironiCredit/)
-  assert.match(lobby, /TironiCredit/)
-  // Sessão do tour: marcada ao fechar (tutorialStorage via TutorialModal), não no App
   const modal = readFileSync(join(root, 'src/components/TutorialModal.jsx'), 'utf8')
   assert.match(modal, /markTutorialSessionShown|markTutorialSeen/)
-})
-
-test('crédito Tironi no tabuleiro usa rodapé flutuante (não some fora da viewport)', () => {
-  const css = readFileSync(join(root, 'src/styles.css'), 'utf8')
-  assert.match(css, /\.foot\s*\{[^}]*position:\s*fixed/s)
-  assert.doesNotMatch(css, /\.foot\s*\{\s*display:\s*none/s)
 })

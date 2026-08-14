@@ -83,7 +83,6 @@ import { consumeTileTip } from './game/progressiveTips.js'
 import OrientationGuard from './components/orientation/OrientationGuard.jsx'
 import { enterGamePresentation } from './utils/fullscreen.js'
 import { useBoardPinchZoom } from './hooks/useBoardPinchZoom.js'
-import TironiCredit from './components/TironiCredit.jsx'
 
 // -------------------------------------------------------------
 // App raiz – concentra roteamento de fases e estado global leve
@@ -3085,10 +3084,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      <footer className="foot">
-        <TironiCredit compact />
-      </footer>
 
       {/* Overlay persistente de FALÊNCIA para o meu jogador */}
       {showBankruptOverlay && (

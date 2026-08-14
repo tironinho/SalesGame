@@ -16,7 +16,6 @@ import {
   joinLobby,
   canResumeLockedMatch,
 } from '../lib/lobbies'
-import TironiCredit from '../components/TironiCredit.jsx'
 
 /* ---------- Ícones SVG inline (decorativos; sem dependência externa) ----------
    Todos usam currentColor e recebem className/size via props. */
@@ -525,10 +524,6 @@ export default function LobbyList({ onEnterRoom, playerName }) {
             </div>
           </div>
         )}
-
-        <div className="lobbyTironiCredit">
-          <TironiCredit compact />
-        </div>
       </div>
 
       {createModalOpen && (

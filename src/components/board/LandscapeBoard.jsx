@@ -237,9 +237,7 @@ export default function LandscapeBoard({
       <img
         className="sg40Preview__boardImage"
         src={BOARD_PREVIEW_CENTER_SOURCE}
-        alt="Identidade visual central do tabuleiro Sales Game"
-        width="1448"
-        height="1086"
+        alt="Sales GAME"
         draggable="false"
       />
 

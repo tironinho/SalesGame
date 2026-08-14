@@ -5314,7 +5314,16 @@ img[src*="multiplier"]{
     inset: 0; width: auto; height: auto;
   }
   .page .content .boardWrap > .sg40GameBoard .sg40Preview__boardImage {
-    object-fit: contain; object-position: center;
+    inset: auto;
+    top: 50%;
+    left: 50%;
+    width: auto;
+    height: auto;
+    max-width: min(42%, 260px);
+    max-height: min(34%, 140px);
+    transform: translate(-50%, -50%);
+    object-fit: contain;
+    object-position: center;
   }
 
   .page .content .side {
