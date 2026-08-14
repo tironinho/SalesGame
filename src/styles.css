@@ -296,6 +296,14 @@ html, body {
   min-height: 0;
 }
 
+/* Botão / sheet do resumo: só no mobile landscape (ver media abaixo) */
+.hudOpenBtn{
+  display: none;
+}
+.hudSheetBackdrop{
+  display: none;
+}
+
 /* Painéis / HUD */
 .hud .panel{ background:#171717; border:1px solid #2a2a2a; border-radius:10px; padding:10px; }
 .hud .line{ margin:3px 0; font-size:14px }
@@ -5534,13 +5542,129 @@ html, body {
     gap: 4px;
   }
 
-  .side > .hud {
+  .side > .hud,
+  .side > .hud--inline {
     order: 2 !important;
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* No landscape touch o inline fica ilegível — usa sheet */
+  .side > .hud--inline {
+    display: none !important;
+  }
+
+  .hudOpenBtn {
+    display: block !important;
+    width: 100%;
+    flex: 0 0 auto !important;
+    min-height: 34px !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+    line-height: 1.2;
+    white-space: normal;
+    background: #1e293b !important;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+  }
+
+  .hudSheetBackdrop {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    box-sizing: border-box;
+    align-items: flex-end;
+    justify-content: center;
+    padding:
+      max(6px, env(safe-area-inset-top, 0px))
+      max(6px, env(safe-area-inset-right, 0px))
+      max(6px, env(safe-area-inset-bottom, 0px))
+      max(6px, env(safe-area-inset-left, 0px));
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  .hudSheet {
+    box-sizing: border-box;
+    width: min(760px, 100%);
+    max-height: min(88dvh, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-radius: 14px 14px 10px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #101622;
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+
+  .hudSheetHeader {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 14px;
+  }
+
+  .hudSheetClose {
+    min-height: 34px !important;
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+
+  .hudSheetBody {
     flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    padding: 10px 12px 14px;
+  }
+
+  .hudSheetBody .hud {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .hudSheetBody .hud .panel,
+  .hudSheetBody .hud .game-stats-card {
+    padding: 10px 12px;
+    gap: 8px 14px;
+  }
+
+  .hudSheetBody .hud .game-stats-card {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hudSheetBody .hud .game-stats-title {
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .hudSheetBody .hud .game-stat-row {
+    font-size: 13px;
+    gap: 8px;
+    padding: 1px 0;
+  }
+
+  .hudSheetBody .hud .score .title {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .hudSheetBody .hud .score .row {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .hudSheetBody .hud .score .scorePatrimonioNote {
+    padding: 4px 10px 0;
+    font-size: 11px;
   }
 
   .side .hud .panel,

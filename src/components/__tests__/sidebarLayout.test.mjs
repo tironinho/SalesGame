@@ -42,10 +42,13 @@ describe('sidebar player summary layout', () => {
 
   it('App mantém o HUD fora da região de scroll secundária', () => {
     const side = sideMarkup()
-    const hudStart = side.indexOf('<HUD')
+    const hudStart = side.indexOf('hud--inline')
     const secondaryStart = side.indexOf('sideSecondary')
     assert.ok(hudStart >= 0)
     assert.ok(secondaryStart > hudStart)
+    assert.match(app, /hudOpenBtn/)
+    assert.match(app, /hudSheetOpen/)
+    assert.match(app, /Ver resumo \/ placar/)
   })
 
   it('região secundária tem dado; ações rápidas ficam acima do roll', () => {
@@ -204,14 +207,15 @@ describe('sidebar player summary layout', () => {
     assert.match(css, /@media \(min-width:\s*961px\) and \(max-height:\s*800px\)/)
     assert.match(css, /@media \(min-width:\s*961px\) and \(max-height:\s*740px\)/)
     const compactIdx = css.search(/@media \(min-width:\s*961px\) and \(max-height:\s*800px\)/)
-    const compact = css.slice(compactIdx)
+    const nextIdx = css.indexOf('@media', compactIdx + 10)
+    const compact = css.slice(compactIdx, nextIdx > compactIdx ? nextIdx : compactIdx + 2500)
     assert.match(compact, /\.hud \.panel/)
     assert.match(compact, /\.side \.diceResult/)
     assert.match(compact, /\.turnPrimaryActions \.nextStepHint/)
     assert.doesNotMatch(compact, /position:\s*(fixed|sticky)/)
   })
 
-  it('mobile landscape touch: board-first, fill lateral e ações rápidas', () => {
+  it('mobile landscape touch: board-first, fill lateral, ações e sheet do resumo', () => {
     assert.match(
       css,
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
@@ -219,14 +223,16 @@ describe('sidebar player summary layout', () => {
     const idx = css.search(
       /@media \(max-width:\s*960px\) and \(orientation:\s*landscape\) and \(pointer:\s*coarse\)/,
     )
-    const block = css.slice(idx, idx + 12000)
+    const block = css.slice(idx, idx + 14000)
     assert.match(block, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(136px,\s*20%\)/)
     assert.match(block, /container-type:\s*size/)
-    // Fill laterais sem subir altura: 100cqh × 100cqw (não contain 13:9)
     assert.match(block, /height:\s*100cqh\s*!important/)
     assert.match(block, /width:\s*100cqw\s*!important/)
     assert.match(block, /sideQuickActions/)
     assert.match(block, /min-height:\s*68px/)
+    assert.match(block, /hudOpenBtn/)
+    assert.match(block, /hudSheetBackdrop/)
+    assert.match(block, /\.side\s*>\s*\.hud--inline\s*\{[^}]*display:\s*none/)
     assert.doesNotMatch(block, /grid-template-rows:\s*minmax\(88px,\s*1fr\)/)
   })
 

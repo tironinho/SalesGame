@@ -433,6 +433,7 @@ export default function App() {
   const [boardView, setBoardView] = useState('fit')
   const boardWrapRef = useRef(null)
   useBoardPinchZoom(boardWrapRef, phase === 'game')
+  const [hudSheetOpen, setHudSheetOpen] = useState(false)
 
   // ====== bloqueio de turno (cadeado entre abas)
   const [turnLock, setTurnLock] = useState(false)
@@ -2860,7 +2861,9 @@ export default function App() {
         </div>
 
         <aside className="side">
-          <HUD totals={totals} players={players} />
+          <div className="hud hud--inline">
+            <HUD totals={totals} players={players} />
+          </div>
 
           <div className="sideSecondary">
             <div className="controlsSticky">
@@ -2978,6 +2981,13 @@ export default function App() {
                 Como jogar
               </button>
             </div>
+            <button
+              type="button"
+              className="btn dark hudOpenBtn"
+              onClick={() => setHudSheetOpen(true)}
+            >
+              Ver resumo / placar
+            </button>
             <Controls
               section="primary"
               onAction={onControlsAction}
@@ -2993,6 +3003,35 @@ export default function App() {
           </div>
         </aside>
       </main>
+
+      {hudSheetOpen && (
+        <div
+          className="hudSheetBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Resumo e placar"
+          onClick={() => setHudSheetOpen(false)}
+        >
+          <div
+            className="hudSheet"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="hudSheetHeader">
+              <strong>Resumo e placar</strong>
+              <button
+                type="button"
+                className="btn dark hudSheetClose"
+                onClick={() => setHudSheetOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+            <div className="hudSheetBody">
+              <HUD totals={totals} players={players} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="foot">
         <small>Desenvolvido por <a href="https://www.tironitech.com" target="_blank" rel="noreferrer">tironitech.com</a></small>
