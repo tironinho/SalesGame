@@ -16,7 +16,7 @@ import {
   logCapture
 } from './game/debugMode.js'
 
-import MobilePortraitGuard from './components/MobilePortraitGuard.jsx'
+import OrientationGuard from './components/orientation/OrientationGuard.jsx'
 
 function initialRoomFromURL () {
   const qs = new URLSearchParams(window.location.search)
@@ -105,12 +105,13 @@ function Root() {
   }, [])
 
   return (
-    <ModalProvider>
-      <GameNetProvider roomCode={roomCode}>
-        <App />
-      </GameNetProvider>
-      <MobilePortraitGuard />
-    </ModalProvider>
+    <OrientationGuard>
+      <ModalProvider>
+        <GameNetProvider roomCode={roomCode}>
+          <App />
+        </GameNetProvider>
+      </ModalProvider>
+    </OrientationGuard>
   )
 }
 

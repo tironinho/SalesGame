@@ -1,0 +1,129 @@
+/* Overlay: mobile/tablet em portrait → pedir landscape.
+   Desktop não é afetado (o guard só monta o overlay via JS). */
+
+.orientationOverlay {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-right: calc(24px + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(24px + env(safe-area-inset-left, 0px));
+  background: rgba(8, 10, 16, 0.96);
+  color: #e8ecf4;
+  text-align: center;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.orientationOverlay__card {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  margin: 0;
+  padding: 28px 22px 24px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 24, 36, 0.98);
+}
+
+.orientationOverlay__iconWrap {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 18px;
+}
+
+.orientationOverlay__device {
+  width: 42px;
+  height: 68px;
+  border-radius: 8px;
+  border: 2px solid #c5cad6;
+  background: rgba(255, 255, 255, 0.06);
+  position: relative;
+  animation: orientationRotateDevice 2.5s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+.orientationOverlay__deviceScreen {
+  position: absolute;
+  inset: 8px 6px 10px;
+  border-radius: 3px;
+  background: rgba(120, 160, 255, 0.35);
+}
+
+.orientationOverlay__title {
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #f2f5fb;
+}
+
+.orientationOverlay__text {
+  margin: 0;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #c5cad6;
+}
+
+.orientationOverlay__text strong {
+  color: #f2f5fb;
+  font-weight: 700;
+}
+
+.orientationOverlay__btn {
+  margin-top: 18px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #5b4dff;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.orientationOverlay__btn:focus-visible {
+  outline: 2px solid #aab4ff;
+  outline-offset: 2px;
+}
+
+.orientationOverlay__btn:active {
+  filter: brightness(0.92);
+}
+
+@keyframes orientationRotateDevice {
+  0% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(90deg);
+  }
+  65% {
+    transform: rotate(90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orientationOverlay__device {
+    animation: none;
+    transform: rotate(90deg);
+  }
+}

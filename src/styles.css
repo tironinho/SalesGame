@@ -4198,82 +4198,8 @@ html, body {
   }
 }
 
-/* ====== Guard temporário: mobile landscape → pedir portrait ======
-   Overlay só em touch/coarse + landscape estreito. Jogo permanece montado.
-   Mensagem ancorada no canto superior esquerdo com px fixos — legível
-   mesmo com zoom/viewport estranho do Safari ao girar. */
-.mobilePortraitGuard{
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 2147483000;
-  box-sizing: border-box;
-  overflow: hidden;
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
-  padding-right: calc(16px + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(16px + env(safe-area-inset-left, 0px));
-  align-items: flex-start;
-  justify-content: flex-start;
-  background: rgba(8, 10, 16, 0.96);
-  color: #e8ecf4;
-  text-align: left;
-  pointer-events: auto;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.mobilePortraitGuardInner{
-  box-sizing: border-box;
-  width: min(320px, calc(100% - 32px));
-  max-width: 320px;
-  margin: 0;
-  padding: 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(20, 24, 36, 0.98);
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-.mobilePortraitGuard .mobilePortraitGuardIcon{
-  display: inline-block;
-  font-size: 22px;
-  line-height: 1;
-  vertical-align: -2px;
-  margin: 0 4px 0 0;
-}
-.mobilePortraitGuard .mobilePortraitGuardTitle{
-  margin: 0 0 10px;
-  padding: 0;
-  font-size: 20px !important;
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: 0;
-  color: #f2f5fb;
-}
-.mobilePortraitGuard .mobilePortraitGuardText{
-  margin: 0;
-  padding: 0;
-  font-size: 14px !important;
-  font-weight: 500;
-  line-height: 1.4;
-  color: #c5cad6;
-}
-.mobilePortraitGuard .mobilePortraitGuardHint{
-  margin: 12px 0 0;
-  padding: 0;
-  font-size: 20px !important;
-  line-height: 1;
-  opacity: 0.75;
-}
-
-@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse){
-  .mobilePortraitGuard{
-    display: flex;
-  }
-}
+/* Guard de orientação mobile → components/orientation/orientation.css
+   Preferência landscape; overlay só em portrait (touch + viewport estreito). */
 
 /* ====== iOS Safari: evitar auto-zoom em formulários (mobile/touch) ======
    Inputs com font-size < 16px fazem o Safari ampliar a página ao focar.
