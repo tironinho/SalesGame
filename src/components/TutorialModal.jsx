@@ -15,6 +15,7 @@ import {
   TOUR_TILES,
   TOUR_HUD,
   TOUR_RECOVERY,
+  TOUR_GLOSSARY,
 } from './tutorialContent.js'
 
 export {
@@ -27,7 +28,7 @@ export {
   markTutorialSeen,
 }
 
-export { TOUR_STEPS, TOUR_TILES, TOUR_HUD, TOUR_RECOVERY }
+export { TOUR_STEPS, TOUR_TILES, TOUR_HUD, TOUR_RECOVERY, TOUR_GLOSSARY }
 
 /**
  * Tour guiado interativo na entrada (e reabertura via “Como jogar”).
@@ -142,6 +143,7 @@ export default function TutorialModal({ open, onClose }) {
               <ul className="tutorialWelcomeList">
                 <li>Objetivo e vitória (Caixa + Bens)</li>
                 <li>Casas do tabuleiro</li>
+                <li>Glossário com valores (compra, fat, desp)</li>
                 <li>HUD / placar</li>
                 <li>Recuperação financeira e falência</li>
               </ul>
@@ -185,6 +187,55 @@ export default function TutorialModal({ open, onClose }) {
                         <p>{selectedTileData.body}</p>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {step.interactive === 'glossary' && (
+                  <div className="tutorialGlossary">
+                    {TOUR_GLOSSARY.map((section) => (
+                      <section key={section.id} className="tutorialGlossarySection">
+                        <h4 className="tutorialGlossaryTitle">{section.title}</h4>
+                        {section.note ? (
+                          <p className="tutorialGlossaryNote">{section.note}</p>
+                        ) : null}
+                        {Array.isArray(section.bullets) && section.bullets.length > 0 ? (
+                          <ul className="tutorialGlossaryBullets">
+                            {section.bullets.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {Array.isArray(section.headers) && Array.isArray(section.rows) ? (
+                          <div className="tutorialGlossaryTableWrap">
+                            <table className="tutorialGlossaryTable">
+                              <thead>
+                                <tr>
+                                  {section.headers.map((h) => (
+                                    <th key={h}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {section.rows.map((row) => (
+                                  <tr key={row.join('|')}>
+                                    {row.map((cell, idx) => (
+                                      <td key={`${row[0]}-${idx}`}>{cell}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                        {Array.isArray(section.footnotes) && section.footnotes.length > 0 ? (
+                          <ul className="tutorialGlossaryFootnotes">
+                            {section.footnotes.map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </section>
+                    ))}
                   </div>
                 )}
 

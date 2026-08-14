@@ -1,15 +1,23 @@
 /**
- * Conteúdo do tour guiado — alinhado ao Manual, Orientações de Casa,
- * cartilha de casas e às regras atuais do Sales Game (motor/UI).
+ * Conteúdo do tour guiado — alinhado ao Manual e às regras do motor (gameRules).
+ * Tabelas numéricas: ver tutorialGlossary.js (fonte única do glossário).
  * Não altera regras: só copy educacional.
  */
 
+import { TOUR_GLOSSARY, MANUAL_CONSTANTS, MIX_PURCHASE_PRICES } from './tutorialGlossary.js'
+import { VENDOR_RULES, ERP_RULES, MIX_RULES } from '../game/gameRules.js'
+
+export { TOUR_GLOSSARY }
+
+const money = (n) => `$ ${Number(n || 0).toLocaleString('pt-BR')}`
+
 export const TOUR_WELCOME = {
   title: 'Bem-vindo ao Sales Game',
-  subtitle: 'Tour guiado interativo',
+  subtitle: 'Tour guiado + glossário de valores',
   body: [
     'Em poucos minutos você entende o objetivo, as casas, o painel (HUD), a recuperação financeira e a falência.',
-    'Pode seguir o tour completo ou pular e aprender jogando — o botão “Como jogar” reabre tudo quando quiser.',
+    'O glossário traz as tabelas oficiais de contratação, Mix, ERP, certificados, faturamento e despesas.',
+    'Pode seguir o tour completo ou pular — o botão “Como jogar” reabre tudo quando quiser.',
   ],
 }
 
@@ -35,6 +43,7 @@ export const TOUR_STEPS = [
       'O host escolhe a duração da partida entre 1 e 5 rodadas (padrão: 5).',
       'Cada volta no tabuleiro passa pelo Faturamento do Mês e pelas Despesas — isso fecha o ciclo da rodada.',
       'A partida termina após o número de rodadas configurado, ou se restar apenas um jogador ativo.',
+      `Início típico: Caixa ${money(MANUAL_CONSTANTS.startCash)}, Bens ${money(MANUAL_CONSTANTS.startBens)}, Mix D, ERP D, 1 Vendedor Comum e 1 cliente.`,
     ],
     highlight: 'Mais rodadas = mais tempo para investir e recuperar.',
   },
@@ -55,7 +64,7 @@ export const TOUR_STEPS = [
     icon: '🗺️',
     body: [
       'Toque numa casa no tabuleiro a qualquer momento para ver o que ela faz.',
-      'Escolha um tipo abaixo para ver o resumo (valores de cartela no jogo digital seguem as regras do motor).',
+      'Escolha um tipo abaixo para o resumo. Valores exatos estão no glossário do tour.',
     ],
     interactive: 'tiles',
   },
@@ -64,11 +73,21 @@ export const TOUR_STEPS = [
     title: 'Faturamento e despesas',
     icon: '💰',
     body: [
-      'Faturamento do Mês: recebe a venda do ciclo (equipe × clientes atendidos × mix × ERP). Cruzar esta casa fecha a volta.',
-      'Despesas Operacionais: paga a manutenção do mês (equipe, clientes, ativos). Empréstimos também são cobrados aqui.',
-      'Se os clientes forem mais que a capacidade da equipe, o excesso (e a receita dele) é perdido no faturamento.',
+      'Faturamento do Mês: recebe a venda do ciclo (equipe × clientes em atendimento × mix × ERP). Cruzar esta casa fecha a volta.',
+      'Despesas Operacionais: paga a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são cobrados aqui.',
+      'Se os clientes forem mais que a capacidade da equipe, o excesso não gera receita naquele ciclo (mas continua na carteira e gera despesa).',
     ],
     highlight: 'Capacidade insuficiente = clientes ociosos sem receita.',
+  },
+  {
+    id: 'glossario',
+    title: 'Glossário — valores do jogo',
+    icon: '📘',
+    body: [
+      'Tabelas oficiais usadas pelo motor: contratação, Mix, ERP, certificados, clientes, faturamento e despesas.',
+      'Consulte sempre que for decidir um investimento.',
+    ],
+    interactive: 'glossary',
   },
   {
     id: 'hud',
@@ -107,7 +126,7 @@ export const TOUR_STEPS = [
     icon: '🚀',
     body: [
       'Resumo: invista com inteligência, mantenha capacidade ≥ clientes, pague despesas e maximize patrimônio.',
-      'Reabra este tour a qualquer momento em “Como jogar”.',
+      'Reabra este tour (e o glossário) a qualquer momento em “Como jogar”.',
       'Boa sorte — venda valor e entregue resultados!',
     ],
   },
@@ -117,47 +136,47 @@ export const TOUR_TILES = [
   {
     key: 'CLIENTS',
     title: 'Carteira de Clientes',
-    body: 'Prospecte clientes. Sem capacidade da equipe, o excesso é perdido no faturamento.',
+    body: `Aquisição ${money(MANUAL_CONSTANTS.clientPrice)}/cliente. Despesa de carteira ${money(MANUAL_CONSTANTS.clientPortfolioDesp)}/cliente no ciclo. Sem capacidade, o excedente não fatura.`,
   },
   {
     key: 'COMMON',
     title: 'Vendedor Comum',
-    body: 'Faz-tudo: atende até 2 clientes. Contratação ~$1.500 e manutenção ~$1.000 (cartela).',
+    body: `Capacidade ${VENDOR_RULES.comum.cap}. Contratação ${money(MANUAL_CONSTANTS.commonHire)}; desp. base ${money(VENDOR_RULES.comum.baseDesp)}; fat base ${money(VENDOR_RULES.comum.baseFat)}.`,
   },
   {
     key: 'FIELD',
     title: 'Field Sales',
-    body: 'Externo: até 5 clientes, ticket maior. Contratação ~$3.000 e manutenção ~$2.000.',
+    body: `Capacidade ${VENDOR_RULES.field.cap}. Contratação ${money(VENDOR_RULES.field.hire)}; desp. base ${money(VENDOR_RULES.field.baseDesp)}; fat base ${money(VENDOR_RULES.field.baseFat)}.`,
   },
   {
     key: 'INSIDE',
     title: 'Inside Sales',
-    body: 'Interno: até 5 clientes. Contratação ~$3.000 e manutenção ~$2.000.',
+    body: `Capacidade ${VENDOR_RULES.inside.cap}. Contratação ${money(VENDOR_RULES.inside.hire)}; desp. base ${money(VENDOR_RULES.inside.baseDesp)}; fat base ${money(VENDOR_RULES.inside.baseFat)}.`,
   },
   {
     key: 'MANAGER',
     title: 'Gestor Comercial',
-    body: 'Gerencia até 7 colaboradores e impulsiona o time conforme certificados. Contratação ~$5.000 / manutenção ~$3.000.',
+    body: `Contratação ${money(MANUAL_CONSTANTS.managerHire)}; desp. base ${money(VENDOR_RULES.gestor.baseDesp)}. Não atende clientes; impulsiona o time conforme certificados (ver glossário).`,
   },
   {
     key: 'ERP',
     title: 'ERP / Sistemas',
-    body: 'Níveis A–D (não cumulativos). Custo e retorno por colaborador — cresce com a equipe.',
+    body: `Níveis A–D. Ex.: D compra ${money(ERP_RULES.D.price)} (fat ${money(ERP_RULES.D.fat)} / desp ${money(ERP_RULES.D.desp)} por colab.). Tabelas no glossário.`,
   },
   {
     key: 'MIX',
     title: 'Mix de Produtos',
-    body: 'Níveis A–D. Multiplica faturamento e despesa conforme os clientes.',
+    body: `Níveis A–D. Ex.: D compra ${money(MIX_PURCHASE_PRICES.D)} (fat ${money(MIX_RULES.D.fatPerClient)} / desp ${money(MIX_RULES.D.despPerClient)} por cliente). Tabelas no glossário.`,
   },
   {
     key: 'TRAINING',
     title: 'Treinamento',
-    body: 'Certificados azul / amarelo / roxo para elevar performance dos profissionais e o efeito do gestor.',
+    body: `Certificados Azul / Amarelo / Roxo a ${money(MANUAL_CONSTANTS.trainingPrice)} cada. Alteram fat/desp da equipe (e boost do gestor). Detalhes no glossário.`,
   },
   {
     key: 'DIRECT_BUY',
     title: 'Direito de Compra',
-    body: 'Escolha exatamente um investimento livre agora (equipe, mix, ERP, treinamento ou clientes).',
+    body: 'Escolha exatamente um investimento livre agora (equipe, mix, ERP, treinamento ou clientes) — preços iguais às casas específicas.',
   },
   {
     key: 'LUCK',
@@ -167,12 +186,12 @@ export const TOUR_TILES = [
   {
     key: 'REVENUE',
     title: 'Faturamento do Mês',
-    body: 'Receba a venda do ciclo. Cruzar esta casa encerra a volta/rodada.',
+    body: 'Receba a venda do ciclo (equipe + Mix + ERP). Fórmulas e tabelas no glossário.',
   },
   {
     key: 'EXPENSES',
     title: 'Despesas Operacionais',
-    body: 'Pague a manutenção do mês. Empréstimos também são quitados aqui.',
+    body: 'Pague a manutenção do mês (equipe, Mix, ERP, carteira). Empréstimos também são quitados aqui.',
   },
 ]
 
@@ -206,15 +225,15 @@ export const TOUR_HUD = [
 export const TOUR_RECOVERY = [
   {
     title: 'Empréstimo',
-    body: 'Aumenta o caixa agora (até 50% dos seus Bens como garantia). Único por partida; cobrado nas despesas.',
+    body: `Aumenta o caixa agora (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% dos seus Bens). Único por partida; cobrado nas Despesas.`,
   },
   {
     title: 'Reduzir',
-    body: 'Baixa níveis de Mix ou ERP e recebe ~50% do valor pago de volta ao caixa.',
+    body: `Baixa níveis de Mix ou ERP e recebe ~${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor pago de volta ao caixa.`,
   },
   {
     title: 'Demitir',
-    body: 'Remove colaboradores e recebe ~50% do valor — reduz equipe e custos futuros.',
+    body: `Remove colaboradores e recebe ~${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do valor de contratação — reduz equipe e custos futuros.`,
   },
   {
     title: 'Declarar falência',

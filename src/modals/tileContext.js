@@ -1,60 +1,65 @@
 /**
- * Textos das casas — baseados no Manual, Orientações Casa e cartilha de casas.
+ * Textos das casas — alinhados ao motor (gameRules) e ao glossário do tour.
  * Não altera regras do motor — só copy de UI (modal + hint no tabuleiro).
  */
+import { VENDOR_RULES } from '../game/gameRules.js'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
+
+const money = (n) => `$ ${Number(n || 0).toLocaleString('pt-BR')}`
+
 export const TILE_CONTEXT = Object.freeze({
   CLIENTS:
-    'Carteira de Clientes: prospecte novos clientes. Se o número passar da capacidade da equipe no Faturamento, o excesso (e a receita dele) é perdido.',
+    `Carteira de Clientes: aquisição ${money(MANUAL_CONSTANTS.clientPrice)}/cliente; despesa de carteira ${money(MANUAL_CONSTANTS.clientPortfolioDesp)}/cliente no ciclo. Sem capacidade, o excedente não fatura.`,
   COMMON:
-    'Vendedor Comum (faz-tudo): atende até 2 clientes. Contratação + manutenção mensal; certificados melhoram despesa e faturamento.',
+    `Vendedor Comum: atende até ${VENDOR_RULES.comum.cap} clientes. Contratação ${money(MANUAL_CONSTANTS.commonHire)}; desp. base ${money(VENDOR_RULES.comum.baseDesp)}; fat base ${money(VENDOR_RULES.comum.baseFat)}.`,
   FIELD:
-    'Field Sales: perfil externo (até 5 clientes). Ticket maior; contratação e manutenção mensal conforme a cartela.',
+    `Field Sales: atende até ${VENDOR_RULES.field.cap} clientes. Contratação ${money(VENDOR_RULES.field.hire)}; desp. base ${money(VENDOR_RULES.field.baseDesp)}; fat base ${money(VENDOR_RULES.field.baseFat)}.`,
   INSIDE:
-    'Inside Sales: perfil interno (até 5 clientes). Mais atendimento por pessoa, com custo diferente do Field.',
+    `Inside Sales: atende até ${VENDOR_RULES.inside.cap} clientes. Contratação ${money(VENDOR_RULES.inside.hire)}; desp. base ${money(VENDOR_RULES.inside.baseDesp)}; fat base ${money(VENDOR_RULES.inside.baseFat)}.`,
   MANAGER:
-    'Gestor Comercial: gerencia até 7 colaboradores. Impulsiona o faturamento da equipe conforme os certificados.',
+    `Gestor Comercial: contratação ${money(MANUAL_CONSTANTS.managerHire)}; desp. base ${money(VENDOR_RULES.gestor.baseDesp)}. Não atende clientes; impulsiona o time conforme certificados.`,
   ERP:
-    'ERP/Sistemas: níveis A–D (não cumulativos). Valores por colaborador — o retorno cresce com o tamanho da equipe.',
+    'ERP/Sistemas: níveis A–D (não cumulativos). Valores por colaborador — o retorno cresce com o tamanho da equipe. Tabelas no glossário (Como jogar).',
   MIX:
-    'Mix de Produtos: níveis A–D (não cumulativos). Multiplica faturamento e despesa pelo total de clientes.',
+    'Mix de Produtos: níveis A–D (não cumulativos). Fat por cliente em atendimento; desp por todos os clientes. Tabelas no glossário (Como jogar).',
   TRAINING:
-    'Treinamento: compre certificados (azul/amarelo/roxo) para elevar a performance dos profissionais e o efeito do gestor.',
+    `Treinamento: certificados azul/amarelo/roxo a ${money(MANUAL_CONSTANTS.trainingPrice)} cada. Detalhes no glossário (Como jogar).`,
   DIRECT_BUY:
-    'Direito de Compra: escolha exatamente um investimento livre — patrimônio, colaborador, treinamento ou clientes.',
+    'Direito de Compra: escolha exatamente um investimento livre — equipe, mix, ERP, treinamento ou clientes.',
   LUCK:
     'Sorte & Revés: compre a carta do topo. Sorte pode gerar ganho ou isenção; revés pode cobrar, multar ou reduzir produtividade.',
   REVENUE:
-    'Faturamento do Mês: receba a venda do ciclo (equipe × clientes × mix × ERP). Cruzar esta casa encerra a volta/rodada.',
+    'Faturamento do Mês: receba a venda do ciclo (equipe × clientes em atendimento × mix × ERP). Cruzar esta casa encerra a volta/rodada.',
   EXPENSES:
-    'Despesas Operacionais: pague a manutenção do mês (equipe, clientes e ativos). Empréstimos também são quitados aqui.',
+    'Despesas Operacionais: pague a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são quitados aqui.',
 })
 
 /** Texto no tabuleiro (desktop/mobile): função da casa em 1–2 frases. */
 export const TILE_HINTS = Object.freeze({
   REVENUE:
-    'Início/Faturamento: ao passar, receba a venda do mês (equipe, clientes, mix e ERP). Esta casa fecha a volta.',
+    'Início/Faturamento: ao passar, receba a venda do mês (equipe, clientes em atendimento, mix e ERP). Esta casa fecha a volta.',
   CLIENTS:
-    'Carteira de Clientes: compre clientes para faturar mais. Sem capacidade da equipe, o excesso é perdido no faturamento.',
+    `Carteira de Clientes: ${money(MANUAL_CONSTANTS.clientPrice)}/cliente. Sem capacidade da equipe, o excedente não fatura neste ciclo.`,
   ERP:
-    'ERP/Sistemas: compre um nível (A–D). Ganho e custo são por colaborador, não pela quantidade de clientes.',
+    'ERP/Sistemas: compre um nível (A–D). Ganho e custo são por colaborador. Valores no glossário (Como jogar).',
   INSIDE:
-    'Inside Sales: contrate vendedores internos. Cada um atende até 5 clientes, com custo diferente do Field.',
+    `Inside Sales: contrate vendedores internos (até ${VENDOR_RULES.inside.cap} clientes cada). Contratação ${money(VENDOR_RULES.inside.hire)}.`,
   MANAGER:
-    'Gestor Comercial: gerencia até 7 pessoas e aumenta o faturamento da equipe conforme os certificados.',
+    `Gestor Comercial: ${money(MANUAL_CONSTANTS.managerHire)} para contratar. Aumenta o faturamento da equipe conforme certificados.`,
   TRAINING:
-    'Treinamento: compre certificados (azul, amarelo ou roxo) para melhorar a performance da equipe e o gestor.',
+    `Treinamento: certificados (azul, amarelo ou roxo) a ${money(MANUAL_CONSTANTS.trainingPrice)} cada.`,
   FIELD:
-    'Field Sales: contrate vendedores externos. Atendem até 5 clientes, com ticket maior e manutenção mensal.',
+    `Field Sales: vendedores externos (até ${VENDOR_RULES.field.cap} clientes). Contratação ${money(VENDOR_RULES.field.hire)}.`,
   DIRECT_BUY:
     'Direito de Compra: escolha exatamente um investimento agora — equipe, mix, ERP, treinamento ou clientes.',
   LUCK:
     'Sorte & Revés: tire a carta do topo. Pode creditar o caixa, isentar custos, ou aplicar multa e perdas.',
   COMMON:
-    'Vendedor Comum: o faz-tudo da equipe. Atende até 2 clientes; tem contratação e manutenção mensal.',
+    `Vendedor Comum: atende até ${VENDOR_RULES.comum.cap} clientes. Contratação ${money(MANUAL_CONSTANTS.commonHire)}.`,
   EXPENSES:
-    'Despesas: pague a manutenção do mês (equipe, clientes e ativos). Empréstimos também são cobrados aqui.',
+    'Despesas: pague a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são cobrados aqui.',
   MIX:
-    'Mix de Produtos: compre um nível (A–D). Define quanto cada cliente fatura e custa por ciclo.',
+    'Mix de Produtos: compre um nível (A–D). Define quanto cada cliente fatura e custa por ciclo. Tabelas no glossário.',
 })
 
 function hintKey(kind) {

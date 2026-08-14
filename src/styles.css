@@ -1003,50 +1003,111 @@ html, body {
 }
 .tutorialCardGrid{
   display:grid;
-  grid-template-columns:repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap:8px;
+  margin-top:8px;
 }
 .tutorialInfoCard{
+  margin:0;
   padding:10px;
   border-radius:10px;
-  background:#151a28;
-  border:1px solid rgba(255,255,255,.1);
-}
-.tutorialInfoCard--accent{
-  border-color:rgba(242,193,78,.28);
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.04);
+  text-align:left;
 }
 .tutorialInfoCard h4{
   margin:0 0 4px;
   font-size:13px;
-  color:#a8c4ff;
+  font-weight:800;
 }
 .tutorialInfoCard p{
   margin:0;
   font-size:12px;
-  line-height:1.4;
-  color:#d7def2;
+  line-height:1.35;
+  color:rgba(232,238,248,.88);
 }
-@media (max-width: 560px){
-  .tutorialCardGrid{ grid-template-columns:1fr; }
+.tutorialInfoCard--accent{
+  border-color:rgba(242,193,78,.35);
+  background:rgba(242,193,78,.08);
 }
 
-.tutorialGlossaryItem{
-  padding:8px 0;
-  border-top:1px solid rgba(255,255,255,.08);
+/* Glossário / tabelas do manual */
+.tutorialGlossary{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  margin-top:8px;
+  max-height:min(52vh, 420px);
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  padding-right:2px;
 }
-.tutorialGlossaryItem:first-of-type{ border-top:none; padding-top:0; }
+.tutorialGlossarySection{
+  margin:0;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.035);
+  text-align:left;
+}
 .tutorialGlossaryTitle{
   margin:0 0 4px;
   font-size:14px;
   font-weight:800;
-  color:#a8c4ff;
+  color:#fff;
 }
-.tutorialGlossaryBody{
-  margin:0;
-  font-size:13px;
-  line-height:1.45;
-  color:#d7def2;
-  opacity:.95;
+.tutorialGlossaryNote{
+  margin:0 0 8px;
+  font-size:12px;
+  line-height:1.35;
+  color:rgba(232,238,248,.78);
+}
+.tutorialGlossaryBullets,
+.tutorialGlossaryFootnotes{
+  margin:0 0 8px;
+  padding-left:18px;
+  font-size:12px;
+  line-height:1.4;
+  color:rgba(232,238,248,.88);
+}
+.tutorialGlossaryFootnotes{
+  margin:8px 0 0;
+  color:rgba(232,238,248,.65);
+  font-size:11px;
+}
+.tutorialGlossaryTableWrap{
+  width:100%;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+}
+.tutorialGlossaryTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:11px;
+  line-height:1.3;
+}
+.tutorialGlossaryTable th,
+.tutorialGlossaryTable td{
+  padding:5px 6px;
+  border-bottom:1px solid rgba(255,255,255,.1);
+  text-align:left;
+  vertical-align:top;
+  white-space:nowrap;
+}
+.tutorialGlossaryTable th{
+  font-weight:800;
+  color:rgba(242,193,78,.95);
+  background:rgba(0,0,0,.22);
+}
+.tutorialGlossaryTable td{
+  color:rgba(232,238,248,.92);
+}
+@media (max-width: 960px) and (orientation: landscape) and (pointer: coarse){
+  .tutorialGlossary{ max-height:min(42vh, 280px); }
+  .tutorialGlossaryTable{ font-size:10px; }
+}
+@media (max-width: 560px){
+  .tutorialCardGrid{ grid-template-columns:1fr; }
 }
 
 .startFooter{
