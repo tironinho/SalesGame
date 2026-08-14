@@ -4,11 +4,53 @@ html, body {
   overflow: hidden;
 }
 
+/* Mobile touch: permite pinch-zoom do browser (sem afetar desktop) */
+@media (pointer: coarse) {
+  html.sg-pinch-enabled,
+  html.sg-pinch-enabled body {
+    touch-action: manipulation;
+  }
+
+  /* Enquanto o usuário pinça (scale > 1), libera pan/scroll do documento */
+  html.sg-zoomed,
+  html.sg-zoomed body {
+    overflow: auto !important;
+    overscroll-behavior: auto !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  html.sg-zoomed #root {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  html.sg-zoomed .page {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 100%;
+    min-height: 100dvh;
+  }
+
+  html.sg-zoomed .content,
+  html.sg-zoomed .content--boardFocus {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+}
+
 /* =========================================================
    LobbyList - scrollbar visível
    (o app desliga a rolagem global, então o scroll precisa ser
-   interno. Isso também ajuda quando o Windows/Chrome auto-ocultam
-   a barra.)
+    interno. Isso também ajuda quando o Windows/Chrome auto-ocultam
+    a barra.)
 ========================================================= */
 
 .lobbyScroll {

@@ -16,6 +16,7 @@ import {
   logCapture
 } from './game/debugMode.js'
 import { useIosVisualViewport } from './hooks/useIosVisualViewport.js'
+import { useMobilePinchZoom } from './hooks/useMobilePinchZoom.js'
 
 function initialRoomFromURL () {
   const qs = new URLSearchParams(window.location.search)
@@ -27,6 +28,8 @@ function Root() {
   const [roomCode, setRoomCode] = React.useState(initialRoomFromURL())
   // iOS only: html.sg-ios + --sg-vv-height (não altera Android/desktop)
   useIosVisualViewport()
+  // Mobile touch: pinch-zoom + pan quando ampliado
+  useMobilePinchZoom()
 
   // expõe um setter global para o App trocar a sala dinamicamente
   React.useEffect(() => {
