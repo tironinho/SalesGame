@@ -12,8 +12,8 @@ import logoGame from '/SalesGame_Logo-removebg-preview.png'
 export default function StartScreen({ onEnter }) {
   // ✅ OBJ 2: input SEMPRE inicia vazio (não auto-preenche via sessionStorage)
   const [name, setName] = useState("")
-  // Tour automático fica ao entrar no tabuleiro; aqui só reabertura manual
-  const [tutorialOpen, setTutorialOpen] = useState(false)
+  // Tour também pode abrir na abertura; no tabuleiro segue 1× por partida
+  const [tutorialOpen, setTutorialOpen] = useState(true)
   const inputRef = useRef(null)
 
   // Desktop: foca o nome. Mobile/touch: NÃO autofocar — Safari dá zoom em inputs.
