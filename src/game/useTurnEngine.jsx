@@ -45,6 +45,17 @@ import {
 } from './gameMath'
 import { resolveFinalRoundMove } from './resolveFinalRoundMove.js'
 import { pickWinnerByPatrimonio } from './patrimonio.js'
+import {
+  canTakeLoan,
+  applyLoanTake,
+  armLoanAfterRevenue,
+  ensureLoanId,
+  shouldChargeLoan,
+  loanChargeAmount,
+  clearLoanAfterCharge,
+  makeLoanId,
+  buildRecoveryFireDeltas,
+} from './loanCycle.js'
 import { buildClientsPurchaseDeltas } from './clientsPurchase'
 import { buildManagerPurchaseDeltas } from './managersPurchase'
 import { buildCommonSellersPurchaseDeltas } from './commonSellersPurchase'
@@ -91,15 +102,6 @@ function pickNextAliveIndex(playersArr, fromIdx) {
     if (!arr[idx]?.bankrupt) return idx
   }
   return Math.max(0, Math.min(start, n - 1))
-}
-
-const makeLoanId = (ownerId) => {
-  try {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return `loan:${ownerId}:${crypto.randomUUID()}`
-    }
-  } catch {}
-  return `loan:${ownerId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
 }
 
 const applyBankruptcyState = (p = {}) => {
@@ -776,14 +778,12 @@ export function useTurnEngine({
           
           if (recoveryModalRes.type === 'FIRE') {
             console.log('[DEBUG] ✅ Condição FIRE atendida! Processando demissões:', recoveryModalRes)
-            const deltas = {
-              cashDelta: Number(recoveryModalRes.amount || 0),
-              vendedoresComunsDelta: -Number(recoveryModalRes.items?.comum || 0),
-              fieldSalesDelta: -Number(recoveryModalRes.items?.field || 0),
-              insideSalesDelta: -Number(recoveryModalRes.items?.inside || 0),
-              gestoresDelta: -Number(recoveryModalRes.items?.gestor || 0),
-            }
-            console.log('[DEBUG] Deltas de demissão:', deltas)
+            const currentPlayer = getById(currentPlayers, ownerId) || {}
+            const { deltas, credit } = buildRecoveryFireDeltas(
+              currentPlayer,
+              recoveryModalRes.items || {},
+            )
+            console.log('[DEBUG] Deltas de demissão (SSOT):', deltas, 'credit:', credit)
             // ✅ CORREÇÃO: Preserva a posição do jogador ao atualizar
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => {
               const updated = applyDeltas(p, deltas)
@@ -797,17 +797,12 @@ export function useTurnEngine({
             console.log('[DEBUG] ✅ Condição LOAN atendida! Processando empréstimo:', recoveryModalRes)
 
             const currentPlayer = getById(currentPlayers, ownerId) || {}
-            const currentLoan = currentPlayer.loanPending || null
-            const alreadyUsedLoanInMatch = !!currentPlayer.loanTakenInMatch
 
-            if (
-              alreadyUsedLoanInMatch ||
-              (currentLoan && Number(currentLoan.amount) > 0 && currentLoan.charged !== true)
-            ) {
+            if (!canTakeLoan(currentPlayer)) {
               console.log('[LOAN DEBUG] bloqueado por empréstimo único da partida', {
                 ownerId,
                 loanTakenInMatch: currentPlayer?.loanTakenInMatch,
-                loanPending: currentLoan || null,
+                loanPending: currentPlayer.loanPending || null,
               })
 
               const loanModalRes = await openModalAndWait(
@@ -827,26 +822,23 @@ export function useTurnEngine({
               }
             }
 
-            const amt = Number(recoveryModalRes.amount || 0)
-            const newLoanPending = {
-              amount: amt,
-              charged: false,
-              waitingFullLap: true,
-              eligibleOnExpenses: false,
-              declaredAtRound: currentRoundRef.current,
+            const taken = applyLoanTake(
+              currentPlayer,
+              recoveryModalRes.amount,
+              currentRoundRef.current,
+            )
+            if (!taken.ok) {
+              setTurnLockBroadcast(false)
+              return failRes(currentPlayers)
             }
             console.log('[LOAN DEBUG] criado', {
               ownerId,
               loanTakenInMatch: true,
+              amount: taken.player.loanPending?.amount,
             })
-            console.log('[DEBUG] Valor do empréstimo:', amt)
-            console.log('[DEBUG] Saldo atual do jogador:', Number((getById(currentPlayers, ownerId) || {}).cash || 0))
             updatedPlayers = mapById(currentPlayers, ownerId, (p) => ({
-              ...p,
-              cash: (Number(p.cash) || 0) + amt,
-              loanTakenInMatch: true,
-              loanPending: newLoanPending,
-              pos: p.pos
+              ...taken.player,
+              pos: p.pos,
             }))
             console.log('[DEBUG] Novo saldo do jogador:', getById(updatedPlayers, ownerId)?.cash)
             // WHY: commitLocalPlayers atualiza playersRef.current imediatamente
@@ -2055,13 +2047,7 @@ export function useTurnEngine({
                 ...p,
                 cash: (Number(p.cash) || 0) + fat,
                 ...(shouldArmLoan
-                  ? {
-                      loanPending: {
-                        ...lp,
-                        waitingFullLap: false,
-                        eligibleOnExpenses: true,
-                      },
-                    }
+                  ? { loanPending: armLoanAfterRevenue(lp) }
                   : {}),
               }
             })
@@ -2088,10 +2074,7 @@ export function useTurnEngine({
 
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
-                loanPending: {
-                  ...(p.loanPending || {}),
-                  loanId: normalizedLoanId,
-                },
+                loanPending: ensureLoanId(p.loanPending, ownerId, () => normalizedLoanId),
               }))
 
               freshMe = getById(localPlayers, ownerId) || freshMe
@@ -2140,12 +2123,7 @@ export function useTurnEngine({
             ) {
               localPlayers = mapById(localPlayers, ownerId, (p) => ({
                 ...p,
-                loanPending: {
-                  ...(p.loanPending || {}),
-                  stage: 'ARMED_FOR_NEXT_EXPENSES',
-                  waitingFullLap: false,
-                  eligibleOnExpenses: true,
-                },
+                loanPending: armLoanAfterRevenue(p.loanPending),
               }))
 
               freshMe = getById(localPlayers, ownerId) || freshMe
@@ -2157,29 +2135,12 @@ export function useTurnEngine({
               })
             }
 
-            const normalizedLoanStage = String(
-              lp?.stage ||
-              (
-                lp?.eligibleOnExpenses === true && lp?.waitingFullLap !== true
-                  ? 'ARMED_FOR_NEXT_EXPENSES'
-                  : (
-                      reachedRevenueAfterLoan
-                        ? 'ARMED_FOR_NEXT_EXPENSES'
-                        : 'WAITING_FULL_LAP'
-                    )
-              )
-            ).toUpperCase()
+            const shouldCharge = shouldChargeLoan({
+              loanPending: lp,
+              lastChargedLoanId: freshMe.lastChargedLoanId,
+            })
 
-            const shouldChargeLoan =
-              Number(lp?.amount) > 0 &&
-              lp?.charged !== true &&
-              normalizedLoanStage === 'ARMED_FOR_NEXT_EXPENSES' &&
-              !!currentLoanId &&
-              !alreadyChargedThisLoan
-
-            const loanCharge = shouldChargeLoan
-              ? Math.max(0, Math.floor(Number(lp?.amount || 0)))
-              : 0
+            const loanCharge = shouldCharge ? loanChargeAmount(lp) : 0
 
             const totalCharge = expense + loanCharge
 
@@ -2190,12 +2151,10 @@ export function useTurnEngine({
 
             localPlayers = expensesRes.players
 
-            if (shouldChargeLoan) {
-              localPlayers = mapById(localPlayers, ownerId, (p) => ({
-                ...p,
-                loanPending: null,
-                lastChargedLoanId: currentLoanId,
-              }))
+            if (shouldCharge) {
+              localPlayers = mapById(localPlayers, ownerId, (p) =>
+                clearLoanAfterCharge(p, currentLoanId || lp?.loanId),
+              )
 
               console.log('[LOAN DEBUG] liquidado', {
                 ownerId,
@@ -3393,19 +3352,11 @@ export function useTurnEngine({
     }
 
     if (act.type === 'RECOVERY_FIRE') {
-      const amount = Number(act.amount || 0);
-      const items  = act.items || {};
-
-      const deltas = {
-        cashDelta: amount,
-        vendedoresComunsDelta: -Number(items.comum  || 0),
-        fieldSalesDelta:      -Number(items.field  || 0),
-        insideSalesDelta:     -Number(items.inside || 0),
-        gestoresDelta:        -Number(items.gestor || 0),
-      };
-
       const curIdx = turnIdx;
       const ownerIdNow = String(players[curIdx]?.id ?? '')
+      const cur = players[curIdx] || {}
+      const { deltas } = buildRecoveryFireDeltas(cur, act.items || {})
+
       setPlayers(ps => {
         const upd = ownerIdNow ? mapById(ps, ownerIdNow, (p) => applyDeltas(p, deltas)) : ps
         broadcastState(upd, turnIdx, currentRoundRef.current);
@@ -3419,54 +3370,33 @@ export function useTurnEngine({
     }
 
     if (act.type === 'RECOVERY_LOAN') {
-      const amt = Math.max(0, Number(act.amount || 0));
-      if (!amt) { 
-        // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno
-        // setTurnLockBroadcast(false); 
-        return; 
-      }
-
       const curIdx = turnIdx;
       const cur = players[curIdx];
 
-      const lp = cur?.loanPending || null
-      const alreadyUsedLoanInMatch = !!cur?.loanTakenInMatch
-
-      if (
-        alreadyUsedLoanInMatch ||
-        (lp && Number(lp.amount) > 0 && lp.charged !== true)
-      ) {
+      if (!canTakeLoan(cur || {})) {
         console.log('[LOAN DEBUG] bloqueado por empréstimo único da partida', {
           ownerId: cur?.id,
           loanTakenInMatch: cur?.loanTakenInMatch,
-          loanPending: lp || null,
+          loanPending: cur?.loanPending || null,
         })
         appendLog(`${cur?.name || 'Jogador'} já utilizou o empréstimo desta partida.`);
         return
       }
 
+      const taken = applyLoanTake(cur || {}, act.amount, currentRoundRef.current)
+      if (!taken.ok) {
+        return
+      }
+
       setPlayers(ps => {
-        const upd = ps.map((p, i) =>
-          i !== curIdx
-            ? p
-            : {
-                ...p,
-                cash: (Number(p.cash) || 0) + amt,
-                loanTakenInMatch: true,
-                loanPending: {
-                  amount: amt,
-                  charged: false,
-                  waitingFullLap: true,
-                  eligibleOnExpenses: false,
-                  declaredAtRound: currentRoundRef.current,
-                },
-              }
-        );
+        const upd = ps.map((p, i) => (i !== curIdx ? p : taken.player));
         broadcastState(upd, turnIdx, currentRoundRef.current);
         return upd;
       });
 
-      appendLog(`${cur?.name || 'Jogador'} pegou empréstimo: +$${amt.toLocaleString()}`);
+      appendLog(
+        `${cur?.name || 'Jogador'} pegou empréstimo: +$${Number(taken.player.loanPending?.amount || 0).toLocaleString()}`,
+      );
       // ✅ CORREÇÃO: Não destrava o turno - jogador continua no seu turno após recuperação
       // setTurnLockBroadcast(false);
       return;

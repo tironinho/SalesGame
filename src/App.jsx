@@ -591,6 +591,11 @@ export default function App() {
           setRound(1)
           setRoundFlags(new Array(Math.max(1, normalized.length)).fill(false))
           setGameOver(false); setWinner(null)
+          setTurnLock(false)
+          setLockOwner(null)
+          hydratedFromNetRef.current = false
+          lastAppliedNetVersionRef.current = 0
+          lastAppliedStateIdRef.current = null
           if (Object.prototype.hasOwnProperty.call(d, 'maxRounds')) {
             setMaxRounds(normalizeMaxRounds(d.maxRounds))
           } else {
@@ -1460,11 +1465,19 @@ export default function App() {
     if (isStartState) {
       setGameOver(false)
       setWinner(null)
+      setTurnLock(false)
+      setLockOwner(null)
       setLastRollTurnKey(null)
       setTurnSeq(0)
       setLastRollUI(null)
       setIsRollingUI(false)
+      setShowBankruptOverlay(false)
       clearRollingTimeout()
+      hydratedFromNetRef.current = false
+      lastAppliedNetVersionRef.current = 0
+      lastAppliedStateIdRef.current = null
+      lastLocalStateRef.current = null
+      playersBeforeRef.current = null
     } else {
       setGameOver(prev => prev || !!incomingNetState.gameOver)
       setWinner(prev => {
@@ -2784,6 +2797,7 @@ export default function App() {
             turnTimeSecRef.current = DEFAULT_TURN_TIME_SEC
           }
           setRoundFlags(new Array(normalized.length).fill(false))
+          resetMatchLocalUi()
           setGameOver(false); setWinner(null)
           
           console.log('[START] ✅ Estado inicial garantido - round=1, gameOver=false, winner=null, maxRounds=', maxRoundsRef.current, 'turnTimeSec=', turnTimeSecRef.current)

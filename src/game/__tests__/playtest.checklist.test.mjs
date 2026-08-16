@@ -20,6 +20,8 @@ import {
   armLoanAfterRevenue,
   applyLoanCharge,
   shouldChargeLoan,
+  buildRecoveryFireDeltas,
+  computeRecoveryFireCredit,
 } from '../loanCycle.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -92,7 +94,7 @@ test('pt3 kit start: 18k / 4k / fat 770 / desp 1150', () => {
 
 // --- pt4: empréstimo ---
 test('pt4 empréstimo: take → arm → charge → bloqueia 2ª', () => {
-  let p = { id: 'p1', cash: 500, loanTakenInMatch: false, loanPending: null }
+  let p = { id: 'p1', cash: 500, bens: 4000, loanTakenInMatch: false, loanPending: null }
   assert.equal(canTakeLoan(p), true)
 
   const taken = applyLoanTake(p, 2000, 1)
@@ -131,6 +133,28 @@ test('pt4 empréstimo: take → arm → charge → bloqueia 2ª', () => {
 
   // Ainda bloqueado na partida
   assert.equal(canTakeLoan(charge.player), false)
+})
+
+test('pt4b empréstimo: clamp ao teto de 50% dos bens', () => {
+  const p = { id: 'p1', cash: 0, bens: 4000, loanTakenInMatch: false }
+  const taken = applyLoanTake(p, 99999, 1)
+  assert.equal(taken.ok, true)
+  assert.equal(taken.player.loanPending.amount, 2000)
+})
+
+test('pt1b demissão SSOT: motor recalcula crédito e clampa owned', () => {
+  assert.equal(computeRecoveryFireCredit({ comum: 1 }), 1000)
+  assert.equal(computeRecoveryFireCredit({ field: 1 }), 2000)
+  assert.equal(computeRecoveryFireCredit({ inside: 1 }), 1250)
+  assert.equal(computeRecoveryFireCredit({ gestor: 1 }), 2500)
+
+  const player = { vendedoresComuns: 1, fieldSales: 0, insideSales: 0, gestores: 0 }
+  const { credit, items, deltas } = buildRecoveryFireDeltas(player, { comum: 5, field: 2 })
+  assert.equal(items.comum, 1)
+  assert.equal(items.field, 0)
+  assert.equal(credit, 1000)
+  assert.equal(deltas.cashDelta, 1000)
+  assert.equal(deltas.vendedoresComunsDelta, -1)
 })
 
 // --- pt5: falência / patrimônio ---
@@ -174,4 +198,13 @@ test('pt7 restart: resetMatchLocalUi existe e limpa gameOver/turnLock/hydrate', 
 test('pt8 sync: testes de merge de players presentes no suite', () => {
   const syncTest = read('src/game/__tests__/playerStateSync.test.mjs')
   assert.match(syncTest, /merge|sync|player/i)
+})
+
+test('pt8b motor usa loanCycle (wiring)', () => {
+  const eng = read('src/game/useTurnEngine.jsx')
+  assert.match(eng, /from '\.\/loanCycle\.js'/)
+  assert.match(eng, /buildRecoveryFireDeltas/)
+  assert.match(eng, /applyLoanTake/)
+  assert.match(eng, /armLoanAfterRevenue/)
+  assert.match(eng, /shouldChargeLoan/)
 })

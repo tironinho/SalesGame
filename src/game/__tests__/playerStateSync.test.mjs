@@ -315,6 +315,33 @@ describe('helpers extras', () => {
     assert.equal(m.find((p) => p.id === 'b').cash, 2)
   })
 
+  it('merge cash + loanPending entre clientes (2–3 players)', () => {
+    const local = [
+      { id: 'a', cash: 10000, loanPending: null, loanTakenInMatch: false },
+      { id: 'b', cash: 8000, loanPending: null },
+    ]
+    const remoteDelta = {
+      a: {
+        cash: 12000,
+        loanTakenInMatch: true,
+        loanPending: {
+          amount: 2000,
+          waitingFullLap: true,
+          eligibleOnExpenses: false,
+          charged: false,
+        },
+      },
+      b: { cash: 7500 },
+    }
+    const merged = mergePlayersById(local, remoteDelta, { createMissing: false })
+    const a = merged.find((p) => p.id === 'a')
+    const b = merged.find((p) => p.id === 'b')
+    assert.equal(a.cash, 12000)
+    assert.equal(a.loanTakenInMatch, true)
+    assert.equal(a.loanPending.amount, 2000)
+    assert.equal(b.cash, 7500)
+  })
+
   it('START replace permitido', () => {
     const plan = planRosterApply({
       incomingPlayers: [{ id: 'a', cash: 18000 }],

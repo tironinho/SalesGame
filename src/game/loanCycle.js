@@ -1,7 +1,19 @@
 /**
- * Máquina de estados do empréstimo (espelha useTurnEngine).
+ * Empréstimo + crédito de demissão (fonte única usada pelo motor e pelos testes).
  * Take → waitingFullLap → arm no REVENUE → charge no EXPENSES → bloqueia 2ª.
  */
+import { MANUAL_CONSTANTS } from './manualConstants.js'
+import { VENDOR_RULES } from './gameRules.js'
+
+export function makeLoanId(ownerId) {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `loan:${ownerId}:${crypto.randomUUID()}`
+    }
+  } catch {}
+  return `loan:${ownerId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
+}
+
 export function canTakeLoan(player = {}) {
   const lp = player.loanPending || null
   if (player.loanTakenInMatch) return false
@@ -19,11 +31,21 @@ export function createLoanPending(amount, declaredAtRound) {
   }
 }
 
+/** Limita o empréstimo a floor(bens × loanMaxBensRatio). */
+export function clampLoanAmount(amount, bens) {
+  const cap = Math.max(
+    0,
+    Math.floor(Number(bens || 0) * MANUAL_CONSTANTS.loanMaxBensRatio),
+  )
+  return Math.max(0, Math.min(Math.floor(Number(amount) || 0), cap))
+}
+
 export function applyLoanTake(player, amount, declaredAtRound) {
   if (!canTakeLoan(player)) {
     return { ok: false, player, reason: 'already-used' }
   }
-  const amt = Math.max(0, Math.floor(Number(amount) || 0))
+  const amt = clampLoanAmount(amount, player.bens)
+  if (!amt) return { ok: false, player, reason: 'zero-amount' }
   return {
     ok: true,
     player: {
@@ -48,7 +70,7 @@ export function armLoanAfterRevenue(loanPending) {
   }
 }
 
-export function ensureLoanId(loanPending, ownerId, makeId) {
+export function ensureLoanId(loanPending, ownerId, makeId = makeLoanId) {
   const lp = loanPending || null
   if (!lp || Number(lp.amount) <= 0) return lp
   if (lp.loanId) return lp
@@ -70,20 +92,85 @@ export function shouldChargeLoan({ loanPending, lastChargedLoanId }) {
   return stage === 'ARMED_FOR_NEXT_EXPENSES'
 }
 
-export function applyLoanCharge(player) {
-  const lp = ensureLoanId(player.loanPending, player.id, (id) => `loan:${id}:1`)
+export function loanChargeAmount(loanPending) {
+  return Math.max(0, Math.floor(Number(loanPending?.amount || 0)))
+}
+
+/** Após o caixa já ter sido debitado (despesas+loan): limpa pending. */
+export function clearLoanAfterCharge(player, loanId) {
+  return {
+    ...player,
+    loanPending: null,
+    lastChargedLoanId: String(loanId || player.lastChargedLoanId || ''),
+  }
+}
+
+export function applyLoanCharge(player, makeId = makeLoanId) {
+  const lp = ensureLoanId(player.loanPending, player.id, makeId)
   if (!shouldChargeLoan({ loanPending: lp, lastChargedLoanId: player.lastChargedLoanId })) {
     return { charged: false, amount: 0, player: { ...player, loanPending: lp } }
   }
-  const amount = Math.max(0, Math.floor(Number(lp.amount) || 0))
+  const amount = loanChargeAmount(lp)
   return {
     charged: true,
     amount,
     player: {
-      ...player,
+      ...clearLoanAfterCharge(player, lp.loanId),
       cash: (Number(player.cash) || 0) - amount,
       loanPending: null,
-      lastChargedLoanId: String(lp.loanId),
+    },
+  }
+}
+
+const FIRE_HIRE = Object.freeze({
+  comum: () => MANUAL_CONSTANTS.commonHire,
+  field: () => VENDOR_RULES.field.hire,
+  inside: () => VENDOR_RULES.inside.hire,
+  gestor: () => MANUAL_CONSTANTS.managerHire,
+})
+
+/** Quantidades de demissão limitadas ao que o jogador possui. */
+export function clampFireItems(player = {}, items = {}) {
+  const owned = {
+    comum: Math.max(0, Number(player.vendedoresComuns || 0)),
+    field: Math.max(0, Number(player.fieldSales || 0)),
+    inside: Math.max(0, Number(player.insideSales || 0)),
+    gestor: Math.max(
+      0,
+      Number(player.gestores ?? player.gestoresComerciais ?? player.managers ?? 0),
+    ),
+  }
+  const out = {}
+  for (const key of Object.keys(FIRE_HIRE)) {
+    const q = Math.max(0, Math.floor(Number(items[key] || 0)))
+    out[key] = Math.min(q, owned[key])
+  }
+  return out
+}
+
+/** Crédito de demissão recalculado no motor (não confia no payload da modal). */
+export function computeRecoveryFireCredit(items = {}) {
+  const ratio = MANUAL_CONSTANTS.recoveryCreditRatio
+  let total = 0
+  for (const [key, hireFn] of Object.entries(FIRE_HIRE)) {
+    const q = Math.max(0, Math.floor(Number(items[key] || 0)))
+    total += Math.floor(Number(hireFn()) * ratio) * q
+  }
+  return total
+}
+
+export function buildRecoveryFireDeltas(player, items = {}) {
+  const clamped = clampFireItems(player, items)
+  const credit = computeRecoveryFireCredit(clamped)
+  return {
+    items: clamped,
+    credit,
+    deltas: {
+      cashDelta: credit,
+      vendedoresComunsDelta: -clamped.comum,
+      fieldSalesDelta: -clamped.field,
+      insideSalesDelta: -clamped.inside,
+      gestoresDelta: -clamped.gestor,
     },
   }
 }
