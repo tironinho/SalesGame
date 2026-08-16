@@ -4,6 +4,7 @@ import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { MANAGER_MANAGES_UP_TO, VENDOR_RULES, managerBoostPct } from '../game/gameRules'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import { buildManagerPurchaseDeltas } from '../game/managersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import TileContextHint from './TileContextHint.jsx'
@@ -26,7 +27,7 @@ import TileContextHint from './TileContextHint.jsx'
  */
 export default function BuyManagerModal({
   onResolve,
-  unitHire = 5000,
+  unitHire = MANUAL_CONSTANTS.managerHire,
   unitExpense = VENDOR_RULES.gestor.baseDesp,
   managesUpTo = MANAGER_MANAGES_UP_TO,
   currentCash = 0,

@@ -5,6 +5,7 @@ import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { buildClientsPurchaseDeltas } from '../game/clientsPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import TileContextHint from './TileContextHint.jsx'
 
 /**
@@ -28,8 +29,8 @@ import TileContextHint from './TileContextHint.jsx'
  */
 export default function BuyClientsModal({
   onResolve,
-  unitAcquisition = 1000,
-  unitMaintenance = 50,
+  unitAcquisition = MANUAL_CONSTANTS.clientPrice,
+  unitMaintenance = MANUAL_CONSTANTS.clientPortfolioDesp,
   currentCash = 0,
   currentPlayer = null,
   allowBack = false,

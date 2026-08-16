@@ -1,7 +1,7 @@
 // src/modals/TrainingModal.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { CERT_EFFECTS, MANAGER_BOOST_BY_CERT } from '../game/gameRules'
+import { CERT_EFFECTS, MANAGER_BOOST_BY_CERT, MANAGER_BOOST_MAX_CERTS } from '../game/gameRules'
 import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import { previewTrainingPurchaseImpact } from '../game/trainingPurchase.js'
 import TileContextHint from './TileContextHint.jsx'
@@ -200,7 +200,7 @@ export default function TrainingModal({
   const gestorBoostHint = useMemo(() => {
     const maxAvailableCerts = Math.min(
       PRODUCTS.length,
-      Math.max(0, (MANAGER_BOOST_BY_CERT || []).length - 1)
+      MANAGER_BOOST_MAX_CERTS,
     )
     const ladder = Array.from(
       { length: maxAvailableCerts },
