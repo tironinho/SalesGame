@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
-import { MANAGER_BOOST_BY_CERT, MANAGER_MANAGES_UP_TO, VENDOR_RULES } from '../game/gameRules'
+import { MANAGER_MANAGES_UP_TO, VENDOR_RULES, managerBoostPct } from '../game/gameRules'
 import { buildManagerPurchaseDeltas } from '../game/managersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import TileContextHint from './TileContextHint.jsx'
@@ -82,8 +82,7 @@ export default function BuyManagerModal({
   const money = (n) => `$ ${Number(n || 0).toLocaleString()}`
   const expenseAt = (certs) => VENDOR_RULES.gestor.baseDesp + VENDOR_RULES.gestor.incDesp * Math.max(0, certs)
   const boostAt = (certs) => {
-    const c = Math.max(0, certs)
-    return (MANAGER_BOOST_BY_CERT[Math.min(c, MANAGER_BOOST_BY_CERT.length - 1)] || 0) * 100
+    return managerBoostPct(certs) * 100
   }
 
   const setBoundedQty = (val) => {

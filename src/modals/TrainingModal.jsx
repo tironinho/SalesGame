@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, MANAGER_BOOST_BY_CERT } from '../game/gameRules'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import { previewTrainingPurchaseImpact } from '../game/trainingPurchase.js'
 import TileContextHint from './TileContextHint.jsx'
 
@@ -12,12 +13,13 @@ import TileContextHint from './TileContextHint.jsx'
  *   • Amarelo -> 'fieldsales'
  *   • Roxo    -> 'imersaomultiplier'
  */
+const TRAINING_PRICE = MANUAL_CONSTANTS.trainingPrice
 const PRODUCTS = [
   {
     id: 'personalizado',
     label: 'Treinamento de venda personalizado\nCasagrande Consultores',
     shortLabel: 'Treinamento de venda personalizado',
-    price: 500,
+    price: TRAINING_PRICE,
     cert: 'azul',
     colors: { bg: '#0f2848', border: '#3b82f6', pill: '#60a5fa' }, // AZUL
   },
@@ -25,7 +27,7 @@ const PRODUCTS = [
     id: 'fieldsales',
     label: 'Curso Field Sales Collab\nMultiplier Educação e\nCasagrande Consultores',
     shortLabel: 'Field Sales Collab',
-    price: 500,
+    price: TRAINING_PRICE,
     cert: 'amarelo',
     colors: { bg: '#3a3202', border: '#facc15', pill: '#fde047' }, // AMARELO
   },
@@ -33,7 +35,7 @@ const PRODUCTS = [
     id: 'imersaomultiplier',
     label: 'Pacote Imersões\nMultiplier Educação',
     shortLabel: 'Pacote Imersões',
-    price: 500,
+    price: TRAINING_PRICE,
     cert: 'roxo',
     colors: { bg: '#2b0840', border: '#a855f7', pill: '#c084fc' }, // ROXO
   },

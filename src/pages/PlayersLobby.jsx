@@ -303,24 +303,10 @@ export default function PlayersLobby({ lobbyId, playerName, onBack, onStartGame 
     }
   }
 
-  // no topo do arquivo já existe: import { leaveLobby } from '../lib/lobbies'
-
-useEffect(() => {
-  const leave = () => {
-    // melhor esforço: não bloqueia a navegação
-    leaveLobby({ lobbyId, playerId: meId }).catch(() => {});
-  };
-  const onHide = () => leave();
-
-  // 'pagehide' cobre mobile e navegações de SPA; 'beforeunload' cobre desktop
-  window.addEventListener('pagehide', onHide);
-  window.addEventListener('beforeunload', onHide);
-
-  return () => {
-    window.removeEventListener('pagehide', onHide);
-    window.removeEventListener('beforeunload', onHide);
-  };
-}, [lobbyId, meId]);
+  // Saída automática por pagehide/beforeunload REMOVIDA:
+  // Android Chrome dispara pagehide ao trocar de app e ejectava o jogador da sala aberta.
+  // Cleanup de assentos inativos fica a cargo do heartbeat + TTL (cleanupLobbiesOnce).
+  // Saída explícita (botão Sair) continua chamando leaveLobby em handleLeave.
 
   useEffect(() => {
     if (!lobbyId) return

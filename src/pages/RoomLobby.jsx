@@ -32,15 +32,9 @@ export default function RoomLobby({ lobbyId, onLeave, onStartGame }) {
   useEffect(() => {
     refresh()
     const off = onLobbyPlayersRealtime(lobbyId, refresh)
-    // sair da sala ao fechar/atualizar aba
-    const onBeforeUnload = async (e) => {
-      try { await leaveLobby({ lobbyId, playerId: meId }) } catch {}
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => {
-      off?.()
-      window.removeEventListener('beforeunload', onBeforeUnload)
-    }
+    // Não chamar leaveLobby em beforeunload/pagehide: no Android o WebView
+    // dispara pagehide ao trocar de app e expulsava o jogador da sala.
+    return () => { off?.() }
   }, [lobbyId])
 
   const isHost = lobby?.host_id === meId

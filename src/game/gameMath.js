@@ -7,8 +7,10 @@ import {
   MIX_RULES,
   MANAGER_BOOST_BY_CERT,
   MANAGER_MANAGES_UP_TO,
+  managerBoostPct,
   sumCertMultipliers,
 } from './gameRules.js'
+import { MANUAL_CONSTANTS } from './manualConstants.js'
 
 // Back-compat: alguns testes/dev-tools podem importar estas constantes do gameMath.
 // Mantemos os exports, mas a fonte real está em `gameRules.js`.
@@ -148,8 +150,8 @@ export function computeFaturamentoFor(player = {}) {
   const util = Math.min(1, inAtt / safeCap);
   let vendorsFat = Math.floor(potentialSales * util);
 
-  // Gestor boost permanece como estava
-  const boostPct = MANAGER_BOOST_BY_CERT[Math.min(3, cGestor)] || 0;
+  // Gestor boost: máx. MANAGER_BOOST_MAX_CERTS (3 tipos de certificado)
+  const boostPct = managerBoostPct(cGestor);
   if (qGestor > 0 && boostPct > 0) {
     vendorsFat = Math.floor(vendorsFat * (1 + boostPct));
   }
@@ -194,7 +196,7 @@ export function computeDespesasFor(player = {}) {
   const dMix = (MIX_RULES[mixLevel]?.despPerClient || 0) * qClientes;
   const dErp = (ERP_RULES[erpLevel]?.desp || 0) * qColabs;
 
-  const dCarteiraClientes = 50 * qClientes;
+  const dCarteiraClientes = MANUAL_CONSTANTS.clientPortfolioDesp * qClientes;
 
   const total = Math.max(0, Math.floor(dComum + dInside + dField + dGestor + dMix + dErp + dCarteiraClientes));
   return total;

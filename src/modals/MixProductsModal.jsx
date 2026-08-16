@@ -4,6 +4,7 @@ import { useModal } from './ModalContext'
 import InsufficientFundsModal from './InsufficientFundsModal'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { MIX_RULES } from '../game/gameRules'
+import { MIX_PURCHASE_PRICES } from '../game/manualConstants.js'
 import { capacityAndAttendance } from '../game/gameMath'
 import {
   buildMixPurchaseDeltas,
@@ -43,10 +44,10 @@ export default function MixProductsModal({
 
   // Mantém os mesmos valores do print/implementação anterior
   const LEVELS = {
-    A: { compra: 12000, despesa: MIX_RULES.A.despPerClient, faturamento: MIX_RULES.A.fatPerClient, color:'#1d4ed8', pill:'NÍVEL A', label:'100 produtos' },
-    B: { compra:  6000, despesa: MIX_RULES.B.despPerClient, faturamento: MIX_RULES.B.fatPerClient, color:'#16a34a', pill:'NÍVEL B', label:'50 produtos'  },
-    C: { compra:  3000, despesa: MIX_RULES.C.despPerClient, faturamento: MIX_RULES.C.fatPerClient, color:'#f59e0b', pill:'NÍVEL C', label:'20 produtos'  },
-    D: { compra:  1000, despesa: MIX_RULES.D.despPerClient, faturamento: MIX_RULES.D.fatPerClient, color:'#6b7280', pill:'NÍVEL D', label:'5 produtos'   },
+    A: { compra: MIX_PURCHASE_PRICES.A, despesa: MIX_RULES.A.despPerClient, faturamento: MIX_RULES.A.fatPerClient, color:'#1d4ed8', pill:'NÍVEL A', label:'100 produtos' },
+    B: { compra: MIX_PURCHASE_PRICES.B, despesa: MIX_RULES.B.despPerClient, faturamento: MIX_RULES.B.fatPerClient, color:'#16a34a', pill:'NÍVEL B', label:'50 produtos'  },
+    C: { compra: MIX_PURCHASE_PRICES.C, despesa: MIX_RULES.C.despPerClient, faturamento: MIX_RULES.C.fatPerClient, color:'#f59e0b', pill:'NÍVEL C', label:'20 produtos'  },
+    D: { compra: MIX_PURCHASE_PRICES.D, despesa: MIX_RULES.D.despPerClient, faturamento: MIX_RULES.D.fatPerClient, color:'#6b7280', pill:'NÍVEL D', label:'5 produtos'   },
   }
 
   const normLevel = (v) => { const L = String(v || '').toUpperCase(); return ['A', 'B', 'C', 'D'].includes(L) ? L : '' }

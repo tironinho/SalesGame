@@ -10,6 +10,7 @@ import {
   MIX_RULES,
   CERT_EFFECTS,
   MANAGER_BOOST_BY_CERT,
+  MANAGER_BOOST_MAX_CERTS,
   MANAGER_MANAGES_UP_TO,
 } from '../game/gameRules.js'
 import { MIX_PURCHASE_PRICES, MANUAL_CONSTANTS } from '../game/manualConstants.js'
@@ -83,7 +84,7 @@ export function buildTourGlossary() {
         ],
       ],
       footnotes: [
-        `* O Gestor não atende cliente; ele é o chefe e cobre até ${MANAGER_MANAGES_UP_TO} colaboradores.`,
+        `* O Gestor não atende cliente. Orientação de equipe: até ${MANAGER_MANAGES_UP_TO} colaboradores (não altera o cálculo de fat/desp).`,
       ],
     },
     {
@@ -108,14 +109,16 @@ export function buildTourGlossary() {
     {
       id: 'gestor-boost',
       title: 'Superpoder do Gestor (boost)',
-      note: 'Quanto mais certificados o gestor tem, maior o percentual EXTRA no faturamento dos VENDEDORES. O Mix e o ERP não recebem esse boost — só a parte da equipe de vendas.',
+      note: `Quanto mais certificados o gestor tem (até ${MANAGER_BOOST_MAX_CERTS}), maior o percentual EXTRA no faturamento dos VENDEDORES. O Mix e o ERP não recebem esse boost — só a parte da equipe de vendas.`,
       bullets: [
         '0 certificado = sem boost.',
-        'Mais certificados = boost maior (veja a tabelinha).',
+        `Máximo usado no motor: ${MANAGER_BOOST_MAX_CERTS} certificados (${pct(MANAGER_BOOST_BY_CERT[MANAGER_BOOST_MAX_CERTS])}).`,
         'Lembre: gestor custa dinheiro todo mês — o boost precisa “pagar” esse custo.',
       ],
       headers: ['Certificados do gestor', 'Boost'],
-      rows: MANAGER_BOOST_BY_CERT.map((b, i) => [String(i), pct(b)]),
+      rows: MANAGER_BOOST_BY_CERT
+        .slice(0, MANAGER_BOOST_MAX_CERTS + 1)
+        .map((b, i) => [String(i), pct(b)]),
     },
     {
       id: 'mix',

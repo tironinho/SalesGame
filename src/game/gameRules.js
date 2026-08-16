@@ -49,12 +49,18 @@ export const MIX_RULES = {
 }
 
 // Boost do Gestor por quantidade de certificados do tipo 'gestor'.
-// Regra exigida: índice 0 deve ser 0 (0 certificados => 0%).
-// P2-A2: boost do Gestor NÃO usa CERT_EFFECTS (só quantidade).
+// Regra: índice 0 = 0%. Motor aplica no máx. MANAGER_BOOST_MAX_CERTS (só 3 tipos de cert).
 export const MANAGER_BOOST_BY_CERT = [0, 0.20, 0.30, 0.40, 0.60]
+/** Máximo de certificados do gestor que entram no boost (alinha com CERT_EFFECTS: 3 tipos). */
+export const MANAGER_BOOST_MAX_CERTS = 3
 
-// Quantos colaboradores um Gestor cobre (regra usada no cálculo de cobertura).
+// Orientação de equipe (UI/manual). NÃO altera o cálculo de faturamento/despesa.
 export const MANAGER_MANAGES_UP_TO = 7
+
+export function managerBoostPct(certCount = 0) {
+  const c = Math.max(0, Math.min(MANAGER_BOOST_MAX_CERTS, Number(certCount) || 0))
+  return MANAGER_BOOST_BY_CERT[c] || 0
+}
 
 /**
  * Efeitos econômicos por ID de certificado (P2-A2).

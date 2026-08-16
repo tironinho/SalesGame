@@ -4,6 +4,7 @@ import InsufficientFundsModal from './InsufficientFundsModal'
 import { useModal } from './ModalContext'
 import PurchaseImpactPreview from '../components/PurchaseImpactPreview.jsx'
 import { CERT_EFFECTS, VENDOR_RULES, certDeltaForVendor } from '../game/gameRules'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import { buildCommonSellersPurchaseDeltas } from '../game/commonSellersPurchase.js'
 import { previewPurchaseImpact } from '../game/purchasePreview.js'
 import TileContextHint from './TileContextHint.jsx'
@@ -33,7 +34,7 @@ import TileContextHint from './TileContextHint.jsx'
  */
 export default function BuyCommonSellersModal({
   onResolve,
-  unitHire = 2000,
+  unitHire = MANUAL_CONSTANTS.commonHire,
   unitExpense = VENDOR_RULES.comum.baseDesp,
   attendsUpTo = VENDOR_RULES.comum.cap,
   currentCash = 0,

@@ -1,6 +1,7 @@
 // src/modals/DirectBuyModal.jsx
 import React, { useEffect, useRef } from 'react'
 import { ERP_RULES, VENDOR_RULES } from '../game/gameRules.js'
+import { MIX_PURCHASE_PRICES, MANUAL_CONSTANTS } from '../game/manualConstants.js'
 import TileContextHint from './TileContextHint.jsx'
 
 /**
@@ -46,13 +47,21 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'mix',
       title: 'Mix Produtos',
-      lines: ['Nível A: $12000', 'Nível B: $6000', 'Nível C: $3000', 'Nível D: $1000'],
+      lines: [
+        `Nível A: $${MIX_PURCHASE_PRICES.A}`,
+        `Nível B: $${MIX_PURCHASE_PRICES.B}`,
+        `Nível C: $${MIX_PURCHASE_PRICES.C}`,
+        `Nível D: $${MIX_PURCHASE_PRICES.D}`,
+      ],
       onBuy: open('MIX'),
     },
     {
       key: 'gestor',
       title: 'Gestor Comercial',
-      lines: ['Contratação: $5000', 'Manutenção: $3000'],
+      lines: [
+        `Contratação: $${MANUAL_CONSTANTS.managerHire}`,
+        `Manutenção: $${VENDOR_RULES.gestor.baseDesp}`,
+      ],
       onBuy: open('MANAGER'),
     },
     {
@@ -76,7 +85,10 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'vendedor',
       title: 'Vendedor Comum',
-      lines: ['Contratação: $2000', 'Despesas: $1000'],
+      lines: [
+        `Contratação: $${MANUAL_CONSTANTS.commonHire}`,
+        `Despesas: $${VENDOR_RULES.comum.baseDesp}`,
+      ],
       onBuy: open('COMMON'),
     },
     {
@@ -93,13 +105,17 @@ export default function DirectBuyModal({ onResolve, currentCash = 0 }) {
     {
       key: 'carteira',
       title: 'Carteira de Clientes',
-      lines: ['Aquisição: $1000'],
+      lines: [`Aquisição: $${MANUAL_CONSTANTS.clientPrice}`],
       onBuy: open('CLIENTS'),
     },
     {
       key: 'training',
       title: 'Treinamento',
-      lines: ['Azul: $500', 'Amarelo: $500', 'Roxo: $500'],
+      lines: [
+        `Azul: $${MANUAL_CONSTANTS.trainingPrice}`,
+        `Amarelo: $${MANUAL_CONSTANTS.trainingPrice}`,
+        `Roxo: $${MANUAL_CONSTANTS.trainingPrice}`,
+      ],
       onBuy: open('TRAINING'),
     },
   ]

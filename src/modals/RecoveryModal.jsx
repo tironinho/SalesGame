@@ -8,6 +8,7 @@ import RecoveryLoan from './RecoveryLoan'
 import RecoveryReduce from './RecoveryReduce'
 import RecoveryFire from './RecoveryFire' // mesmo diretório
 import { ERP_RULES, VENDOR_RULES } from '../game/gameRules.js'
+import { MIX_PURCHASE_PRICES, MANUAL_CONSTANTS } from '../game/manualConstants.js'
 
 export default function RecoveryModal({ playerName = 'Jogador', bens = 0, currentPlayer, canClose = true }) {
   const { resolveTop, popModal } = useModal?.() || {}
@@ -28,14 +29,16 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     }
   }
 
-  // --- preços de compra -> crédito = 50% (ERP da fonte única ERP_RULES) ---
-  const MIX_PRICES = useMemo(() => ({ A: 12000, B: 6000, C: 3000, D: 1000 }), [])
+  // --- preços de compra -> crédito = recoveryCreditRatio (ERP/Mix da fonte única) ---
+  const MIX_PRICES = useMemo(() => ({ ...MIX_PURCHASE_PRICES }), [])
   const ERP_PRICES = useMemo(() => ({
     A: ERP_RULES.A.price,
     B: ERP_RULES.B.price,
     C: ERP_RULES.C.price,
     D: ERP_RULES.D.price,
   }), [])
+  const creditRatio = MANUAL_CONSTANTS.recoveryCreditRatio
+  const loanRatio = MANUAL_CONSTANTS.loanMaxBensRatio
 
   // --------- helpers de normalização ---------
   const letterFrom = (v) => {
@@ -85,8 +88,8 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
 
   // disponível para empréstimo (50% dos bens)
   const loanAvailable = useMemo(
-    () => Math.max(0, Math.floor(snapshot.bens * 0.5)),
-    [snapshot.bens]
+    () => Math.max(0, Math.floor(snapshot.bens * loanRatio)),
+    [snapshot.bens, loanRatio]
   )
 
   // verifica se já tem empréstimo pendente
@@ -107,21 +110,21 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
     loanPending: snapshot.raw?.loanPending || null,
   })
 
-  // opções do menu (mantidas)
+  // opções do menu (crédito ilustrativo = nível D × ratio; o real é por nível em RecoveryReduce)
   const REDUCE_OPTIONS = useMemo(
     () => [
-      { key:'mix', label:'MIX PRODUTOS', credit:1500 },
-      { key:'erp', label:'ERP/SISTEMAS', credit:1500 },
+      { key:'mix', label:'MIX PRODUTOS', credit: Math.floor(MIX_PRICES.D * creditRatio) },
+      { key:'erp', label:'ERP/SISTEMAS', credit: Math.floor(ERP_PRICES.D * creditRatio) },
     ],
-    []
+    [MIX_PRICES, ERP_PRICES, creditRatio]
   )
 
-  // Demissão (mantido)
+  // Demissão: crédito = hire × recoveryCreditRatio
   const ROLES = useMemo(() => ([
-    { key:'comum',  label:'Vendedor Comum', unit:1500, owned: snapshot.vendedoresComuns },
+    { key:'comum',  label:'Vendedor Comum', unit: MANUAL_CONSTANTS.commonHire, owned: snapshot.vendedoresComuns },
     { key:'field',  label:'Field Sales',     unit: VENDOR_RULES.field.hire, owned: snapshot.fieldSales },
     { key:'inside', label:'Inside Sales',    unit: VENDOR_RULES.inside.hire, owned: snapshot.insideSales },
-    { key:'gestor', label:'Gestor',          unit:5000, owned: snapshot.gestores },
+    { key:'gestor', label:'Gestor',          unit: MANUAL_CONSTANTS.managerHire, owned: snapshot.gestores },
   ]), [snapshot])
 
   // --------- detectar níveis exibidos no painel (letras) ---------
@@ -259,12 +262,12 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
       group:'MIX',
       level:k,
       label:`Nível ${k}`,
-      credit:(MIX_PRICES[k] || 0) / 2,
+      credit: Math.floor((MIX_PRICES[k] || 0) * creditRatio),
       owned: ownedMix.has(k),
       // ✅ CORREÇÃO: Marca se o nível já foi reduzido
       alreadyReduced: reducedLevels.MIX.includes(k),
     })),
-    [ownedMix, MIX_PRICES, reducedLevels.MIX]
+    [ownedMix, MIX_PRICES, reducedLevels.MIX, creditRatio]
   )
 
   const optionsErp = useMemo(
@@ -273,19 +276,29 @@ export default function RecoveryModal({ playerName = 'Jogador', bens = 0, curren
       group:'ERP',
       level:k,
       label:`Nível ${k}`,
-      credit:(ERP_PRICES[k] || 0) / 2,
+      credit: Math.floor((ERP_PRICES[k] || 0) * creditRatio),
       owned: ownedErp.has(k),
       // ✅ CORREÇÃO: Marca se o nível já foi reduzido
       alreadyReduced: reducedLevels.ERP.includes(k),
     })),
-    [ownedErp, ERP_PRICES, reducedLevels.ERP]
+    [ownedErp, ERP_PRICES, reducedLevels.ERP, creditRatio]
   )
 
   // tabelas de crédito por nível (se a sub-tela quiser usar)
   const creditsTables = useMemo(() => ({
-    MIX: { A:MIX_PRICES.A/2, B:MIX_PRICES.B/2, C:MIX_PRICES.C/2, D:MIX_PRICES.D/2 },
-    ERP: { A:ERP_PRICES.A/2, B:ERP_PRICES.B/2, C:ERP_PRICES.C/2, D:ERP_PRICES.D/2 },
-  }), [MIX_PRICES, ERP_PRICES])
+    MIX: {
+      A: Math.floor(MIX_PRICES.A * creditRatio),
+      B: Math.floor(MIX_PRICES.B * creditRatio),
+      C: Math.floor(MIX_PRICES.C * creditRatio),
+      D: Math.floor(MIX_PRICES.D * creditRatio),
+    },
+    ERP: {
+      A: Math.floor(ERP_PRICES.A * creditRatio),
+      B: Math.floor(ERP_PRICES.B * creditRatio),
+      C: Math.floor(ERP_PRICES.C * creditRatio),
+      D: Math.floor(ERP_PRICES.D * creditRatio),
+    },
+  }), [MIX_PRICES, ERP_PRICES, creditRatio])
 
   return (
     <div style={S.backdrop}>

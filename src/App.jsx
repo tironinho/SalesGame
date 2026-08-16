@@ -80,6 +80,7 @@ import {
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './game/roundConfig'
 import { normalizePlayersAliases } from './game/playerShape.js'
 import { consumeTileTip } from './game/progressiveTips.js'
+import { MANUAL_CONSTANTS } from './game/manualConstants.js'
 import OrientationGuard from './components/orientation/OrientationGuard.jsx'
 import { enterGamePresentation } from './utils/fullscreen.js'
 import { useBoardPinchZoom } from './hooks/useBoardPinchZoom.js'
@@ -280,7 +281,7 @@ export default function App() {
   }
 
   const [players, _setPlayers] = useState([
-    applyStarterKit({ id: meId, name: '', cash: 18000, pos: 0, color: '#FFD600', bens: 4000 })
+    applyStarterKit({ id: meId, name: '', cash: MANUAL_CONSTANTS.startCash, pos: 0, color: '#FFD600', bens: MANUAL_CONSTANTS.startBens })
   ])
 
   // ====== Cash Audit (instrumentação de saldo) ======
@@ -451,7 +452,7 @@ export default function App() {
     id: meId,
     name: players[0]?.name || 'Jogador',
     color: players[0]?.color || '#6c5ce7',
-    cash: players[0]?.cash ?? 18000,
+    cash: players[0]?.cash ?? MANUAL_CONSTANTS.startCash,
     possibAt: 0,
     clientsAt: 0,
     matchId: 'local',
@@ -890,41 +891,11 @@ export default function App() {
     }
   }, [syncKey, meId, phase])
 
-  // ====== Gerenciamento de saída de salas (somente LOBBY — não em partida ativa)
-  // Fechar/refresh/pagehide durante `game` NÃO remove o assento (presença virá depois).
-  // Saída explícita ("Sair para Lobbies") continua chamando leaveRoom + clearMatchIdentity.
-  useEffect(() => {
-    const handleLeaveRoom = async () => {
-      console.log(`[App] handleLeaveRoom chamado - fase: ${phase}, currentLobbyId: ${currentLobbyId}, myUid: ${myUid}`)
-
-      if ((phase === 'lobbies' || phase === 'playersLobby') && currentLobbyId && myUid) {
-        try {
-          console.log(`[App] Saindo da sala ${currentLobbyId} na fase ${phase}`)
-          await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })
-        } catch (error) {
-          console.warn('[App] Erro ao sair da sala:', error)
-        }
-      } else {
-        console.log(`[App] Não executando leaveRoom automático - fase=${phase}`)
-      }
-    }
-
-    const handleBeforeUnload = () => {
-      handleLeaveRoom()
-    }
-
-    const handlePageHide = () => {
-      handleLeaveRoom()
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    window.addEventListener('pagehide', handlePageHide)
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-      window.removeEventListener('pagehide', handlePageHide)
-    }
-  }, [phase, currentLobbyId, myUid])
+  // ====== Gerenciamento de saída de salas
+  // NÃO remove assento em pagehide/beforeunload (Android dispara pagehide ao trocar de app).
+  // Em `game`: presença/heartbeat + TTL cuidam de órfãos.
+  // Em lobby: saída explícita (botão) chama leaveLobby/leaveRoom.
+  // Mantemos o efeito vazio documentado para não reintroduzir o bug.
 
   const setTurnLockBroadcast = (value, owner = undefined) => {
     const v = !!value
@@ -2231,6 +2202,24 @@ export default function App() {
   const [progressiveTip, setProgressiveTip] = useState(null)
   const progressiveTipTimerRef = useRef(null)
 
+  /** Limpa flags locais de partida (evita gameOver/turnLock grudados entre matches). */
+  const resetMatchLocalUi = React.useCallback(() => {
+    setGameOver(false)
+    setWinner(null)
+    setTurnLock(false)
+    setLockOwner(null)
+    setTurnSeq(0)
+    setDiceFx(null)
+    setShowBankruptOverlay(false)
+    setTutorialOpen(false)
+    tutorialAutoOpenedRef.current = ''
+    hydratedFromNetRef.current = false
+    lastAppliedNetVersionRef.current = 0
+    lastAppliedStateIdRef.current = null
+    lastLocalStateRef.current = null
+    playersBeforeRef.current = null
+  }, [])
+
   // Não depender da referência de `players` (sync contínuo cancelava o timeout)
   const gameRosterReady =
     phase === 'game' && Array.isArray(players) && players.length > 0
@@ -2568,7 +2557,7 @@ export default function App() {
           // ✅ salva somente após ação explícita do usuário
           setTabPlayerName(clean)
           setMyName(clean)
-          setPlayers([applyStarterKit({ id: meId, name: clean, cash: 18000, pos: 0, color: '#FFD600', bens: 4000 })], { source: 'START' })
+          setPlayers([applyStarterKit({ id: meId, name: clean, cash: MANUAL_CONSTANTS.startCash, pos: 0, color: '#FFD600', bens: MANUAL_CONSTANTS.startBens })], { source: 'START' })
           setRound(1); setTurnIdx(0); setGameOver(false); setWinner(null)
           setRoundFlags(new Array(1).fill(false))
           setMeHud(h => ({ ...h, name: clean }))
@@ -2671,11 +2660,7 @@ export default function App() {
             resumeLog('room requested', roomKey)
             resumeLog('identity found', !!resolvedId)
 
-            lastLocalStateRef.current = null
-            playersBeforeRef.current = null
-            lastAppliedNetVersionRef.current = 0
-            lastAppliedStateIdRef.current = null
-            hydratedFromNetRef.current = false
+            resetMatchLocalUi()
             try { setMyUid(String(resolvedId)) } catch {}
             if (roomKey) {
               setCurrentLobbyId(roomKey)
@@ -2744,9 +2729,9 @@ export default function App() {
             applyStarterKit({
               id: String(p.id ?? p.player_id),
               name: p.name ?? p.player_name,
-              cash: 18000,
+              cash: MANUAL_CONSTANTS.startCash,
               pos: 0,
-              bens: 4000,
+              bens: MANUAL_CONSTANTS.startBens,
               color: ['#FFD600', '#2196F3', '#00C853', '#FF6D00'][i % 4],
               seat: i // ✅ CORREÇÃO: Atribui seat baseado na ordem ordenada
             })
@@ -2808,7 +2793,7 @@ export default function App() {
               ...h,
               name: mine?.name || normalized[0]?.name || 'Jogador',
               color: mine?.color || normalized[0]?.color || '#6c5ce7',
-              cash: mine?.cash ?? 18000,
+              cash: mine?.cash ?? MANUAL_CONSTANTS.startCash,
               possibAt: 0, clientsAt: 0
             }
           })
@@ -3020,6 +3005,7 @@ export default function App() {
                     clearMatchIdentity(currentLobbyId)
                   }
                   window.__setRoomCode?.(null)
+                  resetMatchLocalUi()
                   setPhase('lobbies')
                 }}
               >
@@ -3113,6 +3099,7 @@ export default function App() {
               clearMatchIdentity(currentLobbyId)
             }
             window.__setRoomCode?.(null)
+            resetMatchLocalUi()
             setPhase('lobbies')
           }}
         />

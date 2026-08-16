@@ -1,6 +1,7 @@
 // src/modals/recovery/RecoveryFire.jsx
 import React, { useMemo, useState } from 'react'
 import S from './recoveryStyles'
+import { MANUAL_CONSTANTS } from '../game/manualConstants.js'
 
 /**
  * roles: [{ key:'comum'|'field'|'inside'|'gestor', label, unit?, total?, owned?, qty? }]
@@ -32,7 +33,7 @@ export default function RecoveryFire({ roles = [], onBack, onConfirm }) {
   })
 
   const fmt = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR')}`
-  const creditUnit = (unit) => Math.floor(Number(unit || 0) * 0.5)
+  const creditUnit = (unit) => Math.floor(Number(unit || 0) * MANUAL_CONSTANTS.recoveryCreditRatio)
 
   const add = (k, delta) => {
     setQty(q => {

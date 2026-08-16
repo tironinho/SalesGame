@@ -157,7 +157,10 @@ describe('sidebar player summary layout', () => {
     assert.match(tablet, /\.btn\.go\s*\{[^}]*min-height:\s*58px/)
     assert.match(tablet, /\.sideSecondary\s*\{[^}]*flex:\s*1\s+1\s+auto/)
     assert.doesNotMatch(tablet, /aspect-ratio:\s*13\s*\/\s*9/)
-    assert.doesNotMatch(tablet, /display:\s*none/)
+    // startSummaryNote pode usar display:none; controles do jogo na sidebar não
+    assert.doesNotMatch(tablet, /\.side\s+\.controlsSticky[^{]*\{[^}]*display:\s*none/)
+    assert.doesNotMatch(tablet, /\.turnPrimaryActions[^{]*\{[^}]*display:\s*none/)
+    assert.doesNotMatch(tablet, /\.sideSecondary[^{]*\{[^}]*display:\s*none/)
   })
 
   it('controlsSticky e turnPrimaryActions não sobrepõem com sticky/fixed', () => {
