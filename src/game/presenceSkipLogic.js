@@ -1,14 +1,14 @@
 /**
- * Auto-skip por ausência: espera extra na vez do jogador e nunca pula
- * com turnLock (dado 3D / movimento / modal).
+ * Presença durante a partida: só HUD (“aguardando reconexão”).
  *
- * last_seen velho (GAME_OFFLINE_THRESHOLD_MS) só liga o status "waiting".
- * O avanço espera mais GAME_ABSENCE_SKIP_GRACE_MS — cobre animação do dado
- * e heartbeat atrasado no celular.
+ * Pular o turno NÃO é por last_seen. Celular (aba em segundo plano, timer
+ * throttled) parece offline e, com 4 jogadores, o host pulava 2–3 pessoas
+ * em sequência. O avanço por ausência/AFK é só o cronômetro do turno
+ * (`useTurnTimerAutoPass`).
  */
 import { turnAttemptKey } from './turnTimerLogic.js'
 
-/** Tempo extra na vez, depois de detectar ausência, antes de pular. */
+/** @deprecated HUD only — não dispara skip. Mantido para testes/compat. */
 export const GAME_ABSENCE_SKIP_GRACE_MS = 15_000
 
 export function shouldRejectAbsentTurnSkip({
@@ -38,17 +38,18 @@ export function shouldAttemptPresenceAutoSkip({
   turnSeq = 0,
   waitingSinceMs = null,
   now = Date.now(),
-  graceMs = GAME_ABSENCE_SKIP_GRACE_MS,
   inFlight = false,
 } = {}) {
+  void amCoordinator
+  void inFlight
+  void turnSeq
+
   if (gameOver) {
     return { ok: false, reason: 'game-over', waitingSinceMs: null }
   }
   if (!turnPlayerId) {
     return { ok: false, reason: 'no-turn-player', waitingSinceMs: null }
   }
-
-  // Dado/movimento/modal: não acumula graça e não pula.
   if (turnLock) {
     return { ok: false, reason: 'turn-locked', waitingSinceMs: null }
   }
@@ -59,27 +60,10 @@ export function shouldAttemptPresenceAutoSkip({
   const t = Number.isFinite(Number(now)) ? Number(now) : Date.now()
   const started = waitingSinceMs == null ? NaN : Number(waitingSinceMs)
   const nextWaiting = Number.isFinite(started) ? started : t
-  const waitMs = Number.isFinite(Number(graceMs)) ? Number(graceMs) : GAME_ABSENCE_SKIP_GRACE_MS
-
-  if (t - nextWaiting < waitMs) {
-    return {
-      ok: false,
-      reason: 'waiting-grace',
-      waitingSinceMs: nextWaiting,
-      attemptKey: turnAttemptKey(turnPlayerId, turnSeq),
-    }
-  }
-
-  if (inFlight) {
-    return { ok: false, reason: 'in-flight', waitingSinceMs: nextWaiting }
-  }
-  if (!amCoordinator) {
-    return { ok: false, reason: 'not-coordinator', waitingSinceMs: nextWaiting }
-  }
 
   return {
-    ok: true,
-    reason: 'absent-grace-elapsed',
+    ok: false,
+    reason: 'hud-only-wait',
     waitingSinceMs: nextWaiting,
     attemptKey: turnAttemptKey(turnPlayerId, turnSeq),
   }

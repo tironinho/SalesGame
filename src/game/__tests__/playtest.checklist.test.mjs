@@ -252,4 +252,6 @@ test('pt9 skip de turno não corta o dado 3D', () => {
   const presence = read('src/game/useGamePresenceAutoSkip.js')
   assert.match(presence, /shouldAttemptPresenceAutoSkip/)
   assert.match(presence, /turnLock:/)
+  assert.match(presence, /hud-wait|hud-only-wait/)
+  assert.doesNotMatch(presence, /reason: 'AUTO_SKIP_OFFLINE'/)
 })

@@ -1,4 +1,5 @@
-// Presença durante a partida + auto-skip do turno do jogador ausente.
+// Presença durante a partida (heartbeat + HUD de ausência).
+// NÃO avança turno por last_seen — isso pulava celular em mesa de 4.
 // Reutiliza lobby_players.last_seen (não toca rooms.state no heartbeat).
 
 import { useEffect, useRef } from 'react'
@@ -19,9 +20,6 @@ import {
 } from './canonicalPresence.js'
 import {
   getSharedSkipInFlight,
-  markPendingSharedSkipKey,
-  releaseSharedSkipKey,
-  setSharedSkipInFlight,
   wasAlreadySkipped,
   clearSharedSkipKeyIfStale,
 } from './sharedTurnSkipGuard.js'
@@ -134,8 +132,28 @@ export function useGamePresenceAutoSkip({
     }).catch(() => {})
     devLog('[presence] heartbeat started canonical=' + presenceId)
 
+    const bump = () => {
+      try {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      } catch {}
+      touchLobbyPlayer({
+        lobbyId,
+        playerId: String(presenceId),
+        allowRecreateIfSeated: true,
+      }).catch(() => {})
+    }
+    const onVis = () => bump()
+    try {
+      document.addEventListener('visibilitychange', onVis)
+      window.addEventListener('focus', onVis)
+    } catch {}
+
     return () => {
       try { stop?.() } catch {}
+      try {
+        document.removeEventListener('visibilitychange', onVis)
+        window.removeEventListener('focus', onVis)
+      } catch {}
     }
   }, [enabled, lobbyId, myUid, rosterIdsKey])
 
@@ -285,92 +303,10 @@ export function useGamePresenceAutoSkip({
         return
       }
 
-      if (decision.reason === 'waiting-grace' || decision.reason === 'not-coordinator') {
+      // Ausente: só HUD. Cronômetro do turno é quem avança (evita pular celular “offline”).
+      if (!decision.ok) {
         setStatus('waiting')
-        if (decision.reason === 'waiting-grace') {
-          devLog('[auto-skip] waiting grace')
-        }
-        return
-      }
-
-      if (!decision.ok) return
-      if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
-
-      devLog('[auto-skip] waiting')
-      setStatus('waiting')
-      setSharedSkipInFlight(true)
-      try {
-        try {
-          await touchLobbyPlayer({
-            lobbyId,
-            playerId: String(presenceId),
-            allowRecreateIfSeated: true,
-          })
-        } catch {}
-
-        let presence2
-        try {
-          presence2 = await listLobbyPresence(lobbyId)
-        } catch {
-          return
-        }
-        if (cancelled) return
-
-        const now2 = Date.now()
-        if (String(turnPlayerIdRef.current || '') !== curTurnId) {
-          devLog('[auto-skip] cancelled player returned')
-          setStatus(null)
-          return
-        }
-        if ((Number(turnSeqRef.current) || 0) !== curTurnSeq) return
-        if (gameOverRef.current) return
-        if (turnLockRef.current) {
-          waitingSinceRef.current = null
-          setStatus(null)
-          return
-        }
-        if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
-
-        if (isTurnPlayerPresent({
-          turnPlayerId: curTurnId,
-          presenceList: presence2,
-          now: now2,
-          thresholdMs: GAME_OFFLINE_THRESHOLD_MS,
-        })) {
-          devLog('[auto-skip] cancelled player returned')
-          setStatus(null)
-          return
-        }
-
-        const auth2 = resolveTurnSkipAuthority({
-          rosterPlayers: roster,
-          presenceList: presence2,
-          now: now2,
-          myUid: presenceId,
-          lobbyHostId: lobbyHostIdRef.current,
-        })
-        if (!auth2.authorized) {
-          devLog('[presence] authority=false')
-          return
-        }
-
-        devLog('[auto-skip] attempt turnSeq=' + curTurnSeq)
-        const ok = attemptSkipRef.current?.({
-          expectedTurnPlayerId: curTurnId,
-          expectedTurnSeq: curTurnSeq,
-          reason: 'AUTO_SKIP_OFFLINE',
-        })
-        if (ok) {
-          // Pending até CAS confirmar em commitGamePatch
-          markPendingSharedSkipKey(curTurnId, curTurnSeq)
-          setStatus('skipped')
-          devLog('[auto-skip] local applied (pending CAS)')
-        } else {
-          releaseSharedSkipKey(curTurnId, curTurnSeq)
-          devLog('[auto-skip] local rejected')
-        }
-      } finally {
-        setSharedSkipInFlight(false)
+        if (DEV) devLog('[presence] hud-wait reason=' + decision.reason)
       }
     }
 

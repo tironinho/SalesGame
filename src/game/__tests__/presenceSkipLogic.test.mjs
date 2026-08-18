@@ -25,7 +25,7 @@ describe('presence skip / dado', () => {
     assert.equal(d.waitingSinceMs, null)
   })
 
-  it('ausente: espera graça antes de pular', () => {
+  it('ausente: NÃO pula por presença (só HUD; cronômetro avança)', () => {
     const first = shouldAttemptPresenceAutoSkip({
       turnPresent: false,
       turnLock: false,
@@ -37,32 +37,20 @@ describe('presence skip / dado', () => {
       now: NOW,
     })
     assert.equal(first.ok, false)
-    assert.equal(first.reason, 'waiting-grace')
+    assert.equal(first.reason, 'hud-only-wait')
     assert.equal(first.waitingSinceMs, NOW)
 
-    const tooSoon = shouldAttemptPresenceAutoSkip({
+    const later = shouldAttemptPresenceAutoSkip({
       turnPresent: false,
       turnLock: false,
       amCoordinator: true,
       turnPlayerId: 'p2',
       turnSeq: 3,
       waitingSinceMs: NOW,
-      now: NOW + GAME_ABSENCE_SKIP_GRACE_MS - 1,
+      now: NOW + GAME_ABSENCE_SKIP_GRACE_MS + 60_000,
     })
-    assert.equal(tooSoon.ok, false)
-    assert.equal(tooSoon.reason, 'waiting-grace')
-
-    const ready = shouldAttemptPresenceAutoSkip({
-      turnPresent: false,
-      turnLock: false,
-      amCoordinator: true,
-      turnPlayerId: 'p2',
-      turnSeq: 3,
-      waitingSinceMs: NOW,
-      now: NOW + GAME_ABSENCE_SKIP_GRACE_MS,
-    })
-    assert.equal(ready.ok, true)
-    assert.equal(ready.reason, 'absent-grace-elapsed')
+    assert.equal(later.ok, false)
+    assert.equal(later.reason, 'hud-only-wait')
   })
 
   it('lock no meio da graça zera a espera', () => {
