@@ -5321,10 +5321,13 @@ img[src*="multiplier"]{
     width: var(--side-w); min-width: var(--side-w); max-width: var(--side-w);
     flex: 0 0 var(--side-w); height: 100%;
     display: flex; flex-direction: column; gap: 3px;
-    min-height: 0; overflow: visible; padding-bottom: 8px;
+    min-height: 0; overflow: hidden; padding-bottom: 8px;
   }
   .page .content .side > .hud {
-    flex: 0 0 auto; height: auto; min-height: 0;
+    flex: 1 1 auto; height: auto; min-height: 0;
+    overflow-x: hidden; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     display: grid; grid-template-rows: auto auto; align-content: start; gap: 3px;
   }
   .side .hud .panel, .side .hud .score, .side .hud .game-stats-card,
@@ -5351,7 +5354,7 @@ img[src*="multiplier"]{
   .side .hud .score .row { padding: 2px 6px; font-size: clamp(10.5px, 1.05vw, 11.5px); }
 
   .page .content .side .sideSecondary {
-    flex: 1 1 auto; min-height: 0; overflow: visible;
+    flex: 0 0 auto; min-height: 0; overflow: visible;
     display: flex; flex-direction: column; gap: 3px;
   }
   .side .controlsSticky {
@@ -5464,7 +5467,7 @@ img[src*="multiplier"]{
   }
 }
 
-/* SIDEBAR DESKTOP — caber sem scroll (>=1200px landscape) */
+/* SIDEBAR DESKTOP — landscape: HUD/placar rolam; Rolar Dado permanece visível */
 @media (min-width: 1200px) and (orientation: landscape) {
   .side {
     height: 100%;
@@ -5472,10 +5475,19 @@ img[src*="multiplier"]{
     flex-direction: column;
     gap: 4px;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
   }
 
-  .side > .hud { flex: 0 0 auto; min-height: 0; }
+  .side > .hud {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
 
   .side .hud .panel.game-stats-card,
   .side .hud .game-stats-card {
@@ -5594,13 +5606,19 @@ img[src*="multiplier"]{
 @media (min-width: 1200px) and (max-width: 1599px) and (orientation: landscape) and (max-height: 700px) {
   .page .content .side {
     gap: 2px;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .page .content .side > .hud {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     display: grid;
     grid-template-rows: auto auto;
     align-content: start;
@@ -5835,7 +5853,10 @@ img[src*="multiplier"]{
   }
 
   .page .content .side > .hud {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: grid;
     grid-template-rows: auto auto;
     align-content: start;

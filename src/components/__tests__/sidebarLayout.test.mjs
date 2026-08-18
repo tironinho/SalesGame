@@ -82,18 +82,17 @@ describe('sidebar player summary layout', () => {
     assert.match(primary, /sideQuickActions/)
   })
 
-  it('desktop largo landscape: sidebar sem scroll interno; HUD e ação principal preservados', () => {
-    const marker = css.indexOf('/* SIDEBAR DESKTOP — caber sem scroll')
-    assert.ok(marker >= 0, 'bloco compacto sem scroll deve existir')
+  it('desktop landscape: HUD/placar rolam; Rolar Dado fica no fluxo inferior', () => {
+    const marker = css.indexOf('/* SIDEBAR DESKTOP — landscape:')
+    assert.ok(marker >= 0, 'bloco landscape com scroll do HUD deve existir')
     const compact = css.slice(marker, marker + 4500)
     assert.match(compact, /@media \(min-width:\s*1200px\) and \(orientation:\s*landscape\)/)
     assert.match(compact, /\.sideSecondary\s*\{[^}]*overflow:\s*visible/)
-    assert.doesNotMatch(compact, /overflow-y:\s*(auto|scroll)/)
-    assert.doesNotMatch(compact, /\.side\s*\{[^}]*overflow:\s*hidden/)
+    assert.match(compact, /overflow-y:\s*auto/)
+    assert.match(compact, /\.side\s*\{[^}]*overflow:\s*hidden/)
 
     const hudBlock = firstBlock(css, '.hud')
     const primary = firstBlock(css, '.turnPrimaryActions')
-    assert.match(hudBlock, /flex:\s*0\s+0\s+auto/)
     assert.match(primary, /flex:\s*0\s+0\s+auto/)
     assert.doesNotMatch(hudBlock, /position:\s*(fixed|sticky)/)
     assert.doesNotMatch(primary, /position:\s*(fixed|sticky|absolute)/)
@@ -112,7 +111,8 @@ describe('sidebar player summary layout', () => {
     assert.ok(marker >= 0, 'bloco de telas altas deve existir')
     const tall = css.slice(marker, marker + 5500)
     assert.match(tall, /@media \(min-width:\s*1200px\) and \(min-height:\s*820px\)/)
-    assert.match(tall, /\.side\s*>\s*\.hud\s*\{[^}]*flex:\s*0\s+0\s+auto/)
+    assert.match(tall, /\.side\s*>\s*\.hud\s*\{[^}]*flex:\s*1\s+1\s+auto/)
+    assert.match(tall, /overflow-y:\s*auto/)
     assert.match(tall, /grid-template-rows:\s*auto\s+auto/)
     assert.match(tall, /\.game-stats-card\s*\{[^}]*height:\s*auto/)
     assert.doesNotMatch(tall, /grid-template-rows:\s*minmax\(0,\s*1fr\)/)
@@ -124,7 +124,7 @@ describe('sidebar player summary layout', () => {
     assert.match(tall, /min-height:\s*clamp\(88px,\s*10dvh,\s*108px\)/)
   })
 
-  it('notebook baixo (<=1599×700): sidebar mais larga, sem scroll e botões em uma linha', () => {
+  it('notebook baixo (<=1599×700): sidebar mais larga, HUD rola e botões em uma linha', () => {
     const marker = css.indexOf('/* SIDEBAR DESKTOP — notebook baixo')
     assert.ok(marker >= 0, 'bloco de notebook baixo deve existir')
     const end = css.indexOf('/* SIDEBAR DESKTOP — telas altas', marker)
@@ -137,7 +137,7 @@ describe('sidebar player summary layout', () => {
     assert.match(low, /white-space:\s*nowrap/)
     assert.match(low, /\.btn\.go\s*\{[^}]*min-height:\s*54px/)
     assert.match(low, /padding-bottom:\s*8px/)
-    assert.doesNotMatch(low, /overflow-y:\s*(auto|scroll)/)
+    assert.match(low, /overflow-y:\s*auto/)
     assert.doesNotMatch(low, /@media[^{]*min-height:\s*820px/)
   })
 
@@ -155,7 +155,7 @@ describe('sidebar player summary layout', () => {
     assert.match(tablet, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
     assert.match(tablet, /\.diceResult\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/)
     assert.match(tablet, /\.btn\.go\s*\{[^}]*min-height:\s*58px/)
-    assert.match(tablet, /\.sideSecondary\s*\{[^}]*flex:\s*1\s+1\s+auto/)
+    assert.match(tablet, /\.sideSecondary\s*\{[^}]*flex:\s*0\s+0\s+auto/)
     assert.doesNotMatch(tablet, /container-type:\s*size/)
     // startSummaryNote pode usar display:none; controles do jogo na sidebar não
     assert.doesNotMatch(tablet, /\.side\s+\.controlsSticky[^{]*\{[^}]*display:\s*none/)
