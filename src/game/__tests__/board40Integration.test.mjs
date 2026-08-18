@@ -192,4 +192,5 @@ test('production wiring preserves boardVersion and visual clicks have no game ca
   assert.doesNotMatch(tileSource, /setPlayers|broadcastState|cashDelta|onAction/)
   assert.doesNotMatch(boardSource, /Pr[eé]via do tabuleiro|TIPO CAN[ÔO]NICO|COORDENADA|FASE 1/i)
   assert.match(boardSource, /getDeterministicTokenSlots/)
+  assert.match(boardSource, /sg40GameBoard__sizer/)
 })

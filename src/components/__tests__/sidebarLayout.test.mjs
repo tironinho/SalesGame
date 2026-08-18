@@ -249,6 +249,8 @@ describe('sidebar player summary layout', () => {
     const rules = desktop.slice(mediaStart)
     assert.match(rules, /aspect-ratio:\s*13\s*\/\s*9/)
     assert.match(rules, /max-height:\s*100%/)
+    assert.match(rules, /width:\s*100%/)
+    assert.doesNotMatch(rules, /width:\s*auto/)
     assert.doesNotMatch(rules, /container-type:\s*size/)
     assert.doesNotMatch(rules, /100cqh/)
   })

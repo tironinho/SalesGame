@@ -18,6 +18,13 @@
   box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.4);
 }
 
+.sg40GameBoard__sizer {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--board-ratio);
+  pointer-events: none;
+}
+
 .sg40GameBoard .sg40Preview__tile {
   grid-row: var(--desktop-row);
   grid-column: var(--desktop-column);

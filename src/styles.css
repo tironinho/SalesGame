@@ -5291,8 +5291,9 @@ img[src*="multiplier"]{
 
   .boardWrap .board.sg40GameBoard {
     box-sizing: border-box;
-    flex: 0 0 auto;
-    width: auto;
+    flex: 0 1 auto;
+    --board-ratio: 13 / 9;
+    width: 100%;
     height: auto;
     max-width: 100%;
     max-height: 100%;
@@ -5315,8 +5316,9 @@ img[src*="multiplier"]{
 
   .page .content .boardWrap > .board.sg40GameBoard,
   .page .content .boardWrap > .sg40GameBoard {
-    box-sizing: border-box; flex: 0 0 auto;
-    width: auto; height: auto;
+    box-sizing: border-box; flex: 0 1 auto;
+    --board-ratio: 13 / 9;
+    width: 100%; height: auto;
     max-width: 100%; max-height: 100%;
     margin: 0; aspect-ratio: 13 / 9;
   }
@@ -6005,12 +6007,13 @@ img[src*="multiplier"]{
 
   .page .content .boardWrap > .sg40GameBoard {
     box-sizing: border-box;
-    width: auto;
+    --board-ratio: 13 / 9;
+    width: 100%;
     height: auto;
     max-width: 100%;
     max-height: 100%;
     aspect-ratio: 13 / 9;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     margin: 0;
   }
 

@@ -239,6 +239,8 @@ export default function LandscapeBoard({
         if (!event.target.closest('.sg40Preview__tile')) setSelectedIndex(null)
       }}
     >
+      {/* Filhos absolutos não dão tamanho; este sizer define a proporção. */}
+      <span className="sg40GameBoard__sizer" aria-hidden="true" />
       <img
         className="sg40Preview__boardImage"
         src={BOARD_PREVIEW_CENTER_SOURCE}
