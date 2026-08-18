@@ -1,6 +1,7 @@
 import React from "react";
 import ModalBase from "./ModalBase";
 import TileContextHint from "./TileContextHint.jsx";
+import { MANUAL_CONSTANTS } from "../game/manualConstants.js";
 
 /**
  * Esta modal fecha chamando `onResolve`, que é injetado pelo ModalProvider
@@ -52,7 +53,7 @@ export default function DespesasOperacionaisModal({
 
         {Number(loanCharge) > 0 && (
           <div style={{ marginBottom: 8, color: "#ffd54f" }}>
-            Empréstimo (próxima rodada):&nbsp;
+            Empréstimo + {Math.round((MANUAL_CONSTANTS.loanInterestRatio || 0) * 100)}% de juros:&nbsp;
             <b>-$ {Number(loanCharge).toLocaleString()}</b>
           </div>
         )}

@@ -4,7 +4,7 @@
  * Manual:
  * - 1 empréstimo por partida
  * - teto/garantia = 50% do valor de compra dos bens
- * - quita na casa Despesas Operacionais da próxima rodada
+ * - quita na casa Despesas Operacionais da próxima rodada (principal + 50% de juros)
  * - sem caixa: patrimônio a 50% do valor de compra; se não bastar, falência
  *
  * Take → dueRound = rodada+1 → arm no REVENUE do jogador e/ou rodada global

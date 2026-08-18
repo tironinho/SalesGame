@@ -83,7 +83,7 @@ export const TOUR_STEPS = [
     body: [
       'Imagine um cofre: no Faturamento o cofre RECEBE; nas Despesas o cofre PAGA as contas.',
       'FATURAMENTO DO MÊS: é o dinheiro das vendas. Ele depende da sua equipe, de quantos clientes conseguem ser atendidos, do Mix e do ERP.',
-      'DESPESAS OPERACIONAIS: é a manutenção — pagar salários, manter Mix/ERP e cuidar da carteira de clientes. Se você pegou empréstimo, a cobrança também aparece aqui.',
+      'DESPESAS OPERACIONAIS: é a manutenção — pagar salários, manter Mix/ERP e cuidar da carteira de clientes. Se você pegou empréstimo, a cobrança (valor + 50% de juros) também aparece aqui.',
       'Atenção especial: se você tem MAIS clientes do que a equipe consegue atender, os clientes “a mais” não geram venda naquele mês (ficam ociosos). Mas eles ainda podem gerar DESPESA de carteira — por isso capacidade é importante!',
     ],
     highlight: 'Capacidade da equipe ≥ clientes = todo mundo trabalhando e gerando venda.',
@@ -204,7 +204,7 @@ export const TOUR_TILES = [
   {
     key: 'EXPENSES',
     title: 'Despesas Operacionais',
-    body: 'Aqui o dinheiro SAI para pagar as contas do mês: equipe, Mix, ERP e carteira de clientes. Se pediu empréstimo, a quitação cai nesta casa na próxima rodada. Sem caixa, liquide o patrimônio a 50% do valor de compra; se não bastar, falência.',
+    body: 'Aqui o dinheiro SAI para pagar as contas do mês: equipe, Mix, ERP e carteira de clientes. Se pediu empréstimo, a quitação (valor + 50% de juros) cai nesta casa na próxima rodada. Sem caixa, liquide o patrimônio a 50% do valor de compra; se não bastar, falência.',
   },
 ]
 
@@ -238,7 +238,7 @@ export const TOUR_HUD = [
 export const TOUR_RECOVERY = [
   {
     title: 'Empréstimo',
-    body: `Peça um único empréstimo (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% do valor de compra dos seus Bens como garantia). Na casa Despesas Operacionais da próxima rodada você devolve o valor. Sem caixa, cada item do patrimônio vale ${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do que pagou; se ainda não der, é falência.`,
+    body: `Peça um único empréstimo (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% do valor de compra dos seus Bens como garantia). Na casa Despesas Operacionais da próxima rodada você devolve o valor + ${Math.round(MANUAL_CONSTANTS.loanInterestRatio * 100)}% de juros. Sem caixa, cada item do patrimônio vale ${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do que pagou; se ainda não der, é falência.`,
   },
   {
     title: 'Reduzir Mix/ERP',

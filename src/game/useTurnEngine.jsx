@@ -2141,7 +2141,7 @@ export function useTurnEngine({
             if (pendingTurnDataRef.current) pendingTurnDataRef.current.nextPlayers = localPlayers
 
             appendLog(`${meNow.name} pagou despesas operacionais: -$${expense.toLocaleString()}`)
-            if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado: -$${loanCharge.toLocaleString()}`)
+            if (loanCharge > 0) appendLog(`${meNow.name} teve empréstimo cobrado (valor + 50% juros): -$${loanCharge.toLocaleString()}`)
             
             // WHY: Aguarda UI atualizar e locks limparem antes de prosseguir para próximo evento (ex: Sorte & Revés)
             await tickAfterModal()

@@ -20,6 +20,7 @@ import {
   armLoanAfterRevenue,
   applyLoanCharge,
   shouldChargeLoan,
+  loanChargeAmount,
   buildRecoveryFireDeltas,
   computeRecoveryFireCredit,
 } from '../loanCycle.js'
@@ -110,14 +111,17 @@ test('pt3 kit start: 18k / 4k / fat 770 / desp 1150', () => {
 })
 
 // --- pt4: empréstimo ---
-test('pt4 empréstimo: take → próxima rodada cobra → bloqueia 2ª', () => {
-  let p = { id: 'p1', cash: 500, bens: 4000, loanTakenInMatch: false, loanPending: null }
+test('pt4 empréstimo: take → próxima rodada cobra principal+50% juros → bloqueia 2ª', () => {
+  assert.equal(MANUAL_CONSTANTS.loanInterestRatio, 0.5)
+  assert.equal(loanChargeAmount({ amount: 2000 }), 3000)
+
+  let p = { id: 'p1', cash: 1500, bens: 4000, loanTakenInMatch: false, loanPending: null }
   assert.equal(canTakeLoan(p), true)
 
   const taken = applyLoanTake(p, 2000, 1)
   assert.equal(taken.ok, true)
   p = taken.player
-  assert.equal(p.cash, 2500)
+  assert.equal(p.cash, 3500)
   assert.equal(p.loanTakenInMatch, true)
   assert.equal(p.loanPending.waitingFullLap, true)
   assert.equal(p.loanPending.eligibleOnExpenses, false)
@@ -137,14 +141,14 @@ test('pt4 empréstimo: take → próxima rodada cobra → bloqueia 2ª', () => {
   assert.equal(canTakeLoan(p), false)
   assert.equal(applyLoanTake(p, 1000, 2).ok, false)
 
-  // Próxima rodada (Despesas): cobra o valor emprestado
+  // Próxima rodada (Despesas): cobra valor + 50% de juros
   assert.equal(
     shouldChargeLoan({ loanPending: pending, lastChargedLoanId: null, currentRound: 2 }),
     true,
   )
   charge = applyLoanCharge({ ...p, loanPending: pending }, { currentRound: 2 })
   assert.equal(charge.charged, true)
-  assert.equal(charge.amount, 2000)
+  assert.equal(charge.amount, 3000)
   assert.equal(charge.player.cash, 500)
   assert.equal(charge.player.loanPending, null)
   assert.equal(charge.player.lastChargedLoanId, 'loan:p1:1')

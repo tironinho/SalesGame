@@ -27,7 +27,7 @@ export default function RecoveryMenu({
 
       <ul style={S.bullets}>
         <li>
-          <b>Empréstimo:</b> único na partida, até {`$ ${loanAvailable}`} (50% do valor de compra dos bens). Quita na casa Despesas Operacionais da próxima rodada. Sem caixa, liquide itens a 50% do valor pago; se não bastar, falência.
+          <b>Empréstimo:</b> único na partida, até {`$ ${loanAvailable}`} (50% do valor de compra dos bens). Quita na casa Despesas Operacionais da próxima rodada com 50% de juros. Sem caixa, liquide itens a 50% do valor pago; se não bastar, falência.
         </li>
         <li>
           <b>Reduzir:</b> baixa níveis de MIX ou ERP e recebe 50% do valor pago de volta ao caixa.
