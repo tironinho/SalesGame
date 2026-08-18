@@ -16,6 +16,7 @@ import {
   shouldApplyIncomingState,
   applyGamePatchToState,
   isValidCashPatchValue,
+  isAuthoritativeStartState,
 } from '../playerStateSync.js'
 import {
   __resetSharedTurnSkipGuardForTests,
@@ -261,6 +262,30 @@ describe('BASELINE / STALE PATCH', () => {
     assert.equal(cash.found, true)
     assert.equal(cash.cash, 12000)
     assert.notEqual(cash.cash, 0)
+  })
+
+  it('18b. LOCK no início da partida não é START', () => {
+    const players = [
+      { id: 'a', pos: 0 },
+      { id: 'b', pos: 0 },
+    ]
+    assert.equal(
+      isAuthoritativeStartState({
+        kind: 'LOCK',
+        round: 1,
+        players,
+        turnLock: true,
+      }),
+      false
+    )
+    assert.equal(
+      isAuthoritativeStartState({ kind: 'START', round: 1, players }),
+      true
+    )
+    assert.equal(
+      isAuthoritativeStartState({ round: 1, players, gameOver: false }),
+      true
+    )
   })
 })
 

@@ -4,7 +4,11 @@
 import { useEffect, useRef } from 'react'
 import { listLobbyPresence } from '../lib/lobbies.js'
 import { resolveTurnSkipAuthority } from './canonicalPresence.js'
-import { shouldAttemptTimerAutoPass } from './turnTimerLogic.js'
+import {
+  remainingTurnMs,
+  shouldArmTimerSkipForTurn,
+  shouldAttemptTimerAutoPass,
+} from './turnTimerLogic.js'
 import {
   getLastSharedSkipKey,
   getSharedSkipInFlight,
@@ -61,6 +65,8 @@ export function useTurnTimerAutoPass({
   const attemptRef = useRef(attemptSkipTurn)
   const turnTimeSecRef = useRef(turnTimeSec)
   const lobbyHostIdRef = useRef(lobbyHostId)
+  const armedKeyRef = useRef('')
+  const skipArmedRef = useRef(false)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
@@ -92,6 +98,18 @@ export function useTurnTimerAutoPass({
 
       const roster = Array.isArray(playersRef.current) ? playersRef.current : []
       const now = Date.now()
+      const turnKey = `${curTurnId}|${curTurnSeq}`
+      const remaining = remainingTurnMs(deadlineRef.current, now)
+      if (armedKeyRef.current !== turnKey) {
+        armedKeyRef.current = turnKey
+        skipArmedRef.current = shouldArmTimerSkipForTurn({ remainingMs: remaining })
+        if (!skipArmedRef.current) {
+          devLog('[turn-timer] skip desarmado no handoff rem=' + remaining)
+        }
+      } else if (!skipArmedRef.current && shouldArmTimerSkipForTurn({ remainingMs: remaining })) {
+        skipArmedRef.current = true
+      }
+      if (!skipArmedRef.current) return
 
       let amCoordinator = false
       let authReason = 'local'

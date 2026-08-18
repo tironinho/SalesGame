@@ -61,7 +61,7 @@ import {
   DEFAULT_TURN_TIME_SEC,
   normalizeTurnTime,
 } from './game/turnTimeConfig.js'
-import { computeTurnDeadlineAt } from './game/turnTimerLogic.js'
+import { computeTurnDeadlineAt, sanitizeTurnDeadlineOnHandoff } from './game/turnTimerLogic.js'
 import {
   mergePlayersById,
   buildPlayersDeltaById,
@@ -69,6 +69,7 @@ import {
   resolveMyCash,
   planRosterApply,
   shouldApplyIncomingState,
+  isAuthoritativeStartState,
 } from './game/playerStateSync.js'
 
 // Versão do tabuleiro (persistida no JSON da partida)
@@ -333,6 +334,7 @@ export default function App() {
   const [turnDeadlineAt, setTurnDeadlineAt] = useState(null)
   const turnDeadlineAtRef = useRef(turnDeadlineAt)
   useEffect(() => { turnDeadlineAtRef.current = turnDeadlineAt }, [turnDeadlineAt])
+  const prevTurnIdentityRef = useRef({ id: null, seq: 0 })
   const [turnIdx, setTurnIdx] = useState(0)
   const [turnPlayerId, setTurnPlayerId] = useState(null) // ✅ CORREÇÃO: ID do jogador da vez (autoritativo)
   const [roundFlags, setRoundFlags] = useState(new Array(1).fill(false)) // quem já cruzou a casa 1
@@ -344,6 +346,27 @@ export default function App() {
   const [lastRollTurnKey, setLastRollTurnKey] = useState(null)
   // ✅ turnSeq: contador monotônico do turno (1 jogador: 0→1→2…; evita [ROLL_BLOCK])
   const [turnSeq, setTurnSeq] = useState(0)
+
+  // Handoff: se o prazo veio estourado do jogador anterior, recomeça o relógio.
+  useEffect(() => {
+    const prev = prevTurnIdentityRef.current
+    const nextId = turnPlayerId != null ? String(turnPlayerId) : ''
+    const nextSeq = Number(turnSeq) || 0
+    const sanitized = sanitizeTurnDeadlineOnHandoff({
+      prevTurnPlayerId: prev.id,
+      nextTurnPlayerId: nextId,
+      prevTurnSeq: prev.seq,
+      nextTurnSeq: nextSeq,
+      currentDeadlineAt: turnDeadlineAtRef.current,
+      now: Date.now(),
+      turnTimeSec: turnTimeSecRef.current,
+    })
+    prevTurnIdentityRef.current = { id: nextId, seq: nextSeq }
+    if (Number.isFinite(Number(sanitized)) && Number(sanitized) !== Number(turnDeadlineAtRef.current)) {
+      setTurnDeadlineAt(Number(sanitized))
+      turnDeadlineAtRef.current = Number(sanitized)
+    }
+  }, [turnPlayerId, turnSeq])
 
   // ===== Última rolagem do dado (somente apresentação; não entra em regras) =====
   const [lastRollUI, setLastRollUI] = useState(null)
@@ -1251,15 +1274,7 @@ export default function App() {
 
     const versionIsNumber = (typeof incomingNetVersion === 'number')
 
-    // Detecta START/RESET (mesma heurística do teu código, mas usada ANTES do gate)
-    const heuristicReset = (
-      nr === 1 &&
-      Array.isArray(np) && np.length > 0 &&
-      np.every(p => Number(p?.pos ?? 0) === 0) &&
-      (incomingNetState.gameOver === false || incomingNetState.gameOver == null) &&
-      !incomingNetState.winner
-    )
-    const isStartState = (incomingNetState.kind === 'START') || (incomingNetState.isStartGame === true) || heuristicReset
+    const isStartState = isAuthoritativeStartState(incomingNetState)
 
     let incomingBoardVersion
     try {
@@ -2486,7 +2501,8 @@ export default function App() {
   const nextStepIsMyTurn = !gameOver && !me?.bankrupt && isMyTurn && controlsCanRoll && !turnAbsenceStatus && !hostPromotedHint
 
   const onControlsAction = (act) => {
-    // Dado 3D no tabuleiro: atrasa o ROLL do motor até a animação terminar (sem mudar regras).
+    // Dado 3D é só visual. O motor aplica o ROLL na hora — senão o peão
+    // não anda e o host pode passar a vez no meio da animação.
     if (act?.type === 'ROLL' && controlsCanRoll) {
       const steps = Number(act.steps)
       if (!Number.isInteger(steps) || steps < 1 || steps > 6) {
@@ -2497,7 +2513,6 @@ export default function App() {
         console.warn('[dice] ROLL ignorado — animação ainda em andamento')
         return
       }
-      // Gesto do usuário: desbloqueia áudio aqui (antes do overlay montar).
       unlockDiceAudio().catch(() => {})
       diceInFlightRef.current = true
       setIsRollingUI(true)
@@ -2505,13 +2520,13 @@ export default function App() {
       const localKey = `local:${currentTurnKey || turnSeq || Date.now()}`
       diceAnimatedKeysRef.current.add(localKey)
       if (currentTurnKey) diceAnimatedKeysRef.current.add(String(currentTurnKey))
-      // Lock compartilhado: o coordenador não pode pular o turno no meio do dado.
       setTurnLockBroadcast(true, String(myUid))
+      onAction(act)
       setDiceFx({
         id: localKey,
         steps,
         playerName: meHudLive?.name || meHud?.name || 'Jogador',
-        pendingAction: act,
+        pendingAction: null,
         expectedTurnPlayerId: String(turnPlayerId),
         expectedTurnSeq: Number(turnSeq) || 0,
       })

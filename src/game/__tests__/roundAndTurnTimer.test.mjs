@@ -29,6 +29,8 @@ import {
   readMatchConfigFromRoomState,
   turnAttemptKey,
   normalizeMatchConfig,
+  sanitizeTurnDeadlineOnHandoff,
+  shouldArmTimerSkipForTurn,
 } from '../turnTimerLogic.js'
 import {
   __resetSharedTurnSkipGuardForTests,
@@ -139,6 +141,38 @@ describe('TIMER', () => {
     assert.equal(d2, t0 + 5_000 + 90_000)
     assert.notEqual(d1, d2)
     assert.equal(remainingTurnMs(d1, t0), 90_000)
+  })
+
+  it('11b. handoff com prazo estourado gera relógio novo', () => {
+    const now = 500_000
+    const leftover = now - 5_000
+    const next = sanitizeTurnDeadlineOnHandoff({
+      prevTurnPlayerId: 'a',
+      nextTurnPlayerId: 'b',
+      prevTurnSeq: 1,
+      nextTurnSeq: 2,
+      currentDeadlineAt: leftover,
+      now,
+      turnTimeSec: 90,
+    })
+    assert.equal(next, now + 90_000)
+    assert.equal(shouldArmTimerSkipForTurn({ remainingMs: remainingTurnMs(leftover, now) }), false)
+    assert.equal(shouldArmTimerSkipForTurn({ remainingMs: 90_000 }), true)
+  })
+
+  it('11c. mesmo turno não reinicia prazo válido', () => {
+    const now = 500_000
+    const deadline = now + 40_000
+    const same = sanitizeTurnDeadlineOnHandoff({
+      prevTurnPlayerId: 'b',
+      nextTurnPlayerId: 'b',
+      prevTurnSeq: 2,
+      nextTurnSeq: 2,
+      currentDeadlineAt: deadline,
+      now,
+      turnTimeSec: 90,
+    })
+    assert.equal(same, deadline)
   })
 
   it('12. timer zerado dispara apenas um avanço', () => {

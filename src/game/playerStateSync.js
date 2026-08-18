@@ -293,6 +293,32 @@ export function mergeRosterPreserveMissing(currentPlayers = [], incomingPlayers 
 }
 
 /**
+ * START de verdade. LOCK/TURN/PLAYER_DELTA com todos em pos 0 (início da
+ * partida) NÃO é reset — isso zerava lock/turnSeq no meio do dado.
+ */
+export function isAuthoritativeStartState(incoming = {}) {
+  if (!incoming || typeof incoming !== 'object') return false
+  if (incoming.kind === 'START' || incoming.isStartGame === true) return true
+
+  const kind = incoming.kind
+  if (
+    kind === 'LOCK' ||
+    kind === 'TURN' ||
+    kind === 'PLAYER_DELTA' ||
+    kind === 'ENDGAME'
+  ) {
+    return false
+  }
+
+  const np = Array.isArray(incoming.players) ? incoming.players : null
+  const nr = Number.isInteger(incoming.round) ? incoming.round : null
+  if (nr !== 1 || !np || np.length === 0) return false
+  if (!np.every((p) => Number(p?.pos ?? 0) === 0)) return false
+  if (incoming.gameOver === true || incoming.winner) return false
+  return true
+}
+
+/**
  * Gate de versão: snapshot stale (version menor) não aplica.
  * stateId novo com version mais antiga também não.
  */

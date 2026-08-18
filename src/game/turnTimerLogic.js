@@ -29,6 +29,46 @@ export function remainingTurnMs(turnDeadlineAt, nowMs = Date.now()) {
 }
 
 /**
+ * Se o próximo jogador herda um prazo já estourado (ou com poucos segundos),
+ * o coordenador pulava a vez na hora — “passa a vez sem jogar”.
+ */
+export const TURN_HANDOFF_STALE_REMAINING_MS = 20_000
+
+export function sanitizeTurnDeadlineOnHandoff({
+  prevTurnPlayerId,
+  nextTurnPlayerId,
+  prevTurnSeq,
+  nextTurnSeq,
+  currentDeadlineAt,
+  now = Date.now(),
+  turnTimeSec,
+} = {}) {
+  const handedOff =
+    String(prevTurnPlayerId ?? '') !== String(nextTurnPlayerId ?? '') ||
+    (Number(prevTurnSeq) || 0) !== (Number(nextTurnSeq) || 0)
+
+  const fresh = () => computeTurnDeadlineAt(now, turnTimeSec)
+  const current = Number(currentDeadlineAt)
+
+  if (!handedOff) {
+    return Number.isFinite(current) ? current : fresh()
+  }
+
+  const remaining = remainingTurnMs(current, now)
+  if (remaining < TURN_HANDOFF_STALE_REMAINING_MS) {
+    return fresh()
+  }
+  return current
+}
+
+export function shouldArmTimerSkipForTurn({
+  remainingMs,
+  minRemainingMs = TURN_HANDOFF_STALE_REMAINING_MS,
+} = {}) {
+  return Number(remainingMs) >= Number(minRemainingMs)
+}
+
+/**
  * Config da partida no lobby / rooms.state (fonte única).
  */
 export function normalizeMatchConfig(partial = {}, fallbacks = {}) {
