@@ -14,6 +14,7 @@ import {
 import {
   TOKEN_HOP_MAX_STEPS,
   TOKEN_HOP_STEP_MS,
+  normalizeBoardPos,
   planTokenHop,
 } from './tokenHop.js'
 import { playTokenHopSound, unlockTokenHopAudio } from '../../utils/tokenHopSound.js'
@@ -33,7 +34,8 @@ const TOKEN_CELL_OFFSETS = Object.freeze([
 
 const getTokenVisualPosition = (index, layout, slot) => {
   const { columns, rows } = BOARD_VISUAL_LAYOUTS[layout]
-  const { row, column } = getBoardVisualCoordinate(index, layout)
+  const safeIndex = normalizeBoardPos(index, TRACK_LEN)
+  const { row, column } = getBoardVisualCoordinate(safeIndex, layout)
   const offset = TOKEN_CELL_OFFSETS[slot % TOKEN_CELL_OFFSETS.length]
   return {
     x: `${((column - 0.5 + offset.x) / columns) * 100}%`,
@@ -211,7 +213,10 @@ export default function LandscapeBoard({
 
   const renderedPlayers = useMemo(() => players.map((player) => ({
     player,
-    position: visualPositions[String(player?.id)] ?? normalizePosition(player?.pos),
+    position: normalizeBoardPos(
+      visualPositions[String(player?.id)] ?? player?.pos,
+      TRACK_LEN,
+    ),
   })), [players, visualPositions])
 
   const slotById = useMemo(

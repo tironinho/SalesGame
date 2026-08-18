@@ -151,12 +151,12 @@ describe('sidebar player summary layout', () => {
       /@media \(min-width:\s*900px\) and \(max-width:\s*1199px\) and \(orientation:\s*landscape\) and \(max-height:\s*700px\)/,
     )
     assert.match(tablet, /--side-w:\s*clamp\(290px,\s*30vw,\s*320px\)/)
-    assert.match(tablet, /aspect-ratio:\s*auto/)
+    assert.match(tablet, /aspect-ratio:\s*13\s*\/\s*9/)
     assert.match(tablet, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/)
     assert.match(tablet, /\.diceResult\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/)
     assert.match(tablet, /\.btn\.go\s*\{[^}]*min-height:\s*58px/)
     assert.match(tablet, /\.sideSecondary\s*\{[^}]*flex:\s*1\s+1\s+auto/)
-    assert.doesNotMatch(tablet, /aspect-ratio:\s*13\s*\/\s*9/)
+    assert.doesNotMatch(tablet, /container-type:\s*size/)
     // startSummaryNote pode usar display:none; controles do jogo na sidebar não
     assert.doesNotMatch(tablet, /\.side\s+\.controlsSticky[^{]*\{[^}]*display:\s*none/)
     assert.doesNotMatch(tablet, /\.turnPrimaryActions[^{]*\{[^}]*display:\s*none/)
@@ -236,6 +236,19 @@ describe('sidebar player summary layout', () => {
     assert.match(block, /hudSheetBackdrop/)
     assert.match(block, /\.side\s*>\s*\.hud--inline\s*\{[^}]*display:\s*none/)
     assert.doesNotMatch(block, /grid-template-rows:\s*minmax\(88px,\s*1fr\)/)
+  })
+
+  it('desktop board contain 13/9 sem container-type size (evita área preta)', () => {
+    const marker = css.indexOf('/* BOARD V2 — encaixe-base desktop')
+    assert.ok(marker >= 0)
+    const end = css.indexOf('/* TABLET paisagem baixa', marker)
+    const desktop = css.slice(marker, end > marker ? end : marker + 2500)
+    const mediaStart = desktop.indexOf('@media')
+    const rules = desktop.slice(mediaStart)
+    assert.match(rules, /aspect-ratio:\s*13\s*\/\s*9/)
+    assert.match(rules, /max-height:\s*100%/)
+    assert.doesNotMatch(rules, /container-type:\s*size/)
+    assert.doesNotMatch(rules, /100cqh/)
   })
 
   it('overrides iOS landscape ficam atrás de html.sg-ios (Android intacto)', () => {
