@@ -7,6 +7,11 @@ import { getTileType } from './domain/tiles.js'
 
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './roundConfig'
 import { planOfflineTurnSkip } from './offlineTurnSkip.js'
+import {
+  applyBankruptcyState,
+  planMatchForfeit,
+  decideEndgameAfterBankruptcy as decideEndgameAfterBankruptcyPure,
+} from './matchForfeit.js'
 
 // Modal system
 import { useModal } from '../modals/ModalContext'
@@ -104,32 +109,6 @@ function pickNextAliveIndex(playersArr, fromIdx) {
   return Math.max(0, Math.min(start, n - 1))
 }
 
-const applyBankruptcyState = (p = {}) => {
-  console.log('[BANKRUPTCY DEBUG] applying bankruptcy state', {
-    playerId: p?.id,
-    name: p?.name,
-  })
-
-  return {
-    ...p,
-    bankrupt: true,
-    cash: 0,
-    bens: 0,
-    clients: 0,
-    vendedoresComuns: 0,
-    fieldSales: 0,
-    insideSales: 0,
-    gestores: 0,
-    gestoresComerciais: 0,
-    managers: 0,
-    manutencao: 0,
-    revenue: 0,
-    loanPending: null,
-    waitingAtRevenue: false,
-    mixProdutos: 'D',
-    erpLevel: 'D',
-  }
-}
 
 /**
  * Hook do motor de turnos.
@@ -428,32 +407,8 @@ export function useTurnEngine({
   }, [players, round, turnSeq, gameOver, uniquePlayerCount])
 
   const decideEndgameAfterBankruptcy = React.useCallback((nextPlayers) => {
-    const initialN = Math.max(initialPlayerCountRef.current ?? 0, uniquePlayerCount(nextPlayers))
-    const alive = countAlivePlayers(nextPlayers)
-
-    const shouldEnd = initialN <= 1 ? (alive === 0) : (alive <= 1)
-    if (!shouldEnd) return { shouldEnd: false, alive, winner: null }
-
-    // Winner: se sobrou 1 vivo, pega ele por id (bankrupt sticky)
-    let winnerPlayer = null
-    if (alive === 1) {
-      const byId = new Map()
-      for (const p of (nextPlayers || [])) {
-        const idRaw = p?.id
-        const id = idRaw === undefined || idRaw === null ? '' : String(idRaw)
-        if (!id) continue
-        const entry = byId.get(id) || { bankrupt: false, player: null }
-        if (p?.bankrupt) entry.bankrupt = true
-        if (!p?.bankrupt && !entry.player) entry.player = p
-        byId.set(id, entry)
-      }
-      for (const entry of byId.values()) {
-        if (!entry.bankrupt && entry.player) { winnerPlayer = entry.player; break }
-      }
-    }
-
-    return { shouldEnd: true, alive, winner: winnerPlayer }
-  }, [uniquePlayerCount])
+    return decideEndgameAfterBankruptcyPure(nextPlayers, initialPlayerCountRef.current)
+  }, [])
 
   // ✅ refs do estado mais recente (evita stale no tick / winner)
   const playersRef = React.useRef(players)
@@ -3082,6 +3037,129 @@ export function useTurnEngine({
     appendLog,
   ])
 
+  const applyCommittedForfeit = React.useCallback((plan, { reason } = {}) => {
+    if (!plan || !plan.ok || plan.alreadyBankrupt) return Promise.resolve(false)
+
+    const logName = plan.playerName || 'Jogador'
+    if (reason === 'LEAVE') {
+      appendLog(`${logName} saiu da partida e foi eliminado (falência).`)
+    } else {
+      appendLog(`${logName} declarou FALÊNCIA.`)
+    }
+
+    const nextPlayers = plan.nextPlayers
+    const playerDeltaIds = [plan.playerId]
+    const lastAction = reason === 'LEAVE' ? 'FORFEIT' : 'BANKRUPT'
+
+    if (plan.shouldEnd) {
+      const safeRound = currentRoundRef.current
+      const finalWinner = plan.winner
+      setWinner(finalWinner)
+      commitLocalPlayers(nextPlayers)
+      setGameOver(true)
+      gameOverRef.current = true
+      if (plan.wasTheirTurn) setTurnLockBroadcast(false)
+      return Promise.resolve(broadcastState(
+        nextPlayers,
+        plan.nextTurnIdx,
+        safeRound,
+        true,
+        finalWinner,
+        {
+          kind: 'ENDGAME',
+          isStartGame: false,
+          round: safeRound,
+          gameOver: true,
+          winner: finalWinner,
+          playerDeltaIds,
+          lastAction,
+        }
+      )).then(() => true)
+    }
+
+    commitLocalPlayers(nextPlayers)
+
+    if (plan.turnChanged) {
+      const nextTurnSeq = plan.nextTurnSeq
+      if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+      turnSeqRef.current = nextTurnSeq
+      const nextIdx = plan.nextTurnIdx >= 0 ? plan.nextTurnIdx : 0
+      setTurnIdx(nextIdx)
+      turnIdxRef.current = nextIdx
+      if (setTurnPlayerId) setTurnPlayerId(plan.nextTurnPlayerId)
+      turnPlayerIdRef.current = plan.nextTurnPlayerId
+      setTurnLockBroadcast(false)
+      if (reason === 'BANKRUPT') setShowBankruptOverlay?.(true)
+      return Promise.resolve(broadcastState(
+        nextPlayers,
+        nextIdx,
+        currentRoundRef.current,
+        false,
+        null,
+        {
+          kind: 'TURN',
+          isStartGame: false,
+          turnPlayerId: plan.nextTurnPlayerId,
+          turnSeq: nextTurnSeq,
+          lastRollTurnKey: null,
+          playerDeltaIds,
+          lastAction,
+        }
+      )).then(() => true)
+    }
+
+    return Promise.resolve(broadcastState(
+      nextPlayers,
+      plan.nextTurnIdx >= 0 ? plan.nextTurnIdx : turnIdxRef.current,
+      currentRoundRef.current,
+      false,
+      null,
+      {
+        kind: 'PLAYER_DELTA',
+        isStartGame: false,
+        playerDeltaIds,
+        lastAction,
+      }
+    )).then(() => true)
+  }, [
+    appendLog,
+    broadcastState,
+    commitLocalPlayers,
+    setGameOver,
+    setWinner,
+    setTurnSeq,
+    setTurnIdx,
+    setTurnPlayerId,
+    setTurnLockBroadcast,
+    setShowBankruptOverlay,
+  ])
+
+  const planSelfForfeit = React.useCallback((reason) => {
+    if (gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) {
+      return Promise.resolve(false)
+    }
+    const myId = myUid != null ? String(myUid) : ''
+    if (!myId) return Promise.resolve(false)
+
+    const curPlayers = pendingTurnDataRef.current?.nextPlayers || playersRef.current || players
+    const plan = planMatchForfeit({
+      players: curPlayers,
+      playerId: myId,
+      turnPlayerId: turnPlayerIdRef.current,
+      turnSeq: turnSeqRef.current,
+      round: currentRoundRef.current,
+      initialPlayerCount: initialPlayerCountRef.current,
+    })
+    if (!plan) return Promise.resolve(false)
+    if (plan.alreadyBankrupt) return Promise.resolve(true)
+    return applyCommittedForfeit(plan, { reason })
+  }, [applyCommittedForfeit, myUid, players])
+
+  const forfeitMatch = React.useCallback(
+    () => planSelfForfeit('LEAVE'),
+    [planSelfForfeit]
+  )
+
   const onAction = React.useCallback((act) => {
     if (!act?.type || gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current) return
 
@@ -3687,54 +3765,13 @@ export function useTurnEngine({
     }
 
     if (act.type === 'BANKRUPT') {
-      if (String(turnPlayerId) !== String(myUid)) return
+      if (String(turnPlayerIdRef.current) !== String(myUid)) return
+      planSelfForfeit('BANKRUPT')
+      return
+    }
 
-      const myId = String(myUid)
-      const curPlayers = pendingTurnDataRef.current?.nextPlayers || playersRef.current || players
-      const curIdx = curPlayers.findIndex(p => String(p.id) === myId)
-      if (curIdx < 0) return
-
-      const nextPlayers = curPlayers.map(p =>
-        String(p.id) === myId ? applyBankruptcyState(p) : p
-      )
-      appendLog(`${curPlayers[curIdx]?.name || 'Jogador'} declarou FALÊNCIA.`)
-
-      const decision = decideEndgameAfterBankruptcy(nextPlayers)
-      if (decision.shouldEnd) {
-        const safeRound = currentRoundRef.current
-        const finalWinner = decision.winner
-
-        setWinner(finalWinner)
-        commitLocalPlayers(nextPlayers)
-        setGameOver(true)
-        setTurnLockBroadcast(false)
-
-        broadcastState(nextPlayers, curIdx, safeRound, true, finalWinner, {
-          kind: 'ENDGAME',
-          round: safeRound,
-          gameOver: true,
-          winner: finalWinner,
-        })
-        return
-      }
-
-      const nextIdx = findNextActiveIndex(nextPlayers, curIdx)
-      const nextTurnPlayerId = nextIdx >= 0 ? (nextPlayers[nextIdx]?.id ? String(nextPlayers[nextIdx].id) : null) : null
-      const nextTurnSeq = (typeof turnSeqRef?.current === 'number' ? turnSeqRef.current : 0) + 1
-      if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
-      turnSeqRef.current = nextTurnSeq
-
-      commitLocalPlayers(nextPlayers)
-      setTurnIdx(nextIdx >= 0 ? nextIdx : 0)
-      if (setTurnPlayerId) setTurnPlayerId(nextTurnPlayerId)
-      setTurnLockBroadcast(false)
-      broadcastState(nextPlayers, nextIdx >= 0 ? nextIdx : 0, currentRoundRef.current, false, null, {
-        turnPlayerId: nextTurnPlayerId,
-        turnSeq: nextTurnSeq,
-        lastRollTurnKey: null,
-      })
-      setShowBankruptOverlay?.(true)
-      if (DEBUG_LOGS) console.log('[DEBUG] 🏁 BANKRUPT - próximo turno:', nextTurnPlayerId)
+    if (act.type === 'FORFEIT') {
+      planSelfForfeit('LEAVE')
       return
     }
     if (DEBUG_LOGS) console.log('[DEBUG] 🏁 advanceAndMaybeLap finalizada normalmente - posição final:', nextPlayers[curIdx]?.pos)
@@ -3745,6 +3782,7 @@ export function useTurnEngine({
     requireFunds, pushModal, awaitTop, closeTop, setShowBankruptOverlay,
     commitLocalPlayers, commitLocalMeta,
     decideEndgameAfterBankruptcy,
+    planSelfForfeit,
     resolvedBoardVersion, trackLen,
     onTileVisit,
   ])
@@ -3771,6 +3809,7 @@ export function useTurnEngine({
     onAction,
     nextTurn,
     skipAbsentTurn,
+    forfeitMatch,
     modalLocks,
     lockOwner,
   }

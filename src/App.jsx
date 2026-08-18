@@ -1006,7 +1006,7 @@ export default function App() {
       if (hasSkipExpect) {
         confirmSharedSkipKey(expectTurnId, expectTurnSeq)
       }
-      return
+      return Promise.resolve()
     }
     
     // Calcula versionamento e timestamp
@@ -1014,6 +1014,7 @@ export default function App() {
     const currentVersion = stateVersionRef.current
     const now = Date.now()
     
+    return new Promise((resolve) => {
     defer(async () => {
       let casLost = false
       try {
@@ -1177,7 +1178,10 @@ export default function App() {
       } catch (e) {
         if (hasSkipExpect) releaseSharedSkipKey(expectTurnId, expectTurnSeq)
         console.warn('[NET] commitGamePatch failed:', e?.message || e)
+      } finally {
+        resolve()
       }
+    })
     })
   }, [netCommit, myUid, DEBUG_LOGS])
   
@@ -1841,6 +1845,7 @@ export default function App() {
     // ✅ CORREÇÃO MULTIPLAYER: Detectar se é START GAME (snapshot completo) ou ação parcial (delta)
     // ✅ CORREÇÃO: Verifica explicitamente patch.isStartGame primeiro (não depende de safeRound que pode vir de estado antigo)
     const isStartGame = patch.isStartGame === true || (
+      patch.isStartGame !== false &&
       safeRound === 1 && 
       nextTurnIdx === 0 && 
       normalizedPlayers.every(p => Number(p?.pos ?? 0) === 0) &&
@@ -1848,6 +1853,7 @@ export default function App() {
       !winner       // ✅ Garante que não é um jogo antigo
     )
     
+    let patchCommit = Promise.resolve()
     if (isStartGame) {
       // ✅ START GAME: Usa commitRemoteState com snapshot completo (única exceção permitida)
       console.log('[App] broadcastState (START) - versão:', currentVersion, 'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
@@ -1910,7 +1916,7 @@ export default function App() {
       const hasStateChange = patchKind === 'TURN' || patchKind === 'LOCK' || patch.round !== undefined || patch.roundFlags !== undefined || patch.gameOver !== undefined || patch.winner !== undefined
       if (!hasPlayerDelta && !hasStateChange) {
         if (DEBUG_LOGS) console.log('[App] broadcastState skipped (no-op)', { actionId, patchKind })
-        return
+        return Promise.resolve()
       }
       
       // ✅ CORREÇÃO MULTIPLAYER: Usa commitGamePatch para fazer merge por delta
@@ -1983,7 +1989,7 @@ export default function App() {
           applyLastRollUI(statePatch.lastRoll)
         }
       }
-      commitGamePatch({
+      patchCommit = commitGamePatch({
         playersDeltaById,
         statePatch
       })
@@ -2027,6 +2033,7 @@ export default function App() {
         bcRef.current?.postMessage?.(syncPayload)
       } catch (e) { console.warn('[App] broadcastState failed:', e) }
     })
+    return patchCommit
   }
 
   function broadcastStart(nextPlayers, configuredMaxRounds = maxRoundsRef.current, configuredTurnTimeSec = turnTimeSecRef.current) {
@@ -2307,6 +2314,7 @@ export default function App() {
     onAction,
     nextTurn,
     skipAbsentTurn,
+    forfeitMatch,
     modalLocks,
   } = useTurnEngine({
     players, setPlayers,
@@ -3010,6 +3018,13 @@ export default function App() {
                 type="button"
                 className="btn dark"
                 onClick={async () => {
+                  if (!gameOver && myUid) {
+                    try {
+                      await forfeitMatch()
+                    } catch (error) {
+                      console.warn('[App] Erro ao eliminar jogador ao sair:', error)
+                    }
+                  }
                   if (currentLobbyId && myUid) {
                     try {
                       await leaveRoom({ roomCode: currentLobbyId, playerId: myUid })

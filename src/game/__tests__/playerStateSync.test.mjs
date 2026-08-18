@@ -124,6 +124,15 @@ describe('CASH / MERGE', () => {
     assert.equal(merged.clients, 3)
   })
 
+  it('10b. bankrupt sticky: delta false não ressuscita falido', () => {
+    const merged = mergePlayerPartial(
+      { id: 'a', cash: 0, bankrupt: true },
+      { bankrupt: false, cash: 12000 }
+    )
+    assert.equal(merged.bankrupt, true)
+    assert.equal(merged.cash, 12000)
+  })
+
   it('11. roster parcial não zera jogadores ausentes', () => {
     const current = [
       { id: 'a', cash: 1000 },

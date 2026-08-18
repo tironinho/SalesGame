@@ -11,6 +11,7 @@ import {
   resolveTurnSkipAuthority,
   pickPresenceCoordinator,
   isPresenceFresh,
+  isRosterPlayerBankrupt,
   GAME_OFFLINE_THRESHOLD_MS,
 } from '../canonicalPresence.js'
 import {
@@ -368,6 +369,16 @@ describe('SHARED SKIP GUARD / CAS', () => {
     // status waiting só quando !present — coberto pela condição
     const shouldWait = !present
     assert.equal(shouldWait, false)
+  })
+
+  it('16b. jogador da vez falido não conta como desconexão', () => {
+    const roster = [
+      { id: 'A', bankrupt: true },
+      { id: 'B', bankrupt: false },
+    ]
+    assert.equal(isRosterPlayerBankrupt(roster, 'A'), true)
+    assert.equal(isRosterPlayerBankrupt(roster, 'B'), false)
+    assert.equal(isRosterPlayerBankrupt(roster, 'ghost'), false)
   })
 
   it('19. host migration: novo host no roster pode ser autoridade de fallback', () => {

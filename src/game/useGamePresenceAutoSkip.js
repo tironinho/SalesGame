@@ -15,6 +15,7 @@ import {
   resolveGamePresencePlayerId,
   isTurnPlayerPresent,
   resolveTurnSkipAuthority,
+  isRosterPlayerBankrupt,
 } from './canonicalPresence.js'
 import {
   getSharedSkipInFlight,
@@ -162,6 +163,10 @@ export function useGamePresenceAutoSkip({
       const curTurnSeq = Number(turnSeqRef.current) || 0
       clearSharedSkipKeyIfStale(curTurnId, curTurnSeq)
       if (!curTurnId || roster.length === 0) {
+        setStatus(null)
+        return
+      }
+      if (isRosterPlayerBankrupt(roster, curTurnId)) {
         setStatus(null)
         return
       }

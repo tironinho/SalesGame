@@ -49,6 +49,15 @@ function rosterHas(roster, playerId) {
   return (roster || []).some((p) => p && String(p.id) === id)
 }
 
+/** Jogador do turno já falido (saída/falência) — não tratar como desconexão. */
+export function isRosterPlayerBankrupt(roster = [], playerId) {
+  const id = playerId != null ? String(playerId) : ''
+  if (!id) return false
+  return (roster || []).some(
+    (p) => p && String(p.id) === id && p.bankrupt === true
+  )
+}
+
 /**
  * PlayerId usado para heartbeat/presença durante o GAME.
  * Só retorna o assento canônico se estiver no roster.

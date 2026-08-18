@@ -36,6 +36,12 @@ export function mergePlayerPartial(existing, delta = {}) {
       continue
     }
 
+    if (key === 'bankrupt') {
+      // Falência é sticky: um delta false não ressuscita quem já saiu/faliu.
+      base.bankrupt = !!(base.bankrupt || value)
+      continue
+    }
+
     if (value === undefined) continue
     base[key] = value
   }
