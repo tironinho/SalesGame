@@ -54,4 +54,24 @@ describe('rankPlayersByPatrimonio / pickWinnerByPatrimonio', () => {
       null,
     )
   })
+
+  it('reordena 1º/2º/3º/4º quando caixa e bens mudam no andamento', () => {
+    const start = rankPlayersByPatrimonio([
+      { id: 'a', name: 'Ana', cash: 18000, bens: 4000 },
+      { id: 'b', name: 'Bruno', cash: 18000, bens: 4000 },
+      { id: 'c', name: 'Carla', cash: 18000, bens: 4000 },
+      { id: 'd', name: 'Diego', cash: 18000, bens: 4000 },
+    ])
+    assert.deepEqual(start.map((p) => p.name), ['Ana', 'Bruno', 'Carla', 'Diego'])
+
+    const later = rankPlayersByPatrimonio([
+      { id: 'a', name: 'Ana', cash: 9000, bens: 4000 },
+      { id: 'b', name: 'Bruno', cash: 5000, bens: 12000 },
+      { id: 'c', name: 'Carla', cash: 22000, bens: 2000 },
+      { id: 'd', name: 'Diego', cash: 1000, bens: 1000 },
+    ])
+    assert.deepEqual(later.map((p) => p.name), ['Carla', 'Bruno', 'Ana', 'Diego'])
+    assert.equal(later[0].patrimonio, 24000)
+    assert.equal(later[1].patrimonio, 17000)
+  })
 })

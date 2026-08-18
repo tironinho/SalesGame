@@ -32,6 +32,8 @@ describe('sidebar player summary layout', () => {
     assert.match(hud, /game-stats-card/)
     assert.match(hud, /game-stats-section/)
     assert.match(hud, /Placar/)
+    assert.match(hud, /rankPlayersByPatrimonio/)
+    assert.match(hud, /scorePlace/)
     assert.match(hud, /export default function HUD\(\{\s*totals,\s*players\s*\}\)/)
     assert.match(app, /<HUD\s+totals=\{totals\}\s+players=\{players\}/)
     assert.match(hud, /Faturamento|buildGameStatSections/)

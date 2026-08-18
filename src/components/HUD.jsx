@@ -1,11 +1,19 @@
-import React, { useEffect } from 'react'
-import { computePatrimonio } from '../game/patrimonio.js'
+import React, { useEffect, useMemo } from 'react'
+import { rankPlayersByPatrimonio } from '../game/patrimonio.js'
 import { buildGameStatSections } from './gameStats.js'
 
 const DEBUG_LOGS = import.meta.env.DEV && localStorage.getItem('SG_DEBUG_LOGS') === '1'
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('pt-BR')
+}
+
 export default function HUD({ totals, players }) {
   const statSections = buildGameStatSections(totals)
+  const rankedPlayers = useMemo(
+    () => rankPlayersByPatrimonio(Array.isArray(players) ? players : []),
+    [players]
+  )
 
   useEffect(() => {
     if (!DEBUG_LOGS) return
@@ -38,23 +46,45 @@ export default function HUD({ totals, players }) {
         <div className="title hudHelp" title="Patrimônio = Caixa + Bens. Critério de vitória no fim da partida.">
           Placar
         </div>
-        <p className="scorePatrimonioNote">Patrimônio = Caixa + Bens</p>
-        {players.map((player) => (
-          <div className="row" key={player.id}>
-            <span>{player.name}</span>
-            <span className="scoreValues">
-              <span className="hudHelp" title="Dinheiro disponível para compras, despesas e decisões.">
-                Caixa {Number(player.cash || 0).toLocaleString('pt-BR')}
+        <p className="scorePatrimonioNote">
+          1º ao 4º por patrimônio (Caixa + Bens). Atualiza durante a partida.
+        </p>
+        {rankedPlayers.map((player, index) => {
+          const place = index + 1
+          const rowClass = [
+            'row',
+            place === 1 && !player.isBankrupt ? 'is-leader' : '',
+            player.isBankrupt ? 'is-bankrupt' : '',
+          ].filter(Boolean).join(' ')
+
+          return (
+            <div className={rowClass} key={player.id || `${player.name}-${index}`}>
+              <span className="scoreName">
+                <span className="scorePlace" aria-label={`${place}º lugar`}>
+                  {place}º
+                </span>
+                <span className="scorePlayerName">
+                  {player.name}
+                  {player.isBankrupt ? ' (falido)' : ''}
+                </span>
               </span>
-              <span
-                className="hudHelp scorePatrimonio"
-                title="Patrimônio = Caixa + Bens (mesmo critério do pódio final)."
-              >
-                Pat. {computePatrimonio(player).toLocaleString('pt-BR')}
+              <span className="scoreValues">
+                <span className="hudHelp" title="Dinheiro disponível para compras, despesas e decisões.">
+                  Caixa {formatMoney(player.cash)}
+                </span>
+                <span className="hudHelp" title="Bens acumulados na partida.">
+                  Bens {formatMoney(player.bens)}
+                </span>
+                <span
+                  className="hudHelp scorePatrimonio"
+                  title="Patrimônio = Caixa + Bens (mesmo critério do pódio final)."
+                >
+                  Pat. {formatMoney(player.patrimonio)}
+                </span>
               </span>
-            </span>
-          </div>
-        ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
