@@ -2363,6 +2363,7 @@ export default function App() {
     turnPlayerId,
     turnSeq,
     gameOver,
+    turnLock: turnLock || !!diceFx,
     attemptSkipTurn: skipAbsentTurn,
     onStatus: setTurnAbsenceStatus,
   })
@@ -2504,11 +2505,15 @@ export default function App() {
       const localKey = `local:${currentTurnKey || turnSeq || Date.now()}`
       diceAnimatedKeysRef.current.add(localKey)
       if (currentTurnKey) diceAnimatedKeysRef.current.add(String(currentTurnKey))
+      // Lock compartilhado: o coordenador não pode pular o turno no meio do dado.
+      setTurnLockBroadcast(true, String(myUid))
       setDiceFx({
         id: localKey,
         steps,
         playerName: meHudLive?.name || meHud?.name || 'Jogador',
         pendingAction: act,
+        expectedTurnPlayerId: String(turnPlayerId),
+        expectedTurnSeq: Number(turnSeq) || 0,
       })
       return
     }
@@ -2527,19 +2532,37 @@ export default function App() {
     setDiceFx(null)
     diceInFlightRef.current = false
 
-    if (pending) {
+    const expectedId = fx?.expectedTurnPlayerId != null ? String(fx.expectedTurnPlayerId) : ''
+    const expectedSeq = Number(fx?.expectedTurnSeq)
+    const liveId = String(turnPlayerId || '')
+    const liveSeq = Number(turnSeq) || 0
+    const stillSameTurn =
+      !!pending &&
+      !!expectedId &&
+      expectedId === liveId &&
+      expectedId === String(myUid || '') &&
+      (!Number.isFinite(expectedSeq) || expectedSeq === liveSeq)
+
+    if (stillSameTurn) {
       try {
         onAction(pending)
       } catch (err) {
         console.error('[dice] falha ao aplicar ROLL após animação', err)
       }
+    } else if (pending) {
+      console.warn('[dice] ROLL descartado — turno mudou durante a animação', {
+        expectedId,
+        liveId,
+        expectedSeq,
+        liveSeq,
+      })
     }
     clearRollingTimeout()
     rollingTimeoutRef.current = setTimeout(() => {
       setIsRollingUI(false)
       rollingTimeoutRef.current = null
     }, 200)
-  }, [clearRollingTimeout, onAction])
+  }, [clearRollingTimeout, onAction, turnPlayerId, turnSeq, myUid])
 
   useEffect(() => {
     handleDiceFxCompleteRef.current = handleDiceFxComplete

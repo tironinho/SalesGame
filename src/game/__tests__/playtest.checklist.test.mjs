@@ -238,3 +238,14 @@ test('pt8b motor usa loanCycle (wiring)', () => {
   assert.match(eng, /shouldChargeLoan/)
   assert.match(eng, /currentRound:\s*currentRoundRef\.current/)
 })
+
+test('pt9 skip de turno não corta o dado 3D', () => {
+  const eng = read('src/game/useTurnEngine.jsx')
+  assert.match(eng, /shouldRejectAbsentTurnSkip/)
+  const app = read('src/App.jsx')
+  assert.match(app, /setTurnLockBroadcast\(true, String\(myUid\)\)/)
+  assert.match(app, /ROLL descartado/)
+  const presence = read('src/game/useGamePresenceAutoSkip.js')
+  assert.match(presence, /shouldAttemptPresenceAutoSkip/)
+  assert.match(presence, /turnLock:/)
+})

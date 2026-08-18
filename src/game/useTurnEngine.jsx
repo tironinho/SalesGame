@@ -7,6 +7,7 @@ import { getTileType } from './domain/tiles.js'
 
 import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './roundConfig'
 import { planOfflineTurnSkip } from './offlineTurnSkip.js'
+import { shouldRejectAbsentTurnSkip } from './presenceSkipLogic.js'
 import {
   applyBankruptcyState,
   planMatchForfeit,
@@ -172,6 +173,8 @@ export function useTurnEngine({
   React.useEffect(() => {
     lastRollTurnKeyRef.current = lastRollTurnKey ?? null
   }, [lastRollTurnKey])
+  const turnLockRef = React.useRef(!!turnLock)
+  React.useEffect(() => { turnLockRef.current = !!turnLock }, [turnLock])
 
   const turnSeqRef = React.useRef(turnSeq ?? 0)
   React.useEffect(() => {
@@ -594,12 +597,12 @@ export function useTurnEngine({
   // ========= ação de andar no tabuleiro (inclui TODA a lógica de casas/modais) =========
   const advanceAndMaybeLap = React.useCallback((steps, deltaCash, note) => {
     console.log('[DEBUG] 🎯 advanceAndMaybeLap chamada - steps:', steps, 'deltaCash:', deltaCash, 'note:', note)
-    if (gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current || !players.length) return
+    if (gameOverRef.current || endGamePendingRef.current || endGameFinalizedRef.current || !players.length) return false
 
     // ✅ CORREÇÃO: Verifica se já há uma mudança de turno em progresso
     if (turnChangeInProgressRef.current) {
       console.warn('[DEBUG] ⚠️ advanceAndMaybeLap - mudança de turno já em progresso, ignorando')
-      return
+      return false
     }
 
     // ✅ CORREÇÃO: Verifica se há modais abertas antes de iniciar
@@ -610,7 +613,7 @@ export function useTurnEngine({
       })
       // Consolida retries até liberar (antes: 1 tentativa de 200ms descartava o movimento)
       pendingAdvanceArgsRef.current = { steps, deltaCash, note }
-      if (advanceRetryTimerRef.current) return
+      if (advanceRetryTimerRef.current) return true
       let attempts = 0
       const maxAttempts = 25 // ~5s
       const scheduleRetry = () => {
@@ -630,10 +633,17 @@ export function useTurnEngine({
           }
           pendingAdvanceArgsRef.current = null
           console.warn('[DEBUG] ⚠️ advanceAndMaybeLap - desistiu após retries; movimento descartado')
+          const key = typeof turnSeqRef.current === 'number' ? String(turnSeqRef.current) : null
+          if (key && lastRollTurnKeyRef.current === key) {
+            lastRollTurnKeyRef.current = null
+            try {
+              if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+            } catch {}
+          }
         }, 200)
       }
       scheduleRetry()
-      return
+      return true
     }
 
     // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock em caso de erro
@@ -658,7 +668,7 @@ export function useTurnEngine({
       })
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false
-      return
+      return false
     }
     
     // Encontra o jogador no array ordenado
@@ -674,7 +684,7 @@ export function useTurnEngine({
       })
       setTurnLockBroadcast(false)
       turnChangeInProgressRef.current = false
-      return 
+      return false
     }
     
     console.log('[DEBUG] 📍 POSIÇÃO INICIAL - Jogador:', cur.name, 'Posição:', cur.pos, 'Saldo:', cur.cash)
@@ -2978,6 +2988,16 @@ export function useTurnEngine({
     if (String(turnPlayerIdRef.current || '') !== expectId) return false
     if ((Number(turnSeqRef.current) || 0) !== expectSeq) return false
 
+    const skipGuard = shouldRejectAbsentTurnSkip({
+      turnLock: !!turnLockRef.current,
+      lastRollTurnKey: lastRollTurnKeyRef.current,
+      expectedTurnSeq: expectSeq,
+    })
+    if (skipGuard.reject) {
+      console.log('[TURN] skip ausente recusado:', skipGuard.reason)
+      return false
+    }
+
     const roster = Array.isArray(playersRef.current) && playersRef.current.length
       ? playersRef.current
       : (Array.isArray(players) ? players : [])
@@ -2994,6 +3014,12 @@ export function useTurnEngine({
     // Reconfirma imediatamente antes do commit local
     if (String(turnPlayerIdRef.current || '') !== expectId) return false
     if ((Number(turnSeqRef.current) || 0) !== expectSeq) return false
+    const skipGuard2 = shouldRejectAbsentTurnSkip({
+      turnLock: !!turnLockRef.current,
+      lastRollTurnKey: lastRollTurnKeyRef.current,
+      expectedTurnSeq: expectSeq,
+    })
+    if (skipGuard2.reject) return false
 
     pendingTurnDataRef.current = null
     turnChangeInProgressRef.current = false
@@ -3173,25 +3199,23 @@ export function useTurnEngine({
 
     if (act.type === 'ROLL'){
       // ✅ HARD GUARD (ENGINE): turnPlayerId é a verdade. Sem isso, nunca executa ROLL.
-      if (!turnPlayerId || String(turnPlayerId) !== String(myUid)) {
-        console.warn('[ROLL_BLOCK] not my turn (turnPlayerId mismatch)', { turnPlayerId, myUid })
+      const liveTurnId = String(turnPlayerIdRef.current || turnPlayerId || '')
+      if (!liveTurnId || liveTurnId !== String(myUid)) {
+        console.warn('[ROLL_BLOCK] not my turn (turnPlayerId mismatch)', { turnPlayerId: liveTurnId, myUid })
         return
       }
       // ✅ CORREÇÃO: Single-writer - apenas o jogador da vez pode rolar
-      if (!isMyTurn) {
+      if (!isMyTurn && liveTurnId !== String(myUid)) {
         console.warn('[DEBUG] ⚠️ onAction ROLL - não é minha vez, ignorando')
         return
       }
-      // ✅ CORREÇÃO: Verifica turnLock antes de executar
-      if (turnLock) {
-        console.warn('[DEBUG] ⚠️ onAction ROLL - turnLock ativo, ignorando')
-        return
-      }
-      // ✅ HARD GUARD: se houver lockOwner e for de outro, bloqueia (proteção extra)
-      const lo = lockOwnerRef.current
-      if (turnLock && lo && String(lo) !== String(myUid)) {
-        console.warn('[ROLL_BLOCK] locked by other', { lockOwner: lo, myUid })
-        return
+      // Lock compartilhado (dado 3D / movimento): o dono pode aplicar o ROLL.
+      if (turnLockRef.current) {
+        const lo = lockOwnerRef.current != null ? String(lockOwnerRef.current) : ''
+        if (lo && lo !== String(myUid)) {
+          console.warn('[ROLL_BLOCK] locked by other', { lockOwner: lo, myUid })
+          return
+        }
       }
       // ✅ CORREÇÃO: Verifica modalLocks antes de executar
       if (modalLocksRef.current > 0) {
@@ -3275,7 +3299,13 @@ export function useTurnEngine({
 
       // ✅ BUG 2 FIX: try/finally para garantir liberação de turnLock
       try {
-        advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
+        const started = advanceAndMaybeLap(act.steps, act.cashDelta, act.note)
+        if (started === false && currentTurnKey && lastRollTurnKeyRef.current === currentTurnKey) {
+          lastRollTurnKeyRef.current = null
+          try {
+            if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+          } catch {}
+        }
       } catch (error) {
         console.error('[DEBUG] Erro em advanceAndMaybeLap:', error)
         // Libera turnLock em caso de erro

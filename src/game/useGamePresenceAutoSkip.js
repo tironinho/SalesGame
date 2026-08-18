@@ -25,6 +25,8 @@ import {
   wasAlreadySkipped,
   clearSharedSkipKeyIfStale,
 } from './sharedTurnSkipGuard.js'
+import { turnAttemptKey } from './turnTimerLogic.js'
+import { shouldAttemptPresenceAutoSkip } from './presenceSkipLogic.js'
 
 const DEV = !!import.meta.env.DEV
 
@@ -42,6 +44,7 @@ function devLog(...args) {
  * @param {string|null} opts.turnPlayerId
  * @param {number} opts.turnSeq
  * @param {boolean} opts.gameOver
+ * @param {boolean} [opts.turnLock]
  * @param {(plan: object) => boolean|void} opts.attemptSkipTurn
  * @param {(status: 'waiting'|'skipped'|null) => void} opts.onStatus
  */
@@ -54,6 +57,7 @@ export function useGamePresenceAutoSkip({
   turnPlayerId,
   turnSeq,
   gameOver,
+  turnLock = false,
   attemptSkipTurn,
   onStatus,
 } = {}) {
@@ -61,15 +65,18 @@ export function useGamePresenceAutoSkip({
   const turnPlayerIdRef = useRef(turnPlayerId)
   const turnSeqRef = useRef(turnSeq)
   const gameOverRef = useRef(gameOver)
+  const turnLockRef = useRef(turnLock)
   const attemptSkipRef = useRef(attemptSkipTurn)
   const onStatusRef = useRef(onStatus)
   const lobbyHostIdRef = useRef(lobbyHostId)
   const statusRef = useRef(null)
+  const waitingSinceRef = useRef(null)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
   useEffect(() => { turnSeqRef.current = turnSeq }, [turnSeq])
   useEffect(() => { gameOverRef.current = gameOver }, [gameOver])
+  useEffect(() => { turnLockRef.current = !!turnLock }, [turnLock])
   useEffect(() => { attemptSkipRef.current = attemptSkipTurn }, [attemptSkipTurn])
   useEffect(() => { onStatusRef.current = onStatus }, [onStatus])
   useEffect(() => { lobbyHostIdRef.current = lobbyHostId }, [lobbyHostId])
@@ -247,7 +254,30 @@ export function useGamePresenceAutoSkip({
       }
       if (cancelled) return
 
-      if (turnPresent2) {
+      const turnKey = turnAttemptKey(curTurnId, curTurnSeq)
+      const prevWait = waitingSinceRef.current
+      const prevWaitMs =
+        prevWait && prevWait.key === turnKey ? prevWait.at : null
+
+      const decision = shouldAttemptPresenceAutoSkip({
+        turnPresent: turnPresent2,
+        turnLock: !!turnLockRef.current,
+        gameOver: !!gameOverRef.current,
+        amCoordinator,
+        turnPlayerId: curTurnId,
+        turnSeq: curTurnSeq,
+        waitingSinceMs: prevWaitMs,
+        now: Date.now(),
+        inFlight: getSharedSkipInFlight(),
+      })
+
+      if (decision.waitingSinceMs != null) {
+        waitingSinceRef.current = { key: turnKey, at: decision.waitingSinceMs }
+      } else {
+        waitingSinceRef.current = null
+      }
+
+      if (decision.reason === 'present' || decision.reason === 'turn-locked' || decision.reason === 'game-over') {
         if (statusRef.current === 'waiting') {
           devLog('[auto-skip] cancelled player returned')
         }
@@ -255,11 +285,19 @@ export function useGamePresenceAutoSkip({
         return
       }
 
-      setStatus('waiting')
-      if (!amCoordinator) return
+      if (decision.reason === 'waiting-grace' || decision.reason === 'not-coordinator') {
+        setStatus('waiting')
+        if (decision.reason === 'waiting-grace') {
+          devLog('[auto-skip] waiting grace')
+        }
+        return
+      }
+
+      if (!decision.ok) return
       if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
       devLog('[auto-skip] waiting')
+      setStatus('waiting')
       setSharedSkipInFlight(true)
       try {
         try {
@@ -286,6 +324,11 @@ export function useGamePresenceAutoSkip({
         }
         if ((Number(turnSeqRef.current) || 0) !== curTurnSeq) return
         if (gameOverRef.current) return
+        if (turnLockRef.current) {
+          waitingSinceRef.current = null
+          setStatus(null)
+          return
+        }
         if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
 
         if (isTurnPlayerPresent({
