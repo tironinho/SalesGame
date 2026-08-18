@@ -299,11 +299,18 @@ export default function TrainingModal({
         <div style={S.saldo}>Saldo disponível: <b>$ {cashNow.toLocaleString()}</b></div>
 
         {noTypesLeft ? (
-          <div style={S.allDoneBox}>
-            {noProfessionAvailable
-              ? 'Nenhum profissional disponível para treinar no momento.'
-              : 'Todos os treinamentos já foram comprados para os profissionais disponíveis.'}
-          </div>
+          <>
+            <div style={S.allDoneBox}>
+              {noProfessionAvailable
+                ? 'Nenhum profissional disponível para treinar no momento.'
+                : 'Todos os treinamentos já foram comprados para os profissionais disponíveis.'}
+            </div>
+            {allowBack && (
+              <div style={S.btnRow}>
+                <button type="button" style={{ ...S.bigBtn, background:'#2a2f3b', color:'#fff' }} onClick={handleBack}>Voltar</button>
+              </div>
+            )}
+          </>
         ) : (
           <>
             <div style={{marginBottom: '16px'}}>

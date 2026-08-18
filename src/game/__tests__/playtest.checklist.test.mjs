@@ -82,6 +82,23 @@ test('pt2 gestor boost: máx 3 certs = 40%; 4 não sobe', () => {
   )
 })
 
+test('training vazio no Direito de Compra: Voltar reabre DirectBuy', () => {
+  const training = read('src/modals/TrainingModal.jsx')
+  const start = training.indexOf('{noTypesLeft ? (')
+  const end = training.indexOf(') : (', start)
+  assert.ok(start >= 0 && end > start, 'ramo noTypesLeft ausente')
+  const emptyBranch = training.slice(start, end)
+  assert.match(emptyBranch, /allowBack &&/)
+  assert.match(emptyBranch, />Voltar</)
+  assert.match(emptyBranch, /handleBack/)
+
+  const eng = read('src/game/useTurnEngine.jsx')
+  assert.match(
+    eng,
+    /open === 'TRAINING'[\s\S]{0,1200}allowBack=\{true\}[\s\S]{0,400}r2\.action === 'BACK'[\s\S]{0,180}DirectBuyModal/,
+  )
+})
+
 // --- pt3: kit inicial ---
 test('pt3 kit start: 18k / 4k / fat 770 / desp 1150', () => {
   assert.equal(MANUAL_CONSTANTS.startCash, 18000)
