@@ -204,7 +204,7 @@ export const TOUR_TILES = [
   {
     key: 'EXPENSES',
     title: 'Despesas Operacionais',
-    body: 'Aqui o dinheiro SAI para pagar as contas do mês: equipe, Mix, ERP e carteira de clientes. Empréstimo pendente também é cobrado aqui. Sem caixa suficiente, prepare a recuperação!',
+    body: 'Aqui o dinheiro SAI para pagar as contas do mês: equipe, Mix, ERP e carteira de clientes. Se pediu empréstimo, a quitação cai nesta casa na próxima rodada. Sem caixa, liquide o patrimônio a 50% do valor de compra; se não bastar, falência.',
   },
 ]
 
@@ -238,7 +238,7 @@ export const TOUR_HUD = [
 export const TOUR_RECOVERY = [
   {
     title: 'Empréstimo',
-    body: `Peça dinheiro emprestado agora (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% dos seus Bens como garantia). Só pode 1 vez na partida. Depois a cobrança aparece nas Despesas — como devolver o lanche que pediu emprestado.`,
+    body: `Peça um único empréstimo (até ${Math.round(MANUAL_CONSTANTS.loanMaxBensRatio * 100)}% do valor de compra dos seus Bens como garantia). Na casa Despesas Operacionais da próxima rodada você devolve o valor. Sem caixa, cada item do patrimônio vale ${Math.round(MANUAL_CONSTANTS.recoveryCreditRatio * 100)}% do que pagou; se ainda não der, é falência.`,
   },
   {
     title: 'Reduzir Mix/ERP',

@@ -93,7 +93,7 @@ test('pt3 kit start: 18k / 4k / fat 770 / desp 1150', () => {
 })
 
 // --- pt4: empréstimo ---
-test('pt4 empréstimo: take → arm → charge → bloqueia 2ª', () => {
+test('pt4 empréstimo: take → próxima rodada cobra → bloqueia 2ª', () => {
   let p = { id: 'p1', cash: 500, bens: 4000, loanTakenInMatch: false, loanPending: null }
   assert.equal(canTakeLoan(p), true)
 
@@ -104,27 +104,28 @@ test('pt4 empréstimo: take → arm → charge → bloqueia 2ª', () => {
   assert.equal(p.loanTakenInMatch, true)
   assert.equal(p.loanPending.waitingFullLap, true)
   assert.equal(p.loanPending.eligibleOnExpenses, false)
+  assert.equal(p.loanPending.dueRound, 2)
 
-  // Antes de armar: não cobra
-  let charge = applyLoanCharge(p)
+  const pending = { ...p.loanPending, loanId: 'loan:p1:1' }
+
+  // Mesma rodada: não cobra
+  assert.equal(
+    shouldChargeLoan({ loanPending: pending, lastChargedLoanId: null, currentRound: 1 }),
+    false,
+  )
+  let charge = applyLoanCharge({ ...p, loanPending: pending }, { currentRound: 1 })
   assert.equal(charge.charged, false)
 
   // 2ª tentativa bloqueada
   assert.equal(canTakeLoan(p), false)
   assert.equal(applyLoanTake(p, 1000, 2).ok, false)
 
-  // Após faturamento (volta): arma
-  p = {
-    ...p,
-    loanPending: armLoanAfterRevenue(p.loanPending),
-  }
-  assert.equal(p.loanPending.eligibleOnExpenses, true)
+  // Próxima rodada (Despesas): cobra o valor emprestado
   assert.equal(
-    shouldChargeLoan({ loanPending: { ...p.loanPending, loanId: 'loan:p1:1' }, lastChargedLoanId: null }),
+    shouldChargeLoan({ loanPending: pending, lastChargedLoanId: null, currentRound: 2 }),
     true,
   )
-
-  charge = applyLoanCharge({ ...p, loanPending: { ...p.loanPending, loanId: 'loan:p1:1' } })
+  charge = applyLoanCharge({ ...p, loanPending: pending }, { currentRound: 2 })
   assert.equal(charge.charged, true)
   assert.equal(charge.amount, 2000)
   assert.equal(charge.player.cash, 500)
@@ -133,6 +134,17 @@ test('pt4 empréstimo: take → arm → charge → bloqueia 2ª', () => {
 
   // Ainda bloqueado na partida
   assert.equal(canTakeLoan(charge.player), false)
+
+  // Caminho legado: armar no faturamento também libera a cobrança
+  const armed = armLoanAfterRevenue(taken.player.loanPending)
+  assert.equal(armed.eligibleOnExpenses, true)
+  assert.equal(
+    shouldChargeLoan({
+      loanPending: { ...armed, loanId: 'loan:p1:arm' },
+      lastChargedLoanId: null,
+    }),
+    true,
+  )
 })
 
 test('pt4b empréstimo: clamp ao teto de 50% dos bens', () => {
@@ -207,4 +219,5 @@ test('pt8b motor usa loanCycle (wiring)', () => {
   assert.match(eng, /applyLoanTake/)
   assert.match(eng, /armLoanAfterRevenue/)
   assert.match(eng, /shouldChargeLoan/)
+  assert.match(eng, /currentRound:\s*currentRoundRef\.current/)
 })

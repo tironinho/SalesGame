@@ -711,7 +711,11 @@ export function useTurnEngine({
           requiredAmount={requiredAmount}
           currentCash={currentCash}
           title={`Saldo insuficiente para ${action} ${context}`}
-          message={`Você precisa ${action} R$ ${requiredAmount.toLocaleString()} mas possui apenas R$ ${currentCash.toLocaleString()}.`}
+          message={`Você precisa ${action} R$ ${requiredAmount.toLocaleString()} mas possui apenas R$ ${currentCash.toLocaleString()}.${
+            String(context || '').includes('Despesas')
+              ? ' Sem caixa, use o patrimônio: cada item vale 50% do valor pago na compra. Se ainda assim não der para continuar, é falência.'
+              : ''
+          }`}
           showRecoveryOptions={true}
         />
       )
@@ -2056,8 +2060,11 @@ export function useTurnEngine({
             }
 
             const declaredAtRound = Number(lp?.declaredAtRound || 0)
+            const dueRound = Number(lp?.dueRound) > 0
+              ? Number(lp.dueRound)
+              : (declaredAtRound > 0 ? declaredAtRound + 1 : 0)
             const reachedRevenueAfterLoan =
-              Number(freshMe.lastRevenueRound || 0) >= (declaredAtRound + 1)
+              dueRound > 0 && Number(freshMe.lastRevenueRound || 0) >= dueRound
 
             console.log('[LOAN DEBUG] expenses/pre-check', {
               ownerId,
@@ -2093,6 +2100,7 @@ export function useTurnEngine({
             const shouldCharge = shouldChargeLoan({
               loanPending: lp,
               lastChargedLoanId: freshMe.lastChargedLoanId,
+              currentRound: currentRoundRef.current,
             })
 
             const loanCharge = shouldCharge ? loanChargeAmount(lp) : 0

@@ -196,7 +196,7 @@ export function buildTourGlossary() {
         '3) Manutenção do Mix × TODOS os clientes (mesmo os ociosos).',
         '4) Manutenção do ERP × colaboradores.',
         `5) Carteira de clientes: ${money(c.clientPortfolioDesp)} × cada cliente.`,
-        '6) Se existir empréstimo pendente, cobra tudo nesta casa (devolve o que pediu emprestado).',
+        '6) Se você pediu empréstimo, nesta casa da próxima rodada quita o valor emprestado (garantia de até 50% dos bens). Sem caixa, liquide o patrimônio a 50% do valor de compra; se não bastar, falência.',
       ],
     },
     {
@@ -204,14 +204,14 @@ export function buildTourGlossary() {
       title: 'Ferramentas de emergência (valores)',
       note: 'Se o caixa apertar, abra Recuperação Financeira. Cada opção é uma troca: você ganha fôlego agora, mas perde alguma coisa ou cria uma dívida. Escolha com carinho.',
       bullets: [
-        'Empréstimo = dinheiro agora, cobrança depois nas Despesas.',
+        'Empréstimo = 1× na partida, até 50% dos bens; quita nas Despesas da próxima rodada.',
         'Reduzir Mix/ERP = caixa imediato, mas a prateleira/sistema fica mais fraca.',
         'Demitir = caixa imediato, mas cai a capacidade de atender.',
         'Falência = você sai da disputa ativa (último recurso).',
       ],
       headers: ['Opção', 'O que acontece'],
       rows: [
-        ['Empréstimo', `Até ${pct(c.loanMaxBensRatio)} dos Bens; 1× na partida; depois cobra nas Despesas`],
+        ['Empréstimo', `Até ${pct(c.loanMaxBensRatio)} dos Bens (garantia); 1× na partida; quita nas Despesas da próxima rodada; sem caixa, itens a ${pct(c.recoveryCreditRatio)}`],
         ['Reduzir Mix/ERP', `Recebe ~${pct(c.recoveryCreditRatio)} do preço, mas o nível cai`],
         ['Demitir', `Recebe ~${pct(c.recoveryCreditRatio)} da contratação, mas perde capacidade`],
         ['Falência', 'Você sai da disputa ativa'],

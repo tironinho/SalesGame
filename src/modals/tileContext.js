@@ -31,7 +31,7 @@ export const TILE_CONTEXT = Object.freeze({
   REVENUE:
     'Faturamento do Mês: receba a venda do ciclo (equipe × clientes em atendimento × mix × ERP). Cruzar esta casa encerra a volta/rodada.',
   EXPENSES:
-    'Despesas Operacionais: pague a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são quitados aqui.',
+    'Despesas Operacionais: pague a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimo da partida é quitado aqui na rodada seguinte à que você pediu.',
 })
 
 /** Texto no tabuleiro (desktop/mobile): função da casa em 1–2 frases. */
@@ -57,7 +57,7 @@ export const TILE_HINTS = Object.freeze({
   COMMON:
     `Vendedor Comum: atende até ${VENDOR_RULES.comum.cap} clientes. Contratação ${money(MANUAL_CONSTANTS.commonHire)}.`,
   EXPENSES:
-    'Despesas: pague a manutenção do mês (equipe, clientes, Mix, ERP e carteira). Empréstimos também são cobrados aqui.',
+    'Despesas: manutenção do mês. Empréstimo (1× na partida, garantia de 50% dos bens) é quitado nesta casa na próxima rodada.',
   MIX:
     'Mix de Produtos: compre um nível (A–D). Define quanto cada cliente fatura e custa por ciclo. Tabelas no glossário.',
 })

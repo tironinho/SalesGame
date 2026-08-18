@@ -52,7 +52,7 @@ export default function DespesasOperacionaisModal({
 
         {Number(loanCharge) > 0 && (
           <div style={{ marginBottom: 8, color: "#ffd54f" }}>
-            Empréstimo cobrado nesta rodada:&nbsp;
+            Empréstimo (próxima rodada):&nbsp;
             <b>-$ {Number(loanCharge).toLocaleString()}</b>
           </div>
         )}

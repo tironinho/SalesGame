@@ -19,4 +19,6 @@ export const MANUAL_CONSTANTS = Object.freeze({
   clientPortfolioDesp: 50,
   recoveryCreditRatio: 0.5,
   loanMaxBensRatio: 0.5,
+  // Manual: “com juros de …” veio sem percentual. Quitação = valor emprestado.
+  loanInterestRatio: 0,
 })

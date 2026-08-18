@@ -14,7 +14,7 @@ import S from './recoveryStyles'
  *     amount: <valor>,
  *     // aplique no jogador: cash += amount
  *     cashDelta: <valor>,
- *     // marque para cobrança na próxima "Despesas Operacionais"
+ *     // marque para cobrança na casa Despesas Operacionais da próxima rodada
  *     loan: { amount: <valor>, charged: false }
  *   }
  * Caso já exista um empréstimo, envia:
@@ -70,8 +70,13 @@ export default function RecoveryLoan({
       </div>
 
       <p>
-        Aumenta o caixa agora para evitar falência. Você coloca <b>50% dos seus BENS</b> como
-        garantia (cobrada na próxima “Despesas Operacionais”).
+        Único empréstimo da partida. O banco libera até <b>50% do valor de compra dos seus bens</b> como
+        garantia. O valor emprestado é cobrado quando você passar pela casa
+        <b> Despesas Operacionais na próxima rodada</b>.
+      </p>
+      <p>
+        Se não houver caixa para quitar, use o patrimônio: cada item vale
+        <b> 50% do valor pago na compra</b>. Se ainda assim não der para pagar e continuar, é falência.
       </p>
 
       <div style={S.infoRow}>
@@ -108,8 +113,8 @@ export default function RecoveryLoan({
       />
 
       <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
-        Máx: ${Number(loanAvailable || 0)} — valor será somado ao seu saldo e
-        cobrado na próxima “Despesas Operacionais”.
+        Máx: ${Number(loanAvailable || 0)} — entra no caixa agora e é quitado
+        na casa Despesas Operacionais da próxima rodada.
       </div>
 
       <div style={S.rowBtns}>

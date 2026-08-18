@@ -1,6 +1,14 @@
 /**
  * Empréstimo + crédito de demissão (fonte única usada pelo motor e pelos testes).
- * Take → waitingFullLap → arm no REVENUE → charge no EXPENSES → bloqueia 2ª.
+ *
+ * Manual:
+ * - 1 empréstimo por partida
+ * - teto/garantia = 50% do valor de compra dos bens
+ * - quita na casa Despesas Operacionais da próxima rodada
+ * - sem caixa: patrimônio a 50% do valor de compra; se não bastar, falência
+ *
+ * Take → dueRound = rodada+1 → arm no REVENUE do jogador e/ou rodada global
+ * → charge no EXPENSES → bloqueia 2ª.
  */
 import { MANUAL_CONSTANTS } from './manualConstants.js'
 import { VENDOR_RULES } from './gameRules.js'
@@ -21,13 +29,20 @@ export function canTakeLoan(player = {}) {
   return true
 }
 
+export function loanDueRound(declaredAtRound) {
+  const declared = Math.max(0, Math.floor(Number(declaredAtRound) || 0))
+  return declared > 0 ? declared + 1 : 0
+}
+
 export function createLoanPending(amount, declaredAtRound) {
+  const declared = Math.max(0, Math.floor(Number(declaredAtRound) || 0))
   return {
     amount: Math.max(0, Math.floor(Number(amount) || 0)),
     charged: false,
     waitingFullLap: true,
     eligibleOnExpenses: false,
-    declaredAtRound: Number(declaredAtRound) || 0,
+    declaredAtRound: declared,
+    dueRound: loanDueRound(declared),
   }
 }
 
@@ -77,12 +92,19 @@ export function ensureLoanId(loanPending, ownerId, makeId = makeLoanId) {
   return { ...lp, loanId: makeId(ownerId) }
 }
 
-export function shouldChargeLoan({ loanPending, lastChargedLoanId }) {
+export function shouldChargeLoan({ loanPending, lastChargedLoanId, currentRound } = {}) {
   const lp = loanPending || null
   const loanId = String(lp?.loanId || '')
   if (!lp || Number(lp.amount) <= 0 || lp.charged === true) return false
   if (!loanId) return false
   if (String(lastChargedLoanId || '') === loanId) return false
+
+  const due = Number(lp.dueRound) > 0
+    ? Number(lp.dueRound)
+    : loanDueRound(lp.declaredAtRound)
+  const round = Number(currentRound)
+  if (due > 0 && Number.isFinite(round) && round >= due) return true
+
   const stage = String(
     lp.stage ||
       (lp.eligibleOnExpenses === true && lp.waitingFullLap !== true
@@ -93,7 +115,9 @@ export function shouldChargeLoan({ loanPending, lastChargedLoanId }) {
 }
 
 export function loanChargeAmount(loanPending) {
-  return Math.max(0, Math.floor(Number(loanPending?.amount || 0)))
+  const principal = Math.max(0, Math.floor(Number(loanPending?.amount || 0)))
+  const interest = Math.floor(principal * Number(MANUAL_CONSTANTS.loanInterestRatio || 0))
+  return principal + Math.max(0, interest)
 }
 
 /** Após o caixa já ter sido debitado (despesas+loan): limpa pending. */
@@ -105,9 +129,18 @@ export function clearLoanAfterCharge(player, loanId) {
   }
 }
 
-export function applyLoanCharge(player, makeId = makeLoanId) {
+export function applyLoanCharge(player, makeIdOrOpts = makeLoanId, maybeOpts = {}) {
+  const makeId = typeof makeIdOrOpts === 'function' ? makeIdOrOpts : makeLoanId
+  const opts = typeof makeIdOrOpts === 'function'
+    ? (maybeOpts || {})
+    : (makeIdOrOpts || {})
+  const currentRound = opts.currentRound
   const lp = ensureLoanId(player.loanPending, player.id, makeId)
-  if (!shouldChargeLoan({ loanPending: lp, lastChargedLoanId: player.lastChargedLoanId })) {
+  if (!shouldChargeLoan({
+    loanPending: lp,
+    lastChargedLoanId: player.lastChargedLoanId,
+    currentRound,
+  })) {
     return { charged: false, amount: 0, player: { ...player, loanPending: lp } }
   }
   const amount = loanChargeAmount(lp)
