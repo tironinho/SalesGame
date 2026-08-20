@@ -19,7 +19,7 @@ import TileContextHint from './TileContextHint.jsx'
  */
 
 export default function SorteRevesModal({ onResolve, player = {} }) {
-  const closeRef = useRef(null)
+  const confirmRef = useRef(null)
 
   // ===== helpers de leitura do jogador =====
   const get = (v, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d
@@ -238,21 +238,18 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
   }, [card, player])
 
   const resolve = () => onResolve?.(resolved.payload)
-  const cancel = () => onResolve?.({ action:'SKIP' })
 
-  // Trava o scroll do body e foca no botão de fechar
+  // Trava o scroll do body e foca no botão de confirmação
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    setTimeout(() => closeRef.current?.focus?.(), 0)
+    setTimeout(() => confirmRef.current?.focus?.(), 0)
     return () => { document.body.style.overflow = prev }
   }, [])
 
   return (
     <div style={S.wrap} role="dialog" aria-modal="true" aria-label="Sorte e Revés">
       <div style={S.card}>
-        <button ref={closeRef} style={S.close} onClick={cancel} aria-label="Fechar">✕</button>
-
         <div style={S.badge(card.kind)}>{card.kind === 'SORTE' ? 'SORTE' : 'REVÉS'}</div>
         <TileContextHint kind="LUCK" />
         {card.title && <h2 style={S.title}>{card.title}</h2>}
@@ -262,7 +259,7 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
         </p>
 
         <div style={S.footer}>
-          <button type="button" style={S.okBtn} onClick={resolve}>OK</button>
+          <button ref={confirmRef} type="button" style={S.okBtn} onClick={resolve}>OK</button>
         </div>
       </div>
     </div>
@@ -272,7 +269,6 @@ export default function SorteRevesModal({ onResolve, player = {} }) {
 const S = {
   wrap: { position:'fixed', inset:0, background:'rgba(0,0,0,.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000 },
   card: { width:'min(760px, 92vw)', background:'#1b1f2a', color:'#e9ecf1', borderRadius:18, padding:'22px', border:'1px solid rgba(255,255,255,.12)', boxShadow:'0 10px 40px rgba(0,0,0,.4)', position:'relative' },
-  close:{ position:'absolute', right:10, top:10, width:36, height:36, borderRadius:10, border:'1px solid rgba(255,255,255,.15)', background:'#2a2f3b', color:'#fff', cursor:'pointer' },
   badge:(kind)=>({
     display:'inline-block', padding:'6px 12px', borderRadius:999, fontWeight:900, marginBottom:8,
     background: kind==='SORTE' ? '#22c55e' : '#ef4444', color:'#111'
