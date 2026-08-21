@@ -9,6 +9,13 @@ import { DEFAULT_MAX_ROUNDS, normalizeMaxRounds } from './roundConfig'
 import { planOfflineTurnSkip } from './offlineTurnSkip.js'
 import { shouldRejectAbsentTurnSkip } from './presenceSkipLogic.js'
 import {
+  bumpModalLockCount,
+  releaseModalLockCount,
+  decideModalLockClearWait,
+  MODAL_LOCK_DIAGNOSTIC_MS,
+  MODAL_LOCK_POLL_MS,
+} from './modalLockGate.js'
+import {
   applyBankruptcyState,
   planMatchForfeit,
   decideEndgameAfterBankruptcy as decideEndgameAfterBankruptcyPure,
@@ -164,9 +171,10 @@ export function useTurnEngine({
   }, [closeTop, popModal])
 
   // 🔒 contagem de modais abertas (para saber quando destravar turno)
+  // modalLocksRef é autoritativo e síncrono; modalLocks (state) é espelho para UI/debug.
+  // NÃO sincronizar ref ← state via effect: isso pode sobrescrever bumps síncronos e causar deadlock.
   const [modalLocks, setModalLocks] = React.useState(0)
   const modalLocksRef = React.useRef(0)
-  React.useEffect(() => { modalLocksRef.current = modalLocks }, [modalLocks])
 
   // ✅ Anti-double-roll: snapshot local do último "turnKey" rolado (sincronizado com turnSeq)
   const lastRollTurnKeyRef = React.useRef(lastRollTurnKey ?? null)
@@ -273,16 +281,41 @@ export function useTurnEngine({
     return new Promise(resolve => setTimeout(resolve, 50))
   }, [])
 
-  // ✅ Helper: Aguarda modalLocks zerar (modals fechadas)
-  // WHY: Garante que modals anteriores foram processadas antes de continuar
+  // ✅ Helper: Aguarda modalLocks zerar (modals fechadas).
+  // WHY: Garante que modals anteriores foram processadas antes de continuar.
+  // NÃO reconcilia/zera locks por tempo: locks>0 && opening===false é modal real aguardando usuário.
   const waitForLocksClear = React.useCallback(() => {
     return new Promise(resolve => {
+      const startedAt = Date.now()
+      let lastDiagnosticAt = 0
       const check = () => {
-        if (modalLocksRef.current === 0 && !openingModalRef.current) {
+        const locks = modalLocksRef.current
+        const opening = !!openingModalRef.current
+        const elapsedMs = Date.now() - startedAt
+        const decision = decideModalLockClearWait({
+          locks,
+          opening,
+          elapsedMs,
+          diagnosticMs: MODAL_LOCK_DIAGNOSTIC_MS,
+        })
+
+        if (decision.clear) {
           resolve()
-        } else {
-          setTimeout(check, 30)
+          return
         }
+
+        // Watchdog só diagnostica — nunca inventa fechamento nem libera pipeline.
+        if (decision.shouldLog && elapsedMs - lastDiagnosticAt >= MODAL_LOCK_DIAGNOSTIC_MS) {
+          lastDiagnosticAt = elapsedMs
+          console.warn('[MODAL LOCK] waitForLocksClear ainda aguardando modal ativa', {
+            locks,
+            opening,
+            elapsedMs,
+            reason: decision.reason,
+          })
+        }
+
+        setTimeout(check, MODAL_LOCK_POLL_MS)
       }
       check()
     })
@@ -486,18 +519,18 @@ export function useTurnEngine({
     if (!pushModal || !awaitTop) return Promise.resolve(null)
 
     const job = async () => {
-      let modalResolved = false
+      let lockHeld = false
 
       try {
         openingModalRef.current = true
 
-        setModalLocks(prev => {
-          const next = prev + 1
-          modalLocksRef.current = next
-          lastModalClosedTimeRef.current = null // ✅ CORREÇÃO: Reseta timestamp quando abre modal
-          console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks:', prev, '->', next, 'openingModalRef:', openingModalRef.current)
-          return next
-        })
+        // Ref síncrono ANTES do setState — decisões do motor não podem esperar o commit React.
+        const nextOpen = bumpModalLockCount(modalLocksRef.current)
+        modalLocksRef.current = nextOpen
+        lockHeld = true
+        lastModalClosedTimeRef.current = null
+        setModalLocks(nextOpen)
+        console.log('[DEBUG] openModalAndWait - ABRINDO modal, modalLocks ->', nextOpen, 'openingModalRef:', openingModalRef.current)
 
         pushModal(element)
         
@@ -507,30 +540,27 @@ export function useTurnEngine({
         console.log('[DEBUG] openModalAndWait - Modal renderizada, openingModalRef:', openingModalRef.current)
 
         const payload = await awaitTop()
-        modalResolved = true
 
         // ✅ Pequeno delay após resolver para garantir que a modal foi completamente fechada
         await new Promise(resolve => setTimeout(resolve, 50))
         return payload ?? null
       } catch (err) {
         console.error('[DEBUG] openModalAndWait - erro aguardando modal:', err)
-        modalResolved = true
         return null
       } finally {
         openingModalRef.current = false
 
-        // ✅ CORREÇÃO OBRIGATÓRIA 1: Decrementa UMA ÚNICA VEZ apenas no finally, se modalResolved === true
-        if (modalResolved) {
-          setModalLocks(prev => {
-            const next = Math.max(0, prev - 1)
-            modalLocksRef.current = next
-            if (next === 0) {
-              lastModalClosedTimeRef.current = Date.now()
-              console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
-            }
-            console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks:', prev, '->', next)
-            return next
-          })
+        // Se o lock foi adquirido, sempre libera no finally (exceção, awaitTop, etc.).
+        // Não depender de modalResolved: lockHeld abandonado = deadlock permanente.
+        if (lockHeld) {
+          const nextClose = releaseModalLockCount(modalLocksRef.current)
+          modalLocksRef.current = nextClose
+          if (nextClose === 0) {
+            lastModalClosedTimeRef.current = Date.now()
+            console.log('[DEBUG] openModalAndWait - ÚLTIMA MODAL FECHADA - timestamp:', lastModalClosedTimeRef.current)
+          }
+          setModalLocks(nextClose)
+          console.log('[DEBUG] openModalAndWait - FECHANDO modal, modalLocks ->', nextClose)
         }
       }
     }
