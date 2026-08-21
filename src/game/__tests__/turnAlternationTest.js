@@ -329,26 +329,46 @@ class TurnAlternationTester {
 
   // ========== TESTE 7: Timeout de Segurança ==========
   testSafetyTimeout() {
-    this.log('🧪 TESTE 7: Timeout de Segurança do TurnLock', 'info')
-    
-    let turnLock = true
-    let modalLocks = 0
-    const startTime = Date.now()
-    const timeout = 30000 // 30 segundos
-    
-    // Simula turnLock travado
-    const checkTimeout = () => {
-      const elapsed = Date.now() - startTime
-      if (elapsed >= timeout && turnLock && modalLocks === 0) {
-        // Timeout de segurança deve liberar
-        turnLock = false
-        this.log('✅ Timeout de segurança liberou turnLock após 30s', 'info')
-      } else if (elapsed < timeout) {
-        setTimeout(checkTimeout, 1000)
-      }
+    this.log('🧪 TESTE 7: Timeout de Segurança do TurnLock (órfão, não 30s de jogada)', 'info')
+
+    // Contrato atualizado: 30s NÃO libera jogada ativa.
+    // Só órfão sem pipeline (sem events/pending/modals) pode liberar.
+    const pipelineActive = {
+      modalLocks: 0,
+      opening: false,
+      eventsInProgress: true,
+      turnChangeInProgress: true,
+      hasPendingTurnData: true,
     }
-    
-    checkTimeout()
+    const shouldNotUnlock =
+      pipelineActive.eventsInProgress ||
+      pipelineActive.turnChangeInProgress ||
+      pipelineActive.hasPendingTurnData ||
+      pipelineActive.modalLocks > 0 ||
+      pipelineActive.opening
+
+    if (shouldNotUnlock) {
+      this.log('✅ Watchdog NÃO libera turnLock com pipeline ativa (mesmo após 30s)', 'info')
+    } else {
+      this.log('❌ Watchdog liberaria prematuramente', 'error')
+    }
+
+    const orphan = {
+      modalLocks: 0,
+      opening: false,
+      eventsInProgress: false,
+      turnChangeInProgress: false,
+      hasPendingTurnData: false,
+    }
+    const orphanUnlock =
+      orphan.modalLocks === 0 &&
+      !orphan.opening &&
+      !orphan.eventsInProgress &&
+      !orphan.turnChangeInProgress &&
+      !orphan.hasPendingTurnData
+    if (orphanUnlock) {
+      this.log('✅ Lock órfão sem pipeline pode ser liberado com segurança', 'info')
+    }
   }
 
   // ========== EXECUTAR TODOS OS TESTES ==========

@@ -16,6 +16,11 @@ import {
   MODAL_LOCK_POLL_MS,
 } from './modalLockGate.js'
 import {
+  decideTurnLockWatchdog,
+  decideTickForceUnlock,
+  canSafelyHandoffTurn,
+} from './turnLockSafety.js'
+import {
   applyBankruptcyState,
   planMatchForfeit,
   decideEndgameAfterBankruptcy as decideEndgameAfterBankruptcyPure,
@@ -337,51 +342,50 @@ export function useTurnEngine({
     }
   }, [isMyTurn, modalLocks])
   
-  // ✅ CORREÇÃO: Timeout de segurança para turnLock (evita travamento infinito)
+  // Timeout de segurança para turnLock ÓRFÃO — NÃO é limite de jogada (não usa 30s = metade de 60s).
+  // Enquanto houver pipeline (eventos/modais/pending), só diagnostica.
   React.useEffect(() => {
     if (turnLock) {
-      // Limpa timeout anterior se existir
       if (turnLockTimeoutRef.current) {
         clearTimeout(turnLockTimeoutRef.current)
       }
-      
-      // Define timeout de segurança (30 segundos)
+
       turnLockTimeoutRef.current = setTimeout(() => {
         const currentLockOwner = lockOwnerRef.current
         const isLockOwner = String(currentLockOwner || '') === String(myUid)
-        const currentModalLocks = modalLocksRef.current
-        const currentOpening = openingModalRef.current
-        
-        console.warn('[DEBUG] ⚠️ TIMEOUT DE SEGURANÇA - turnLock ativo há mais de 30s', {
+        const decision = decideTurnLockWatchdog({
+          turnLock: true,
           isLockOwner,
-          currentModalLocks,
-          currentOpening,
-          lockOwner: currentLockOwner
+          lockOwnerNull: currentLockOwner == null,
+          modalLocks: modalLocksRef.current,
+          opening: !!openingModalRef.current,
+          eventsInProgress: !!eventsInProgressRef.current,
+          turnChangeInProgress: !!turnChangeInProgressRef.current,
+          hasPendingTurnData: !!pendingTurnDataRef.current,
         })
-        
-        // ✅ CORREÇÃO D: Se sou o dono do lock e não há modais, força liberação
-        // OU se lockOwner é null por muito tempo, também libera
-        const shouldForceUnlock = (isLockOwner && currentModalLocks === 0 && !currentOpening) || 
-                                   (currentLockOwner == null && currentModalLocks === 0 && !currentOpening)
-        if (shouldForceUnlock) {
-          console.warn('[DEBUG] 🔓 FORÇANDO LIBERAÇÃO DO TURNLOCK (timeout de segurança)', {
-            isLockOwner,
-            lockOwner: currentLockOwner,
-            modalLocks: currentModalLocks,
-            opening: currentOpening
-          })
+
+        console.warn('[TURN_LOCK_WATCHDOG]', {
+          decision,
+          lockOwner: currentLockOwner,
+          modalLocks: modalLocksRef.current,
+          opening: openingModalRef.current,
+          eventsInProgress: eventsInProgressRef.current,
+          turnChangeInProgress: turnChangeInProgressRef.current,
+          hasPending: !!pendingTurnDataRef.current,
+        })
+
+        if (decision.forceUnlock) {
           setTurnLockBroadcast(false)
           turnChangeInProgressRef.current = false
         }
-      }, 30000) // 30 segundos
+      }, 120000) // só órfãos extremos (2 min); nunca alinhado a 30s / metade do turno
     } else {
-      // Limpa timeout quando turnLock é liberado
       if (turnLockTimeoutRef.current) {
         clearTimeout(turnLockTimeoutRef.current)
         turnLockTimeoutRef.current = null
       }
     }
-    
+
     return () => {
       if (turnLockTimeoutRef.current) {
         clearTimeout(turnLockTimeoutRef.current)
@@ -2637,50 +2641,75 @@ export function useTurnEngine({
     // fail-safe: solta o cadeado quando todas as modais fecharem
     const start = Date.now()
     let tickAttempts = 0
-    const maxTickAttempts = 200 // Limita a 20 segundos (200 * 100ms)
+    const maxTickAttempts = 200 // ~20–30s só quando idle; pipeline ativa não consome o teto da mesma forma
     
     const tick = () => {
       tickAttempts++
-      
-      // ✅ CORREÇÃO: Limite de tentativas para evitar loop infinito
-      if (tickAttempts > maxTickAttempts) {
-        console.warn('[DEBUG] ⏰ TIMEOUT - excedeu tentativas máximas, forçando desbloqueio')
-        const currentLockOwner = lockOwnerRef.current
-        const isLockOwner = String(currentLockOwner || '') === String(myUid)
-        if (isLockOwner) {
-          setTurnLockBroadcast(false)
-          turnChangeInProgressRef.current = false
-          // ✅ CORREÇÃO: Força limpeza de modalLocks se estiver travado
-          if (modalLocksRef.current > 0) {
-            console.warn('[DEBUG] ⚠️ Forçando modalLocks para 0 (timeout)')
-            modalLocksRef.current = 0
-            setModalLocks(0)
-          }
-          openingModalRef.current = false
-        }
-        return
-      }
       
       const currentModalLocks = modalLocksRef.current
       const currentOpening = openingModalRef.current || eventsInProgressRef.current
       const currentLockOwner = lockOwnerRef.current
       const isLockOwner = String(currentLockOwner || '') === String(myUid)
-      
-      console.log('[DEBUG] tick - tentativa:', tickAttempts, 'modalLocks:', currentModalLocks, 'openingModalRef:', currentOpening, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
-      
-      // ✅ CORREÇÃO: Verifica se uma modal está sendo aberta (evita race condition)
-      if (currentOpening) {
-        console.log('[DEBUG] ⚠️ tick - modal está sendo aberta, aguardando...')
+
+      // ✅ Pipeline ativa: não conta como travamento e NUNCA força unlock/clear de locks
+      if (currentOpening || currentModalLocks > 0) {
+        const forceDec = decideTickForceUnlock({
+          tickAttempts,
+          maxTickAttempts,
+          modalLocks: currentModalLocks,
+          opening: !!openingModalRef.current,
+          eventsInProgress: !!eventsInProgressRef.current,
+          hasPendingTurnData: !!pendingTurnDataRef.current,
+        })
+        if (forceDec.continueWaiting || tickAttempts > maxTickAttempts) {
+          // reseta metade do contador para não estourar enquanto a jogada real continua
+          tickAttempts = Math.min(tickAttempts, Math.floor(maxTickAttempts / 2))
+        }
+        console.log('[DEBUG] ⚠️ tick - pipeline ativa, aguardando...', {
+          modalLocks: currentModalLocks,
+          opening: openingModalRef.current,
+          eventsInProgress: eventsInProgressRef.current,
+        })
         setTimeout(tick, 150)
         return
       }
+
+      if (tickAttempts > maxTickAttempts) {
+        const forceDec = decideTickForceUnlock({
+          tickAttempts,
+          maxTickAttempts,
+          modalLocks: currentModalLocks,
+          opening: !!openingModalRef.current,
+          eventsInProgress: !!eventsInProgressRef.current,
+          hasPendingTurnData: !!pendingTurnDataRef.current,
+        })
+        console.warn('[DEBUG] ⏰ TIMEOUT tick', forceDec)
+        if (forceDec.continueWaiting) {
+          tickAttempts = Math.floor(maxTickAttempts / 2)
+          setTimeout(tick, 150)
+          return
+        }
+        if (forceDec.forceUnlock && isLockOwner) {
+          setTurnLockBroadcast(false)
+          turnChangeInProgressRef.current = false
+        }
+        return
+      }
+      
+      console.log('[DEBUG] tick - tentativa:', tickAttempts, 'modalLocks:', currentModalLocks, 'openingModalRef:', currentOpening, 'lockOwner:', currentLockOwner, 'myUid:', myUid, 'isLockOwner:', isLockOwner)
       
       // ✅ CORREÇÃO: Só muda turno se realmente não houver modais abertas
       // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
       // Isso garante que todas as modais (incluindo aninhadas) foram completamente fechadas
       const timeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
       const minTimeAfterModalClose = 100 // após fechar modal, handoff rápido (antes 200ms)
-      const canChangeTurn = currentModalLocks === 0 && (timeSinceLastModalClosed >= minTimeAfterModalClose || !lastModalClosedTimeRef.current)
+      const canChangeTurn =
+        canSafelyHandoffTurn({
+          modalLocks: currentModalLocks,
+          opening: !!openingModalRef.current,
+          eventsInProgress: !!eventsInProgressRef.current,
+        }) &&
+        (timeSinceLastModalClosed >= minTimeAfterModalClose || !lastModalClosedTimeRef.current)
       
       if (canChangeTurn) {
         // ✅ ENDGAME autoritativo: finaliza assim que não houver modais
@@ -2739,9 +2768,10 @@ export function useTurnEngine({
                 ? playersRef.current
                 : (turnData.nextPlayers || [])
 
-            // ✅ CORREÇÃO: Verifica novamente se não há modais abertas ou sendo abertas (double-check)
+            // ✅ Double-check: pipeline de eventos também deve estar idle
             const finalModalLocks = modalLocksRef.current
             const finalOpening = openingModalRef.current
+            const finalEvents = eventsInProgressRef.current
             // ✅ CORREÇÃO: Verifica se o turnIdx ainda é o mesmo (não mudou via SYNC)
             const finalTurnIdx = turnIdx
             const finalLockOwner = lockOwnerRef.current
@@ -2749,7 +2779,13 @@ export function useTurnEngine({
             
             // ✅ CORREÇÃO: Verifica também se passou tempo suficiente desde que a última modal foi fechada
             const finalTimeSinceLastModalClosed = lastModalClosedTimeRef.current ? (Date.now() - lastModalClosedTimeRef.current) : Infinity
-            const finalCanChangeTurn = finalModalLocks === 0 && !finalOpening && (finalTimeSinceLastModalClosed >= 100 || !lastModalClosedTimeRef.current)
+            const finalCanChangeTurn =
+              canSafelyHandoffTurn({
+                modalLocks: finalModalLocks,
+                opening: !!finalOpening,
+                eventsInProgress: !!finalEvents,
+              }) &&
+              (finalTimeSinceLastModalClosed >= 100 || !lastModalClosedTimeRef.current)
             
               // ✅ CORREÇÃO: Verifica se ainda sou o dono do lock (pode ter mudado via SYNC)
               if (finalCanChangeTurn && finalTurnIdx === turnIdx && finalIsLockOwner) {
@@ -2934,20 +2970,23 @@ export function useTurnEngine({
         setTimeout(checkBeforeTick, delay)
         return
       }
-      // ✅ CORREÇÃO: Se excedeu tentativas ou não há modais, força o avanço do turno
+      // ✅ Se excedeu tentativas com pipeline real, continua esperando (não apaga locks)
       if (checkAttempts >= maxCheckAttempts) {
-        console.warn('[DEBUG] ⚠️ checkBeforeTick - excedeu tentativas, forçando avanço do turno', {
+        const stillActive =
+          openingModalRef.current ||
+          eventsInProgressRef.current ||
+          modalLocksRef.current > 0
+        console.warn('[DEBUG] ⚠️ checkBeforeTick - excedeu tentativas', {
           hasOpening,
           hasLocks,
-          modalLocks: modalLocksRef.current
+          eventsInProgress: eventsInProgressRef.current,
+          stillActive,
         })
-        // Força o modalLocks para 0 se estiver travado
-        if (modalLocksRef.current > 0) {
-          console.warn('[DEBUG] ⚠️ checkBeforeTick - forçando modalLocks para 0')
-          modalLocksRef.current = 0
-          setModalLocks(0)
+        if (stillActive) {
+          checkAttempts = Math.floor(maxCheckAttempts / 2)
+          setTimeout(checkBeforeTick, 200)
+          return
         }
-        openingModalRef.current = false
       }
       // Só inicia o tick se não houver modais sendo abertas
       if (DEBUG_LOGS) console.log('[DEBUG] ✅ checkBeforeTick - iniciando tick, sem modais abertas')
