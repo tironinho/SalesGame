@@ -62,6 +62,11 @@ import {
   normalizeTurnTime,
 } from './game/turnTimeConfig.js'
 import { computeTurnDeadlineAt, sanitizeTurnDeadlineOnHandoff } from './game/turnTimerLogic.js'
+import { validateTurnCommit, stripCommitMeta, inferCommitKind, resolveSkipGuardAction } from './game/turnCommitValidation.js'
+import {
+  shouldApplyDeferredLocalPatch,
+  captureTurnEmissionSnapshot,
+} from './game/turnStateMonotonic.js'
 import {
   mergePlayersById,
   buildPlayersDeltaById,
@@ -347,27 +352,6 @@ export default function App() {
   // ✅ turnSeq: contador monotônico do turno (1 jogador: 0→1→2…; evita [ROLL_BLOCK])
   const [turnSeq, setTurnSeq] = useState(0)
 
-  // Handoff: se o prazo veio estourado do jogador anterior, recomeça o relógio.
-  useEffect(() => {
-    const prev = prevTurnIdentityRef.current
-    const nextId = turnPlayerId != null ? String(turnPlayerId) : ''
-    const nextSeq = Number(turnSeq) || 0
-    const sanitized = sanitizeTurnDeadlineOnHandoff({
-      prevTurnPlayerId: prev.id,
-      nextTurnPlayerId: nextId,
-      prevTurnSeq: prev.seq,
-      nextTurnSeq: nextSeq,
-      currentDeadlineAt: turnDeadlineAtRef.current,
-      now: Date.now(),
-      turnTimeSec: turnTimeSecRef.current,
-    })
-    prevTurnIdentityRef.current = { id: nextId, seq: nextSeq }
-    if (Number.isFinite(Number(sanitized)) && Number(sanitized) !== Number(turnDeadlineAtRef.current)) {
-      setTurnDeadlineAt(Number(sanitized))
-      turnDeadlineAtRef.current = Number(sanitized)
-    }
-  }, [turnPlayerId, turnSeq])
-
   // ===== Última rolagem do dado (somente apresentação; não entra em regras) =====
   const [lastRollUI, setLastRollUI] = useState(null)
   const [isRollingUI, setIsRollingUI] = useState(false)
@@ -496,6 +480,16 @@ export default function App() {
   // ====== bloqueio de turno (cadeado entre abas)
   const [turnLock, setTurnLock] = useState(false)
   const [lockOwner, setLockOwner] = useState(null)
+  const turnPlayerIdRef = React.useRef(turnPlayerId)
+  const turnSeqRef = React.useRef(turnSeq)
+  const lockOwnerRef = React.useRef(lockOwner)
+  const turnLockRef = React.useRef(turnLock)
+  const lastRollTurnKeyRef = React.useRef(lastRollTurnKey)
+  useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
+  useEffect(() => { turnSeqRef.current = turnSeq }, [turnSeq])
+  useEffect(() => { lockOwnerRef.current = lockOwner }, [lockOwner])
+  useEffect(() => { turnLockRef.current = turnLock }, [turnLock])
+  useEffect(() => { lastRollTurnKeyRef.current = lastRollTurnKey }, [lastRollTurnKey])
   const bcRef = useRef(null)
   // ✅ INIT_GUARD: após aplicar snapshot autoritativo do Supabase, nunca mais aceitar "reset local" de turno/round
   const hydratedFromNetRef = useRef(false)
@@ -951,6 +945,8 @@ export default function App() {
     defer(() => {
       try {
         if (net?.enabled && net?.ready && typeof netCommit === 'function') {
+          const expectTurnId = String(turnPlayerIdRef.current ?? turnPlayerId ?? '')
+          const expectTurnSeq = Number(turnSeqRef.current ?? turnSeq ?? 0)
           commitGamePatch({
             playersDeltaById: {},
             statePatch: {
@@ -958,6 +954,10 @@ export default function App() {
               turnLock: v,
               lockOwner: nextOwner,
               lockTs: Date.now(),
+              _expectTurnPlayerId: expectTurnId,
+              _expectTurnSeq: expectTurnSeq,
+              _expectLockOwner: v ? nextOwner : (lockOwnerRef.current ?? lockOwner ?? null),
+              _commitKind: v ? 'LOCK_ACQUIRE' : 'LOCK_RELEASE',
             }
           })
         }
@@ -972,6 +972,29 @@ export default function App() {
   const netVersion = net?.version
   const netState = net?.state
   const netStateId = net?.stateId
+
+  // Handoff offline: sanitize local. Multiplayer: deadline autoritativo via snapshot/broadcastState.
+  useEffect(() => {
+    const prev = prevTurnIdentityRef.current
+    const nextId = turnPlayerId != null ? String(turnPlayerId) : ''
+    const nextSeq = Number(turnSeq) || 0
+    prevTurnIdentityRef.current = { id: nextId, seq: nextSeq }
+    if (net?.enabled) return
+
+    const sanitized = sanitizeTurnDeadlineOnHandoff({
+      prevTurnPlayerId: prev.id,
+      nextTurnPlayerId: nextId,
+      prevTurnSeq: prev.seq,
+      nextTurnSeq: nextSeq,
+      currentDeadlineAt: turnDeadlineAtRef.current,
+      now: Date.now(),
+      turnTimeSec: turnTimeSecRef.current,
+    })
+    if (Number.isFinite(Number(sanitized)) && Number(sanitized) !== Number(turnDeadlineAtRef.current)) {
+      setTurnDeadlineAt(Number(sanitized))
+      turnDeadlineAtRef.current = Number(sanitized)
+    }
+  }, [turnPlayerId, turnSeq, net?.enabled])
 
   // ====== "é minha vez?" (ÚNICA fonte: turnPlayerId) ======
   const isMyTurn = useMemo(() => {
@@ -1022,14 +1045,15 @@ export default function App() {
   const commitGamePatch = React.useCallback(({ playersDeltaById = {}, statePatch = {} }) => {
     const expectTurnId = statePatch?._expectTurnPlayerId
     const expectTurnSeq = statePatch?._expectTurnSeq
-    const hasSkipExpect = expectTurnId != null || expectTurnSeq != null
+    const commitKind = inferCommitKind(statePatch)
+    const isSkipAttempt = commitKind === 'AUTO_PASS' || commitKind === 'AUTO_SKIP_OFFLINE'
 
     // Sem net: avanço local já aplicado — confirma guard imediatamente.
     if (typeof netCommit !== 'function') {
-      if (hasSkipExpect) {
+      if (isSkipAttempt) {
         confirmSharedSkipKey(expectTurnId, expectTurnSeq)
       }
-      return Promise.resolve()
+      return Promise.resolve({ ok: true })
     }
     
     // Calcula versionamento e timestamp
@@ -1040,8 +1064,9 @@ export default function App() {
     return new Promise((resolve) => {
     defer(async () => {
       let casLost = false
+      let commitResult = null
       try {
-        const commitResult = await netCommit(prev => {
+        commitResult = await netCommit(prev => {
           const prevState = prev || {}
           const localBoardVersion = resolveBoardVersion(boardVersionRef.current)
           const hasRemoteMatch = Array.isArray(prevState.players) && prevState.players.length > 0
@@ -1049,6 +1074,8 @@ export default function App() {
             hasRemoteMatch &&
             !haveCompatibleBoardVersions(prevState.boardVersion, localBoardVersion)
           ) {
+            casLost = true
+            if (isSkipAttempt) releaseSharedSkipKey(expectTurnId, expectTurnSeq)
             console.error('[BOARD_VERSION] patch bloqueado: sala usa outro mapa', {
               local: localBoardVersion,
               remote: resolveBoardVersion(prevState.boardVersion),
@@ -1056,23 +1083,17 @@ export default function App() {
             return prevState
           }
 
-        // Auto-skip / TURN guard: só aplica se turno/seq ainda forem os esperados.
-        // Fail-safe contra double-skip em retry CAS do provider.
-        if (expectTurnId != null || expectTurnSeq != null) {
-          const remoteTurnId = prevState.turnPlayerId != null ? String(prevState.turnPlayerId) : ''
-          const remoteTurnSeq = Number(prevState.turnSeq) || 0
-          if (expectTurnId != null && remoteTurnId !== String(expectTurnId)) {
-            casLost = true
+        // Guard de commit: revalida snapshot remoto (auto-pass / handoff / LOCK).
+        const commitValidation = validateTurnCommit(prevState, statePatch, { now })
+        if (!commitValidation.ok) {
+          casLost = true
+          if (isSkipAttempt) {
             releaseSharedSkipKey(expectTurnId, expectTurnSeq)
-            if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
-            return prevState
           }
-          if (expectTurnSeq != null && remoteTurnSeq !== Number(expectTurnSeq)) {
-            casLost = true
-            releaseSharedSkipKey(expectTurnId, expectTurnSeq)
-            if (import.meta.env.DEV) console.log('[auto-skip] CAS lost')
-            return prevState
+          if (import.meta.env.DEV) {
+            console.log('[commit] rejected:', commitValidation.reason, commitValidation)
           }
+          return prevState
         }
         
         // ✅ CORREÇÃO 1: Garantir versão monotônica no commit remoto
@@ -1151,10 +1172,12 @@ export default function App() {
         const {
           _expectTurnPlayerId: _dropExpectId,
           _expectTurnSeq: _dropExpectSeq,
+          _expectLockOwner: _dropExpectLockOwner,
+          _commitKind: _dropCommitKind,
           ...publicStatePatch
         } = statePatch || {}
         const finalStatePatch = {
-          ...publicStatePatch,
+          ...stripCommitMeta(statePatch),
           boardVersion: localBoardVersion,
           stateVersion: safeVersion, // ✅ CORREÇÃO: Versão monotônica garantida
           updatedAt: now,
@@ -1187,22 +1210,25 @@ export default function App() {
           return next
         })
 
-        if (hasSkipExpect) {
-          if (casLost || !commitResult?.ok) {
-            releaseSharedSkipKey(expectTurnId, expectTurnSeq)
-            if (import.meta.env.DEV && !casLost) {
-              console.log('[auto-skip] CAS/commit failed — skip key released')
-            }
-          } else {
-            confirmSharedSkipKey(expectTurnId, expectTurnSeq)
-            if (import.meta.env.DEV) console.log('[auto-skip] CAS confirmed')
+        const guardAction = resolveSkipGuardAction(statePatch, {
+          casLost,
+          commitOk: !!commitResult?.ok,
+        })
+        if (guardAction.action === 'release') {
+          releaseSharedSkipKey(expectTurnId, expectTurnSeq)
+          if (import.meta.env.DEV) {
+            console.log('[auto-skip] CAS/commit failed — skip key released')
           }
+        } else if (guardAction.action === 'confirm') {
+          confirmSharedSkipKey(expectTurnId, expectTurnSeq)
+          if (import.meta.env.DEV) console.log('[auto-skip] CAS confirmed')
         }
+        resolve({ ok: !casLost && !!commitResult?.ok })
       } catch (e) {
-        if (hasSkipExpect) releaseSharedSkipKey(expectTurnId, expectTurnSeq)
+        const failAction = resolveSkipGuardAction(statePatch, { casLost: true, commitOk: false })
+        if (failAction.action === 'release') releaseSharedSkipKey(expectTurnId, expectTurnSeq)
         console.warn('[NET] commitGamePatch failed:', e?.message || e)
-      } finally {
-        resolve()
+        resolve({ ok: false })
       }
     })
     })
@@ -1763,13 +1789,6 @@ export default function App() {
         ? String(patch.turnPlayerId)
         : String(turnPlayerId || '')
 
-    // ✅ FIX: mantém turnPlayerId em sync imediato no cliente (evita UI travar/bloquear dados)
-    // O net snapshot pode demorar; sem isso, turnIdx muda mas turnPlayerId pode ficar stale.
-    if (nextTurnPlayerId !== undefined && nextTurnPlayerId !== null) {
-      const nextIdStr = String(nextTurnPlayerId)
-      if (String(turnPlayerId || '') !== nextIdStr) setTurnPlayerId(nextIdStr)
-    }
-    
     // ✅ CORREÇÃO 3: Nunca aceitar turnPlayerId mais antigo (proteção monotônica)
     // Aceita mudança de turnPlayerId apenas se:
     // 1. É explícita no patch (mudança de turno intencional)
@@ -1800,6 +1819,13 @@ export default function App() {
       patch.kind ||
       (patch.turnPlayerId !== undefined ? 'TURN' : 'PLAYER_DELTA')
 
+    const shouldDeferLocal =
+      patch.deferLocalUntilCommit === true
+      && net?.enabled
+      && typeof netCommit === 'function'
+      && patchKind !== 'START'
+      && !patch.isStartGame
+
     // Deadline autoritativo: novo turno / START gera novo deadline; demais patches preservam.
     const turnIdentityChanged = !!(
       patch.isStartGame ||
@@ -1816,11 +1842,15 @@ export default function App() {
       nextTurnDeadlineAt = computeTurnDeadlineAt(Date.now(), safeTurnTimeSec)
     }
     if (Number.isFinite(Number(nextTurnDeadlineAt))) {
-      setTurnDeadlineAt(Number(nextTurnDeadlineAt))
-      turnDeadlineAtRef.current = Number(nextTurnDeadlineAt)
+      if (!shouldDeferLocal) {
+        setTurnDeadlineAt(Number(nextTurnDeadlineAt))
+        turnDeadlineAtRef.current = Number(nextTurnDeadlineAt)
+      }
     } else if (nextTurnDeadlineAt == null && (patchKind === 'ENDGAME' || finalGameOver)) {
-      setTurnDeadlineAt(null)
-      turnDeadlineAtRef.current = null
+      if (!shouldDeferLocal) {
+        setTurnDeadlineAt(null)
+        turnDeadlineAtRef.current = null
+      }
     }
 
     // ✅ actionId (idempotência): gera se não vier do chamador
@@ -1840,22 +1870,101 @@ export default function App() {
       ? normalizedPlayers.findIndex(p => String(p.id) === String(nextTurnPlayerId))
       : nextTurnIdx
 
-    lastLocalStateRef.current = {
-      players: normalizedPlayers,
-      boardVersion: safeBoardVersion,
-      turnIdx: derivedTurnIdxForLocal,
-      turnPlayerId: safeTurnPlayerId, // ✅ CORREÇÃO: Armazena turnPlayerId seguro (monotônico)
-      round: safeRound,
-      gameOver: finalGameOver,
-      winner: finalWinner,
-      lockOwner: nextLockOwner, // local only
-      timestamp: now,
-      version: currentVersion,
-      stateVersion: currentVersion, // ✅ CORREÇÃO: Versionamento autoritativo
-      updatedAt: now, // ✅ CORREÇÃO: Timestamp em ms
-      updatedBy: myUid // ✅ CORREÇÃO: Quem fez a mudança
+    const emissionSnapshot = captureTurnEmissionSnapshot({
+      turnPlayerId: turnPlayerIdRef.current ?? turnPlayerId,
+      turnSeq: turnSeqRef.current ?? turnSeq,
+      turnLock: turnLockRef.current ?? turnLock,
+      lockOwner: lockOwnerRef.current ?? lockOwner,
+      lastRollTurnKey: lastRollTurnKeyRef.current ?? lastRollTurnKey,
+    })
+
+    const readCurrentTurnSnapshot = () => ({
+      turnPlayerId: turnPlayerIdRef.current ?? turnPlayerId,
+      turnSeq: turnSeqRef.current ?? turnSeq,
+      turnLock: turnLockRef.current ?? turnLock,
+      lockOwner: lockOwnerRef.current ?? lockOwner,
+      lastRollTurnKey: lastRollTurnKeyRef.current ?? lastRollTurnKey,
+    })
+
+    const applyOptimisticLocal = () => {
+      if (nextTurnPlayerId !== undefined && nextTurnPlayerId !== null) {
+        const nextIdStr = String(nextTurnPlayerId)
+        if (String(turnPlayerId || '') !== nextIdStr) setTurnPlayerId(nextIdStr)
+      }
+      if (Number.isFinite(Number(nextTurnDeadlineAt))) {
+        setTurnDeadlineAt(Number(nextTurnDeadlineAt))
+        turnDeadlineAtRef.current = Number(nextTurnDeadlineAt)
+      } else if (nextTurnDeadlineAt == null && (patchKind === 'ENDGAME' || finalGameOver)) {
+        setTurnDeadlineAt(null)
+        turnDeadlineAtRef.current = null
+      }
+      if (patch.turnSeq !== undefined) {
+        const seq = Number(patch.turnSeq)
+        setTurnSeq(seq)
+        turnSeqRef.current = seq
+      }
+      if (patch.turnLock !== undefined) {
+        const locked = !!patch.turnLock
+        setTurnLock(locked)
+        const owner = patch.lockOwner !== undefined ? patch.lockOwner : null
+        setLockOwner(owner)
+        lockOwnerRef.current = owner
+      }
+      if (derivedTurnIdxForLocal >= 0) setTurnIdx(derivedTurnIdxForLocal)
+      if (patch.round !== undefined || safeRound !== round) {
+        setRound(safeRound)
+        maxRoundsRef.current = safeMaxRounds
+      }
+      lastLocalStateRef.current = {
+        players: normalizedPlayers,
+        boardVersion: safeBoardVersion,
+        turnIdx: derivedTurnIdxForLocal,
+        turnPlayerId: safeTurnPlayerId,
+        round: safeRound,
+        gameOver: finalGameOver,
+        winner: finalWinner,
+        lockOwner: nextLockOwner,
+        timestamp: now,
+        version: currentVersion,
+        stateVersion: currentVersion,
+        updatedAt: now,
+        updatedBy: myUid,
+      }
+      lastAcceptedVersionRef.current = currentVersion
     }
-    lastAcceptedVersionRef.current = currentVersion
+
+    if (!shouldDeferLocal) {
+      applyOptimisticLocal()
+    }
+
+    const postBcSync = () => {
+      defer(() => {
+        try {
+          const syncPayload = {
+            type: 'SYNC',
+            boardVersion: safeBoardVersion,
+            version: currentVersion,
+            players: normalizedPlayers,
+            round: safeRound,
+            maxRounds: safeMaxRounds,
+            roundFlags: nextRoundFlags,
+            turnLock: nextTurnLock,
+            lockOwner: nextLockOwner,
+            gameOver: finalGameOver,
+            winner: finalWinner,
+            source: meId,
+            timestamp: now,
+          }
+          if (patch && patch.lastRoll !== undefined) {
+            syncPayload.lastRoll =
+              patch.lastRoll === null
+                ? null
+                : normalizeLastRoll(patch.lastRoll)
+          }
+          bcRef.current?.postMessage?.(syncPayload)
+        } catch (e) { console.warn('[App] broadcastState failed:', e) }
+      })
+    }
     
     // ✅ CORREÇÃO MULTIPLAYER: Detectar se é START GAME (snapshot completo) ou ação parcial (delta)
     // ✅ CORREÇÃO: Verifica explicitamente patch.isStartGame primeiro (não depende de safeRound que pode vir de estado antigo)
@@ -1983,13 +2092,18 @@ export default function App() {
       }
       if (patch && patch.turnSeq !== undefined) {
         statePatch.turnSeq = Number(patch.turnSeq)
-        setTurnSeq(Number(patch.turnSeq))
       }
       if (patch && patch._expectTurnPlayerId !== undefined) {
         statePatch._expectTurnPlayerId = patch._expectTurnPlayerId
       }
       if (patch && patch._expectTurnSeq !== undefined) {
         statePatch._expectTurnSeq = patch._expectTurnSeq
+      }
+      if (patch && patch._expectLockOwner !== undefined) {
+        statePatch._expectLockOwner = patch._expectLockOwner
+      }
+      if (patch && patch._commitKind !== undefined) {
+        statePatch._commitKind = patch._commitKind
       }
       if (patch && patch.lastRoll !== undefined) {
         statePatch.lastRoll =
@@ -2009,45 +2123,44 @@ export default function App() {
         statePatch
       })
 
-      // Próximo diff usa o roster que acabamos de publicar (não o stale)
-      try {
-        playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
-      } catch {
-        playersBeforeRef.current = normalizedPlayers
+      const updatePlayersBefore = () => {
+        try {
+          playersBeforeRef.current = JSON.parse(JSON.stringify(normalizedPlayers))
+        } catch {
+          playersBeforeRef.current = normalizedPlayers
+        }
+      }
+
+      if (shouldDeferLocal) {
+        patchCommit = Promise.resolve(patchCommit).then((r) => {
+          if (r?.ok === false) return r
+          const gate = shouldApplyDeferredLocalPatch({
+            emission: emissionSnapshot,
+            current: readCurrentTurnSnapshot(),
+            patch,
+          })
+          if (!gate.apply) {
+            if (DEBUG_LOGS) {
+              console.log('[broadcastState] deferred apply skipped:', gate.reason)
+            }
+            return { ok: true, applied: false, reason: gate.reason }
+          }
+          applyOptimisticLocal()
+          updatePlayersBefore()
+          postBcSync()
+          return { ok: true, applied: true, reason: 'applied' }
+        })
+      } else {
+        updatePlayersBefore()
       }
       
       if (DEBUG_LOGS) console.log('[App] broadcastState (PATCH) - kind:', patchKind,
         'playersDeltaIds:', Object.keys(playersDeltaById).join(','), 
         'turnPlayerId:', safeTurnPlayerId, 'round:', safeRound)
     }
-    // 2) entre abas
-    defer(() => {
-      try {
-        const syncPayload = {
-          type: 'SYNC',
-          boardVersion: safeBoardVersion,
-          version: currentVersion,  // ✅ MELHORIA: Inclui versão na mensagem
-          players: normalizedPlayers, // ✅ CORREÇÃO: Usa players normalizados
-          round: safeRound,
-          maxRounds: safeMaxRounds,
-          roundFlags: nextRoundFlags, // ✅ CORREÇÃO: Usa valor do patch se disponível
-          // turnLock/lockOwner podem ser enviados localmente (mesma máquina) via BroadcastChannel
-          turnLock: nextTurnLock,
-          lockOwner: nextLockOwner,
-          gameOver: finalGameOver,
-          winner: finalWinner,
-          source: meId,
-          timestamp: now,  // ✅ MELHORIA: Inclui timestamp
-        }
-        if (patch && patch.lastRoll !== undefined) {
-          syncPayload.lastRoll =
-            patch.lastRoll === null
-              ? null
-              : normalizeLastRoll(patch.lastRoll)
-        }
-        bcRef.current?.postMessage?.(syncPayload)
-      } catch (e) { console.warn('[App] broadcastState failed:', e) }
-    })
+    if (!shouldDeferLocal) {
+      postBcSync()
+    }
     return patchCommit
   }
 

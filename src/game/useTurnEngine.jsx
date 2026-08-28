@@ -20,6 +20,7 @@ import {
   decideTickForceUnlock,
   canSafelyHandoffTurn,
 } from './turnLockSafety.js'
+import { isHandoffPendingObsolete } from './turnStateMonotonic.js'
 import {
   applyBankruptcyState,
   planMatchForfeit,
@@ -1394,10 +1395,14 @@ export function useTurnEngine({
     // ✅ CORREÇÃO MULTIPLAYER: Calcula turnPlayerId do próximo jogador (fonte autoritativa)
     const nextPlayer = nextPlayers[nextTurnIdx]
     const nextTurnPlayerId = nextPlayer?.id ? String(nextPlayer.id) : null
+    const originTurnPlayerId = String(turnPlayerIdRef.current || turnPlayerId || '')
+    const originTurnSeq = Number(turnSeqRef.current ?? turnSeq ?? 0)
     pendingTurnDataRef.current = {
       nextPlayers,
       nextTurnIdx,
       nextTurnPlayerId, // ✅ CORREÇÃO: turnPlayerId do próximo jogador
+      originTurnPlayerId,
+      originTurnSeq,
       nextRound: finalNextRound,
       nextRoundFlags: finalNextFlags,
       timestamp: Date.now(),
@@ -2851,42 +2856,68 @@ export function useTurnEngine({
               const roundToBroadcast = turnData.nextRound
               const shouldIncrement = turnData.shouldIncrementRound || false
               console.log('[DEBUG] 🔄 Broadcast - Rodada a ser transmitida:', roundToBroadcast, 'Rodada atual no estado:', round, 'shouldIncrement:', shouldIncrement)
-              
-              // ✅ CORREÇÃO: Atualiza turnIdx e rodada antes de fazer broadcast
-              // O broadcastState atualiza lastLocalStateRef com o novo turnIdx e rodada, protegendo contra estados remotos antigos
-              setTurnIdx(turnData.nextTurnIdx)
-              if (setTurnPlayerId) setTurnPlayerId(turnData.nextTurnPlayerId ?? null)
-              // ✅ FIX: round monotônico no tick (NUNCA soma +1 aqui)
-              // roundToBroadcast já é o valor correto calculado no advanceAndMaybeLap.
-              // ✅ PROTEÇÃO DEFENSIVA: Clamp para garantir que nunca exiba round > MAX_ROUNDS
-              setRound(prevRound => {
-                const safeRoundToBroadcast = Math.min(MAX_ROUNDS, roundToBroadcast)
-                const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, safeRoundToBroadcast))
-                if (finalRound !== prevRound) {
-                  console.log('[DEBUG] 🔄 Rodada atualizada no tick - de:', prevRound, 'para:', finalRound)
-                }
-                currentRoundRef.current = finalRound
-                return finalRound
-              })
+
               const nextTurnSeq = (typeof turnSeqRef.current === 'number' ? turnSeqRef.current : 0) + 1
-              if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
-              turnSeqRef.current = nextTurnSeq
 
               const patch = {
+                kind: 'TURN',
                 roundFlags: turnData.nextRoundFlags ?? undefined,
                 round: turnData.shouldIncrementRound ? roundToBroadcast : undefined,
                 turnPlayerId: turnData.nextTurnPlayerId,
                 turnSeq: nextTurnSeq,
                 lastRollTurnKey: null,
+                turnLock: false,
+                lockOwner: null,
+                _expectTurnPlayerId: turnData.originTurnPlayerId,
+                _expectTurnSeq: turnData.originTurnSeq,
+                _commitKind: 'NORMAL_HANDOFF',
+                deferLocalUntilCommit: true,
               }
               if (turnData.nextRoundFlags) patch.roundFlags = turnData.nextRoundFlags
               if (turnData.shouldIncrementRound) patch.round = roundToBroadcast
               if (turnData.nextTurnPlayerId) patch.turnPlayerId = turnData.nextTurnPlayerId
-              broadcastState(latestPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
-              pendingTurnDataRef.current = null // Limpa os dados após usar
-              setTurnLockBroadcast(false)
-              turnChangeInProgressRef.current = false
-              console.log('[DEBUG] ✅ Turno mudado com sucesso - Rodada:', roundToBroadcast)
+
+              Promise.resolve(
+                broadcastState(latestPlayers, turnData.nextTurnIdx, roundToBroadcast, gameOver, winner, patch)
+              ).then((r) => {
+                const currentTurn = {
+                  turnPlayerId: turnPlayerIdRef.current,
+                  turnSeq: turnSeqRef.current,
+                }
+                if (r?.ok === false) {
+                  turnChangeInProgressRef.current = false
+                  const td = pendingTurnDataRef.current
+                  if (td && !isHandoffPendingObsolete(td, currentTurn)) {
+                    setTimeout(tick, 400)
+                  }
+                  return
+                }
+                if (r?.applied === false) {
+                  turnChangeInProgressRef.current = false
+                  const td = pendingTurnDataRef.current
+                  if (td && isHandoffPendingObsolete(td, currentTurn)) {
+                    pendingTurnDataRef.current = null
+                  }
+                  return
+                }
+                if (typeof setTurnSeq === 'function') setTurnSeq(nextTurnSeq)
+                turnSeqRef.current = nextTurnSeq
+                setTurnIdx(turnData.nextTurnIdx)
+                turnIdxRef.current = turnData.nextTurnIdx
+                if (setTurnPlayerId) setTurnPlayerId(turnData.nextTurnPlayerId ?? null)
+                turnPlayerIdRef.current = turnData.nextTurnPlayerId ?? null
+                setRound(prevRound => {
+                  const safeRoundToBroadcast = Math.min(MAX_ROUNDS, roundToBroadcast)
+                  const finalRound = Math.min(MAX_ROUNDS, Math.max(prevRound, safeRoundToBroadcast))
+                  currentRoundRef.current = finalRound
+                  return finalRound
+                })
+                pendingTurnDataRef.current = null
+                turnChangeInProgressRef.current = false
+                console.log('[DEBUG] ✅ Turno mudado com sucesso - Rodada:', roundToBroadcast)
+              }).catch(() => {
+                turnChangeInProgressRef.current = false
+              })
             } else {
               console.log('[DEBUG] ⚠️ tick - condições não atendidas, não mudando turno', { 
                 finalModalLocks, 
@@ -3090,24 +3121,7 @@ export function useTurnEngine({
     })
     if (skipGuard2.reject) return false
 
-    pendingTurnDataRef.current = null
-    turnChangeInProgressRef.current = false
-    openingModalRef.current = false
-
-    if (typeof setTurnSeq === 'function') setTurnSeq(plan.nextTurnSeq)
-    turnSeqRef.current = plan.nextTurnSeq
-    if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
-    lastRollTurnKeyRef.current = null
-
-    setTurnIdx(plan.nextTurnIdx)
-    turnIdxRef.current = plan.nextTurnIdx
-    if (setTurnPlayerId) setTurnPlayerId(plan.nextTurnPlayerId)
-    turnPlayerIdRef.current = plan.nextTurnPlayerId
-
-    // Limpa lock local; o TURN também zera lock no snapshot compartilhado
-    setTurnLockBroadcast(false)
-
-    broadcastState(roster, plan.nextTurnIdx, currentRoundRef.current, false, null, {
+    const patch = {
       kind: 'TURN',
       turnPlayerId: plan.nextTurnPlayerId,
       turnSeq: plan.nextTurnSeq,
@@ -3117,16 +3131,50 @@ export function useTurnEngine({
       lockOwner: null,
       _expectTurnPlayerId: expectId,
       _expectTurnSeq: expectSeq,
-    })
+      _commitKind: lastAction === 'AUTO_PASS_TIMER' ? 'AUTO_PASS' : 'AUTO_SKIP_OFFLINE',
+      deferLocalUntilCommit: true,
+    }
 
-    try {
-      if (lastAction === 'AUTO_PASS_TIMER') {
-        appendLog?.('Turno avançado: tempo esgotado.')
-      } else {
-        appendLog?.('Turno avançado: jogador desconectado.')
-      }
-    } catch {}
+    const commitPromise = broadcastState(
+      roster,
+      plan.nextTurnIdx,
+      currentRoundRef.current,
+      false,
+      null,
+      patch,
+    )
 
+    const applyEngineOnSuccess = () => {
+      if (typeof setTurnSeq === 'function') setTurnSeq(plan.nextTurnSeq)
+      turnSeqRef.current = plan.nextTurnSeq
+      if (typeof setLastRollTurnKey === 'function') setLastRollTurnKey(null)
+      lastRollTurnKeyRef.current = null
+      setTurnIdx(plan.nextTurnIdx)
+      turnIdxRef.current = plan.nextTurnIdx
+      if (setTurnPlayerId) setTurnPlayerId(plan.nextTurnPlayerId)
+      turnPlayerIdRef.current = plan.nextTurnPlayerId
+      pendingTurnDataRef.current = null
+      turnChangeInProgressRef.current = false
+      openingModalRef.current = false
+      try {
+        if (lastAction === 'AUTO_PASS_TIMER') {
+          appendLog?.('Turno avançado: tempo esgotado.')
+        } else {
+          appendLog?.('Turno avançado: jogador desconectado.')
+        }
+      } catch {}
+    }
+
+    if (commitPromise && typeof commitPromise.then === 'function') {
+      return commitPromise.then((r) => {
+        if (r?.ok === false) return false
+        if (r?.applied === false) return false
+        applyEngineOnSuccess()
+        return true
+      }).catch(() => false)
+    }
+
+    applyEngineOnSuccess()
     return true
   }, [
     players,

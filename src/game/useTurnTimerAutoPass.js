@@ -8,7 +8,9 @@ import {
   remainingTurnMs,
   shouldArmTimerSkipForTurn,
   shouldAttemptTimerAutoPass,
+  TURN_HANDOFF_STALE_REMAINING_MS,
 } from './turnTimerLogic.js'
+import { shouldProceedTimerAutoPassAfterAwait } from './turnCommitValidation.js'
 import {
   getLastSharedSkipKey,
   getSharedSkipInFlight,
@@ -22,6 +24,13 @@ import {
 
 const DEV = !!import.meta.env.DEV
 const POLL_MS = 500
+
+function shouldArmCoordinatorTimer({ remainingMs, turnDeadlineAt } = {}) {
+  if (shouldArmTimerSkipForTurn({ remainingMs })) return true
+  const deadline = Number(turnDeadlineAt)
+  if (!Number.isFinite(deadline)) return false
+  return Number(remainingMs) < TURN_HANDOFF_STALE_REMAINING_MS
+}
 
 function devLog(...args) {
   if (DEV) console.log(...args)
@@ -40,7 +49,7 @@ function devLog(...args) {
  * @param {boolean} opts.turnLock
  * @param {boolean} opts.gameOver
  * @param {number} opts.turnTimeSec
- * @param {(args: object) => boolean|void} opts.attemptSkipTurn
+ * @param {(args: object) => boolean|void|Promise<boolean>} opts.attemptSkipTurn
  */
 export function useTurnTimerAutoPass({
   enabled,
@@ -67,6 +76,7 @@ export function useTurnTimerAutoPass({
   const lobbyHostIdRef = useRef(lobbyHostId)
   const armedKeyRef = useRef('')
   const skipArmedRef = useRef(false)
+  const evalInFlightRef = useRef(false)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { turnPlayerIdRef.current = turnPlayerId }, [turnPlayerId])
@@ -86,6 +96,8 @@ export function useTurnTimerAutoPass({
 
     const evaluate = async () => {
       if (cancelled) return
+      if (evalInFlightRef.current) return
+
       clearSharedSkipKeyIfStale(turnPlayerIdRef.current, turnSeqRef.current)
 
       const curTurnId = turnPlayerIdRef.current != null
@@ -100,112 +112,146 @@ export function useTurnTimerAutoPass({
       const now = Date.now()
       const turnKey = `${curTurnId}|${curTurnSeq}`
       const remaining = remainingTurnMs(deadlineRef.current, now)
+      const armTimer = shouldArmCoordinatorTimer({
+        remainingMs: remaining,
+        turnDeadlineAt: deadlineRef.current,
+      })
       if (armedKeyRef.current !== turnKey) {
         armedKeyRef.current = turnKey
-        skipArmedRef.current = shouldArmTimerSkipForTurn({ remainingMs: remaining })
+        skipArmedRef.current = armTimer
         if (!skipArmedRef.current) {
           devLog('[turn-timer] skip desarmado no handoff rem=' + remaining)
         }
-      } else if (!skipArmedRef.current && shouldArmTimerSkipForTurn({ remainingMs: remaining })) {
+      } else if (!skipArmedRef.current && armTimer) {
         skipArmedRef.current = true
       }
       if (!skipArmedRef.current) return
 
-      let amCoordinator = false
-      let authReason = 'local'
-      if (lobbyId) {
-        let presence = []
-        try {
-          presence = await listLobbyPresence(lobbyId)
-        } catch {
-          return
-        }
-        if (cancelled) return
-        const auth = resolveTurnSkipAuthority({
-          rosterPlayers: roster,
-          presenceList: presence,
-          now,
-          myUid: String(myUid),
-          lobbyHostId: lobbyHostIdRef.current,
-        })
-        amCoordinator = auth.authorized === true
-        authReason = auth.reason
-      } else {
-        // Sem lobby (modo local): este cliente pode efetivar o auto-pass.
-        amCoordinator = true
-      }
-
-      const decision = shouldAttemptTimerAutoPass({
-        now,
-        turnDeadlineAt: deadlineRef.current,
-        turnLock: !!turnLockRef.current,
-        gameOver: !!gameOverRef.current,
-        amCoordinator,
-        turnPlayerId: curTurnId,
-        turnSeq: curTurnSeq,
-        lastAttemptKey: getLastSharedSkipKey(),
-        inFlight: getSharedSkipInFlight(),
-      })
-
-      if (!decision.ok) {
-        if (decision.reason === 'turn-locked' && DEV) {
-          devLog('[turn-timer] waiting turnLock clear')
-        }
-        if (decision.reason === 'not-coordinator' && DEV) {
-          devLog('[turn-timer] not-coordinator reason=' + authReason)
-        }
-        return
-      }
-
-      setSharedSkipInFlight(true)
+      evalInFlightRef.current = true
       try {
-        if (String(turnPlayerIdRef.current || '') !== curTurnId) return
-        if ((Number(turnSeqRef.current) || 0) !== curTurnSeq) return
-        if (gameOverRef.current) return
-        if (turnLockRef.current) return
-
+        let amCoordinator = false
+        let authReason = 'local'
         if (lobbyId) {
-          let presence2 = []
+          let presence = []
           try {
-            presence2 = await listLobbyPresence(lobbyId)
+            presence = await listLobbyPresence(lobbyId)
           } catch {
             return
           }
           if (cancelled) return
-          const auth2 = resolveTurnSkipAuthority({
+          const auth = resolveTurnSkipAuthority({
             rosterPlayers: roster,
-            presenceList: presence2,
-            now: Date.now(),
+            presenceList: presence,
+            now,
             myUid: String(myUid),
             lobbyHostId: lobbyHostIdRef.current,
           })
-          if (!auth2.authorized) {
-            devLog('[turn-timer] authority=false reason=' + auth2.reason)
-            return
-          }
+          amCoordinator = auth.authorized === true
+          authReason = auth.reason
+        } else {
+          amCoordinator = true
         }
 
-        if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
-
-        devLog('[turn-timer] attempt turnSeq=' + curTurnSeq + ' via=' + authReason)
-        const ok = attemptRef.current?.({
-          expectedTurnPlayerId: curTurnId,
-          expectedTurnSeq: curTurnSeq,
-          reason: 'AUTO_PASS_TIMER',
+        const decision = shouldAttemptTimerAutoPass({
+          now,
+          turnDeadlineAt: deadlineRef.current,
+          turnLock: !!turnLockRef.current,
+          gameOver: !!gameOverRef.current,
+          amCoordinator,
+          turnPlayerId: curTurnId,
+          turnSeq: curTurnSeq,
+          lastAttemptKey: getLastSharedSkipKey(),
+          inFlight: getSharedSkipInFlight(),
         })
-        if (ok) {
-          markPendingSharedSkipKey(curTurnId, curTurnSeq)
-          if (!lobbyId) {
-            // Local: sem CAS remoto — confirma na hora
-            confirmSharedSkipKey(curTurnId, curTurnSeq)
+
+        if (!decision.ok) {
+          if (decision.reason === 'turn-locked' && DEV) {
+            devLog('[turn-timer] waiting turnLock clear')
           }
-          devLog('[turn-timer] local applied (pending CAS)')
-        } else {
-          releaseSharedSkipKey(curTurnId, curTurnSeq)
-          devLog('[turn-timer] local rejected')
+          if (decision.reason === 'not-coordinator' && DEV) {
+            devLog('[turn-timer] not-coordinator reason=' + authReason)
+          }
+          return
+        }
+
+        setSharedSkipInFlight(true)
+        try {
+          if (String(turnPlayerIdRef.current || '') !== curTurnId) return
+          if ((Number(turnSeqRef.current) || 0) !== curTurnSeq) return
+          if (gameOverRef.current) return
+          if (turnLockRef.current) return
+
+          if (lobbyId) {
+            let presence2 = []
+            try {
+              presence2 = await listLobbyPresence(lobbyId)
+            } catch {
+              return
+            }
+            if (cancelled) return
+            const now2 = Date.now()
+            const auth2 = resolveTurnSkipAuthority({
+              rosterPlayers: roster,
+              presenceList: presence2,
+              now: now2,
+              myUid: String(myUid),
+              lobbyHostId: lobbyHostIdRef.current,
+            })
+            if (!auth2.authorized) {
+              devLog('[turn-timer] authority=false reason=' + auth2.reason)
+              return
+            }
+
+            const proceed = shouldProceedTimerAutoPassAfterAwait({
+              now: now2,
+              turnDeadlineAt: deadlineRef.current,
+              turnLock: !!turnLockRef.current,
+              gameOver: !!gameOverRef.current,
+              capturedTurnPlayerId: curTurnId,
+              capturedTurnSeq: curTurnSeq,
+              currentTurnPlayerId: turnPlayerIdRef.current,
+              currentTurnSeq: turnSeqRef.current,
+              lastAttemptKey: getLastSharedSkipKey(),
+              inFlight: false,
+              amCoordinator: true,
+            })
+            if (!proceed.ok) {
+              if (DEV) devLog('[turn-timer] post-await blocked reason=' + proceed.reason)
+              return
+            }
+          }
+
+          if (wasAlreadySkipped(curTurnId, curTurnSeq)) return
+
+          devLog('[turn-timer] attempt turnSeq=' + curTurnSeq + ' via=' + authReason)
+          const result = attemptRef.current?.({
+            expectedTurnPlayerId: curTurnId,
+            expectedTurnSeq: curTurnSeq,
+            reason: 'AUTO_PASS_TIMER',
+          })
+
+          let ok = false
+          if (result && typeof result.then === 'function') {
+            ok = await result
+          } else {
+            ok = !!result
+          }
+
+          if (ok) {
+            markPendingSharedSkipKey(curTurnId, curTurnSeq)
+            if (!lobbyId) {
+              confirmSharedSkipKey(curTurnId, curTurnSeq)
+            }
+            devLog('[turn-timer] local applied (pending CAS)')
+          } else {
+            releaseSharedSkipKey(curTurnId, curTurnSeq)
+            devLog('[turn-timer] local rejected')
+          }
+        } finally {
+          setSharedSkipInFlight(false)
         }
       } finally {
-        setSharedSkipInFlight(false)
+        evalInFlightRef.current = false
       }
     }
 

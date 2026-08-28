@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 // use sempre o único client central
 import { supabase } from '../lib/supabaseClient.js'
+import { shouldApplyRemoteRoomRow } from '../game/turnStateMonotonic.js'
 
 const Ctx = createContext(null)
 // ✅ CORREÇÃO: useGameNet retorna null de forma segura se não houver provider
@@ -23,6 +24,36 @@ function netLog(tag, payload) {
 function roomHasPlayers(row) {
   const players = row?.state?.players
   return Array.isArray(players) && players.length > 0
+}
+
+function applyRoomSnapshotIfNewer(ctx, { version, state, stateId, updatedAt, roomId } = {}) {
+  const gate = shouldApplyRemoteRoomRow({
+    incomingVersion: version,
+    incomingState: state,
+    localVersion: ctx.versionRef.current,
+    localState: ctx.stateRef.current,
+  })
+  if (!gate.apply) {
+    if (DEV_NET_LOGS) {
+      console.log('[NET] skipped stale snapshot:', gate.reason, { version, local: ctx.versionRef.current })
+    }
+    return false
+  }
+  if (version != null) {
+    ctx.versionRef.current = version
+    ctx.setVersion(version)
+  }
+  if (state) {
+    ctx.stateRef.current = state
+    ctx.setState(state)
+  }
+  if (stateId) {
+    ctx.stateIdRef.current = String(stateId)
+    ctx.setStateId(String(stateId))
+  }
+  if (updatedAt) ctx.latestKnownUpdatedAtRef.current = updatedAt
+  if (roomId) ctx.activeRoomIdRef.current = roomId
+  return true
 }
 
 /**
@@ -293,20 +324,25 @@ function GameNetProvider({ roomCode, hostId, children }) {
             (incomingVersion != null && incomingVersion === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
 
           if (shouldApply) {
-            if (incomingVersion != null) {
-              versionRef.current = incomingVersion
-              setVersion(incomingVersion)
-            }
-            if (incomingState) {
-              stateRef.current = incomingState
-              setState(incomingState)
-            }
-            if (incomingStateId) {
-              stateIdRef.current = String(incomingStateId)
-              setStateId(String(incomingStateId))
-            }
-            if (row.updated_at) latestKnownUpdatedAtRef.current = row.updated_at
-            if (row.id) activeRoomIdRef.current = row.id
+            applyRoomSnapshotIfNewer(
+              {
+                versionRef,
+                stateRef,
+                stateIdRef,
+                latestKnownUpdatedAtRef,
+                activeRoomIdRef,
+                setVersion,
+                setState,
+                setStateId,
+              },
+              {
+                version: incomingVersion,
+                state: incomingState,
+                stateId: incomingStateId,
+                updatedAt: row.updated_at,
+                roomId: row.id,
+              },
+            )
             lastEvtRef.current = Date.now()
             if (DEV_NET_LOGS) {
               console.log('[NET] ✅ applied remote (realtime)', {
@@ -346,17 +382,25 @@ function GameNetProvider({ roomCode, hostId, children }) {
         (current.version === versionRef.current && incomingStateId && incomingStateId !== stateIdRef.current)
 
       if (shouldApply) {
-        versionRef.current = current.version
-        setVersion(current.version)
-        const nextState = current.state || {}
-        stateRef.current = nextState
-        setState(nextState)
-        if (incomingStateId) {
-          stateIdRef.current = String(incomingStateId)
-          setStateId(String(incomingStateId))
-        }
-        if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
-        if (current.id) activeRoomIdRef.current = current.id
+        applyRoomSnapshotIfNewer(
+          {
+            versionRef,
+            stateRef,
+            stateIdRef,
+            latestKnownUpdatedAtRef,
+            activeRoomIdRef,
+            setVersion,
+            setState,
+            setStateId,
+          },
+          {
+            version: current.version,
+            state: current.state || {},
+            stateId: incomingStateId,
+            updatedAt: current.updated_at,
+            roomId: current.id,
+          },
+        )
       }
     }, 700)
     return () => clearInterval(id)
@@ -471,10 +515,25 @@ function GameNetProvider({ roomCode, hostId, children }) {
         .maybeSingle()
 
       if (!e2 && updated) {
-        setState(updated.state || {})
-        setVersion(updated.version ?? ((current.version || 0) + 1))
-        if (updated.state?.stateId != null) setStateId(String(updated.state.stateId))
-        if (updated.updated_at) latestKnownUpdatedAtRef.current = updated.updated_at
+        applyRoomSnapshotIfNewer(
+          {
+            versionRef,
+            stateRef,
+            stateIdRef,
+            latestKnownUpdatedAtRef,
+            activeRoomIdRef,
+            setVersion,
+            setState,
+            setStateId,
+          },
+          {
+            version: updated.version ?? ((current.version || 0) + 1),
+            state: updated.state || {},
+            stateId: updated.state?.stateId,
+            updatedAt: updated.updated_at,
+            roomId: targetId,
+          },
+        )
         if (attempt > 1) {
           console.log(`[NET] commit succeeded on attempt ${attempt}/${MAX_ATTEMPTS}`)
         }
@@ -534,11 +593,25 @@ function GameNetProvider({ roomCode, hostId, children }) {
     const finalLookup = await getLatestRoomByCode(code)
     if (finalLookup.status === 'ok' && finalLookup.row) {
       const current = finalLookup.row
-      setState(current.state || {})
-      setVersion(current.version ?? 0)
-      if (current.state?.stateId != null) setStateId(String(current.state.stateId))
-      if (current.updated_at) latestKnownUpdatedAtRef.current = current.updated_at
-      if (current.id) activeRoomIdRef.current = current.id
+      applyRoomSnapshotIfNewer(
+        {
+          versionRef,
+          stateRef,
+          stateIdRef,
+          latestKnownUpdatedAtRef,
+          activeRoomIdRef,
+          setVersion,
+          setState,
+          setStateId,
+        },
+        {
+          version: current.version ?? 0,
+          state: current.state || {},
+          stateId: current.state?.stateId,
+          updatedAt: current.updated_at,
+          roomId: current.id,
+        },
+      )
       console.warn('[NET] commit failed after retries, resynced to latest state')
     } else {
       console.warn('[NET] commit fallback resync failed: no row found', finalLookup.status)

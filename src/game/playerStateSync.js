@@ -6,6 +6,7 @@
  */
 
 import { normalizePlayerAliases } from './playerShape.js'
+import { validateTurnCommit, stripCommitMeta } from './turnCommitValidation.js'
 
 /** Cash válido para aplicar em patch: número finito (inclui 0). */
 export function isValidCashPatchValue(value) {
@@ -352,20 +353,16 @@ export function shouldApplyIncomingState({
  * Simula commit patch sobre rooms.state (para testes / CAS retry mental model).
  * Reaplica updater semantics: merge deltas no prev remoto.
  */
-export function applyGamePatchToState(prevState = {}, { playersDeltaById = {}, statePatch = {} } = {}) {
+/**
+ * Simula commit patch sobre rooms.state (para testes / CAS retry mental model).
+ * Reaplica updater semantics: merge deltas no prev remoto.
+ */
+export function applyGamePatchToState(prevState = {}, { playersDeltaById = {}, statePatch = {} } = {}, opts = {}) {
   const prev = prevState && typeof prevState === 'object' ? prevState : {}
 
-  const expectTurnId = statePatch?._expectTurnPlayerId
-  const expectTurnSeq = statePatch?._expectTurnSeq
-  if (expectTurnId != null || expectTurnSeq != null) {
-    const remoteTurnId = prev.turnPlayerId != null ? String(prev.turnPlayerId) : ''
-    const remoteTurnSeq = Number(prev.turnSeq) || 0
-    if (expectTurnId != null && remoteTurnId !== String(expectTurnId)) {
-      return { ok: false, state: prev, reason: 'expect-turn-id' }
-    }
-    if (expectTurnSeq != null && remoteTurnSeq !== Number(expectTurnSeq)) {
-      return { ok: false, state: prev, reason: 'expect-turn-seq' }
-    }
+  const validation = validateTurnCommit(prev, statePatch, { now: opts.now ?? Date.now() })
+  if (!validation.ok) {
+    return { ok: false, state: prev, reason: validation.reason }
   }
 
   const prevPlayers = Array.isArray(prev.players) ? prev.players : []
@@ -373,11 +370,7 @@ export function applyGamePatchToState(prevState = {}, { playersDeltaById = {}, s
     createMissing: false,
   })
 
-  const {
-    _expectTurnPlayerId: _e1,
-    _expectTurnSeq: _e2,
-    ...publicPatch
-  } = statePatch || {}
+  const publicPatch = stripCommitMeta(statePatch)
 
   const next = {
     ...prev,
